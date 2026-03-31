@@ -4,10 +4,8 @@ foundry/
 # Data files
 01-Raw-Data/**
 !01-Raw-Data/.gitkeep
-!01-Raw-Data/connectivity/
-!01-Raw-Data/connectivity/.gitkeep
-!01-Raw-Data/connectivity/generators/
-!01-Raw-Data/connectivity/generators/.gitkeep
+!01-Raw-Data/**/
+!01-Raw-Data/**/.gitkeep
 
 # SQLite databases
 *.db
