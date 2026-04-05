@@ -7,6 +7,7 @@ and GeoPackage outputs. Reports pass/fail for each check.
 import json
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 
 import geopandas as gpd
@@ -18,17 +19,41 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
+RAPTOR_DIR = PROJECT_ROOT / "05-RAPTOR-Integration"
 
 TARGET_CRS = "EPSG:32617"
 
 # Critical columns that should not have excessive nulls
 CRITICAL_COLUMNS = [
     "unique_id",
-    "RCLINK",
-    "COUNTY_CODE",
-    "DISTRICT",
+    "ROUTE_ID",
+    "COUNTY_ID",
+    "GDOT_District",
     "SYSTEM_CODE",
 ]
+
+DECODED_LABEL_COLUMNS = {
+    "COUNTY_NAME": "COUNTY_CODE",
+    "DISTRICT_NAME": "DISTRICT",
+    "DISTRICT_LABEL": "DISTRICT",
+    "SYSTEM_CODE_LABEL": "SYSTEM_CODE",
+    "FUNCTION_TYPE_LABEL": "FUNCTION_TYPE",
+    "PARSED_FUNCTION_TYPE_LABEL": "PARSED_FUNCTION_TYPE",
+    "F_SYSTEM_LABEL": "F_SYSTEM",
+    "FUNCTIONAL_CLASS_LABEL": "FUNCTIONAL_CLASS",
+    "FACILITY_TYPE_LABEL": "FACILITY_TYPE",
+    "NHS_LABEL": "NHS",
+    "NHS_IND_LABEL": "NHS_IND",
+    "MEDIAN_TYPE_LABEL": "MEDIAN_TYPE",
+    "SHOULDER_TYPE_LABEL": "SHOULDER_TYPE",
+    "SURFACE_TYPE_LABEL": "SURFACE_TYPE",
+    "URBAN_CODE_LABEL": "URBAN_CODE",
+    "DIRECTION_LABEL": "DIRECTION",
+    "PARSED_DIRECTION_LABEL": "PARSED_DIRECTION",
+    "ROUTE_DIRECTION_LABEL": "ROUTE_DIRECTION",
+    "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
+    "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
+}
 
 
 class ValidationResult:
@@ -123,11 +148,11 @@ def validate_crs(result: ValidationResult) -> None:
 
 def validate_district_range(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that DISTRICT values are in the expected range (1-7)."""
-    if "DISTRICT" not in df.columns:
-        result.add("District range", False, "DISTRICT column not found")
+    if "GDOT_District" not in df.columns:
+        result.add("District range", False, "GDOT_District column not found")
         return
 
-    districts = df["DISTRICT"].dropna().unique()
+    districts = df["GDOT_District"].dropna().unique()
     valid_range = set(range(1, 8))
 
     # Convert to int for comparison, handling string types
@@ -146,6 +171,62 @@ def validate_district_range(result: ValidationResult, df: pd.DataFrame) -> None:
     )
 
 
+def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Report current and historic AADT coverage."""
+    if "AADT" not in df.columns:
+        result.add("Current AADT coverage", False, "AADT column not found")
+        return
+
+    current_count = int(df["AADT"].notna().sum())
+    result.add(
+        "Current AADT coverage",
+        current_count > 0,
+        f"{current_count:,} segments with current AADT",
+    )
+
+    historical_cols = sorted(
+        col for col in df.columns if col.startswith("AADT_") and col[5:].isdigit() and col != "AADT_2024"
+    )
+    if not historical_cols:
+        result.add("Historic AADT columns", False, "No historic AADT_* columns found")
+        return
+
+    covered_years = {
+        col: int(df[col].notna().sum())
+        for col in historical_cols
+    }
+    years_with_data = {col: count for col, count in covered_years.items() if count > 0}
+    result.add(
+        "Historic AADT coverage",
+        len(years_with_data) > 0,
+        ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
+    )
+
+
+def validate_decoded_labels(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that decoded label columns exist and cover rows with source codes."""
+    for label_col, source_col in DECODED_LABEL_COLUMNS.items():
+        if label_col not in df.columns:
+            result.add(f"Decoded label: {label_col}", False, "Column not found")
+            continue
+        if source_col not in df.columns:
+            result.add(f"Decoded label: {label_col}", False, f"Source column missing: {source_col}")
+            continue
+
+        source_mask = df[source_col].notna()
+        source_count = int(source_mask.sum())
+        if source_count == 0:
+            result.add(f"Decoded label: {label_col}", True, "No source-coded rows present")
+            continue
+
+        decoded_count = int(df.loc[source_mask, label_col].notna().sum())
+        result.add(
+            f"Decoded label: {label_col}",
+            decoded_count == source_count,
+            f"{decoded_count:,}/{source_count:,} source-coded rows decoded",
+        )
+
+
 def validate_geometry(result: ValidationResult) -> None:
     """Check geometry validity in the GeoPackage."""
     gpkg_path = SPATIAL_DIR / "base_network.gpkg"
@@ -161,6 +242,60 @@ def validate_geometry(result: ValidationResult) -> None:
         "Geometry validity",
         invalid_count == 0,
         f"{invalid_count:,} invalid, {empty_count:,} empty out of {len(gdf):,}",
+    )
+
+
+def validate_boundary_layers(result: ValidationResult) -> None:
+    """Check that county and district boundary layers exist and are populated."""
+    gpkg_path = SPATIAL_DIR / "base_network.gpkg"
+    if not gpkg_path.exists():
+        result.add("Boundary layers", False, "GeoPackage not found")
+        return
+
+    conn = sqlite3.connect(gpkg_path)
+    try:
+        available_layers = {
+            row[0]
+            for row in conn.execute("SELECT table_name FROM gpkg_contents").fetchall()
+        }
+    finally:
+        conn.close()
+
+    expected_layers = {"county_boundaries", "district_boundaries"}
+    missing_layers = expected_layers - available_layers
+    result.add(
+        "Boundary layers exist",
+        not missing_layers,
+        f"Missing: {sorted(missing_layers)}" if missing_layers else "county_boundaries, district_boundaries",
+    )
+    if missing_layers:
+        return
+
+    county_gdf = gpd.read_file(gpkg_path, layer="county_boundaries", engine="pyogrio")
+    district_gdf = gpd.read_file(gpkg_path, layer="district_boundaries", engine="pyogrio")
+
+    result.add(
+        "County boundary count",
+        len(county_gdf) == 159,
+        f"{len(county_gdf):,} features",
+    )
+    result.add(
+        "District boundary count",
+        len(district_gdf) == 7,
+        f"{len(district_gdf):,} features",
+    )
+
+    county_names_ok = "DISTRICT_NAME" in county_gdf.columns and county_gdf["DISTRICT_NAME"].notna().all()
+    district_names_ok = "DISTRICT_NAME" in district_gdf.columns and district_gdf["DISTRICT_NAME"].notna().all()
+    result.add(
+        "County district labels",
+        county_names_ok,
+        "DISTRICT_NAME populated" if county_names_ok else "Missing or null DISTRICT_NAME values",
+    )
+    result.add(
+        "District names",
+        district_names_ok,
+        "DISTRICT_NAME populated" if district_names_ok else "Missing or null DISTRICT_NAME values",
     )
 
 
@@ -193,6 +328,48 @@ def validate_database(result: ValidationResult) -> None:
         conn.close()
 
 
+def validate_raptor_loader(result: ValidationResult) -> None:
+    """Smoke-test the RAPTOR RoadwayData loader against staged outputs."""
+    if not RAPTOR_DIR.exists():
+        result.add("RoadwayData loader", False, f"Path not found: {RAPTOR_DIR}")
+        return
+
+    sys.path.insert(0, str(RAPTOR_DIR))
+    try:
+        from states.Georgia.categories.Roadways import RoadwayData
+
+        statewide = RoadwayData()
+        statewide.load_data()
+        statewide_count = len(statewide.GA_RDWY_INV) if statewide.GA_RDWY_INV is not None else 0
+
+        district = RoadwayData(district_id=7)
+        district.load_data()
+        district_count = len(district.GA_RDWY_INV) if district.GA_RDWY_INV is not None else 0
+        district_values = (
+            set(pd.to_numeric(district.GA_RDWY_INV["DISTRICT"], errors="coerce").dropna().astype(int).unique())
+            if district.GA_RDWY_INV is not None and "DISTRICT" in district.GA_RDWY_INV.columns
+            else set()
+        )
+
+        result.add(
+            "RoadwayData statewide load",
+            statewide_count > 0,
+            f"{statewide_count:,} rows loaded",
+        )
+        result.add(
+            "RoadwayData district load",
+            district_count > 0 and district_values == {7},
+            f"{district_count:,} rows; districts={sorted(district_values)}",
+        )
+    except Exception as exc:
+        result.add("RoadwayData loader", False, str(exc))
+    finally:
+        try:
+            sys.path.remove(str(RAPTOR_DIR))
+        except ValueError:
+            pass
+
+
 def main() -> None:
     """Run all validation checks."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -207,10 +384,14 @@ def main() -> None:
         validate_unique_id(result, df)
         validate_null_checks(result, df)
         validate_district_range(result, df)
+        validate_aadt_coverage(result, df)
+        validate_decoded_labels(result, df)
 
     validate_crs(result)
     validate_geometry(result)
+    validate_boundary_layers(result)
     validate_database(result)
+    validate_raptor_loader(result)
 
     # Summary
     logger.info("")

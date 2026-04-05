@@ -109,7 +109,7 @@ Download, clean, and load freight data into the Georgia database. Build the RAPT
 
 ## RAPTOR Category Class
 
-**File**: `scripts/states/Georgia/categories/Freight.py`
+**File**: `05-RAPTOR-Integration/states/Georgia/categories/Freight.py`
 
 **Processing**:
 1. Load Truck AADT from roadway inventory (already in Phase 1 via TRUCK_PCT * AADT)
@@ -148,7 +148,7 @@ Download, clean, and load freight data into the Georgia database. Build the RAPT
 ## Deliverables
 - `02-Data-Staging/databases/freight.db`
 - `02-Data-Staging/spatial/freight.gpkg` (5 layers)
-- `scripts/states/Georgia/categories/Freight.py`
+- `05-RAPTOR-Integration/states/Georgia/categories/Freight.py`
 - Updated `Georgia_Data_Inventory.csv`
 
 ## Verification

@@ -17,13 +17,12 @@ logger = logging.getLogger(__name__)
 
 # GDOT Open Data portal URLs
 ROADWAY_GDB_URL = (
-    "https://opendata.arcgis.com/api/v3/datasets/"
-    "d56573b9da414e4e8a1bf76e2c0ffc97_0/downloads/"
-    "data?format=fgdb&spatialRefId=4326"
+    "https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/"
+    "Road_Inventory_Geodatabase.zip"
 )
 DATA_DICT_URL = (
-    "https://www.dot.ga.gov/GDOT/Divisions/Planning/"
-    "TransportationData/Documents/DataDictionary.pdf"
+    "https://www.dot.ga.gov/DriveSmart/Data/Documents/"
+    "Road_Inventory_Data_Dictionary.pdf"
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

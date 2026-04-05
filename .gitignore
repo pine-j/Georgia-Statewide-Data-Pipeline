@@ -1,6 +1,3 @@
-# Foundry project (managed separately)
-foundry/
-
 # Data files
 01-Raw-Data/**
 !01-Raw-Data/.gitkeep
@@ -32,3 +29,13 @@ build/
 .env
 .venv/
 venv/
+.claude/
+.cursor/
+.worktrees/
+.playwright-mcp/
+.tmp/
+
+# Webapp
+04-Webapp/frontend/node_modules/
+04-Webapp/frontend/dist/
+04-Webapp/backend/__pycache__/

@@ -1,6 +1,6 @@
 # Georgia Statewide Data Pipeline - Project Setup
 
-Last updated: 2026-03-27
+Last updated: 2026-04-05
 
 ## Project Location
 
@@ -8,26 +8,26 @@ Last updated: 2026-03-27
 
 ## What This Project Contains
 
-- A Palantir Foundry code repository for Python transforms
-- Gradle-based Foundry project scaffold in `foundry/`
-- Python transforms package in `foundry/transforms-python/` (`myproject.pipeline` + `myproject.datasets`)
-- CI config for pull requests/merge queue in `.github/workflows/ci.yml`
+- Project planning and assessment documentation in `00-Project-Management/`
+- Raw, staged, and processed data folders at the repo root
+- Local-first statewide web application in `04-Webapp/`
+- RAPTOR integration staging in `05-RAPTOR-Integration/`
+- CI workflow for pull requests and merge queue in `.github/workflows/ci.yml`
 
 ## Tooling and Runtime
 
 - Git repository
 - PowerShell shell on Windows
-- Python (minimum noted in docs: 3.7+, CI uses 3.12)
-- Gradle wrapper (`foundry/gradlew.bat`) for Foundry publish flow
-- Foundry/Maestro tooling (`palantir-transforms-sdk`, `maestro`)
+- Python for staging scripts and the web API backend
+- Node.js and npm for the web frontend
+- Docker Desktop optional for the local webapp stack
+- Local repo utilities in `repo-tools/` for hooks and worktree management
 
-Key transform/runtime dependencies are declared in `foundry/transforms-python/conda_recipe/meta.yaml`:
-- `transforms`
-- `transforms-expectations`
-- `transforms-preview`
-- `transforms-verbs`
-- `foundry-transforms-lib-python`
-- `transforms-external-systems` (pip)
+Current webapp stack under `04-Webapp/`:
+- Frontend: Vite + React + TypeScript
+- Backend: FastAPI + SQLAlchemy
+- Database: local PostGIS via Docker Compose
+- Mapping: MapLibre
 
 ## First-Time Setup
 
@@ -35,46 +35,74 @@ Key transform/runtime dependencies are declared in `foundry/transforms-python/co
 
 ```powershell
 cd "D:\Jacobs"
-git clone https://jacobs.palantirfoundry.com/stemma/git/ri.stemma.main.repository.91eaab98-945d-4496-891a-60255e03337b "Georgia-Statewide-Data-Pipeline"
+git clone <repository-url> "Georgia-Statewide-Data-Pipeline"
 cd "Georgia-Statewide-Data-Pipeline"
 ```
 
-### 2) Install local Foundry tooling
+### 2) Install git hooks (99 MB staged-file guard)
 
 ```powershell
-pip install palantir-transforms-sdk
+.\repo-tools\install-git-hooks.ps1
 ```
 
-### 3) Install project environment
+### 3) Set up the local webapp environment
+
+Use one of the following approaches when working in `04-Webapp/`.
+
+#### Option A: Docker Compose
 
 ```powershell
-cd "foundry"
-maestro env install
+cd "04-Webapp"
+docker compose up --build
 ```
 
-### 4) Install git hooks (99 MB staged-file guard)
+Services:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
+- OpenAPI: `http://localhost:8000/docs`
+- PostGIS: `localhost:5432`
+
+#### Option B: Run backend and frontend separately
+
+Backend:
 
 ```powershell
-cd "D:\Jacobs\Georgia-Statewide-Data-Pipeline"
-.\scripts\install-git-hooks.ps1
+cd "04-Webapp\backend"
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
+
+Frontend:
+
+```powershell
+cd "04-Webapp\frontend"
+npm install
+npm run dev
+```
+
+Tracked environment templates:
+- `04-Webapp/backend/.env.example`
+- `04-Webapp/frontend/.env.example`
 
 ## Daily Run Commands
 
-### Sync branch and create feature branch
+### Sync local `master`
 
 ```powershell
 git checkout master
 git pull origin master
-git checkout -b "feature/short-description"
 ```
 
-### Validate/publish flow used by Foundry CI config
+### Create a dedicated task worktree
 
 ```powershell
-cd "foundry"
-.\gradlew.bat --no-daemon --build-cache --stacktrace patch publish
+.\repo-tools\new-worktree.ps1 -Agent codex -Task short-description
 ```
+
+This creates a local feature branch in a dedicated worktree under `.worktrees/`.
+Keep the main checkout reserved for `master` integration work.
 
 ### Local code inspection commands
 
@@ -83,54 +111,100 @@ git status
 git diff
 ```
 
+### Common local webapp commands
+
+```powershell
+cd "04-Webapp"
+docker compose up --build
+```
+
+```powershell
+cd "04-Webapp\frontend"
+npm run build
+```
+
 Notes:
-- No dedicated `dev`, `test`, or `lint` scripts are currently enabled in this repo.
-- `pytest`/format/lint plugins are present as commented options in `foundry/transforms-python/build.gradle` but not enabled.
+- The root repo does not currently expose a single top-level `dev`, `test`, or `lint` command.
+- Frontend commands live in `04-Webapp/frontend/package.json`.
+- Backend dependencies live in `04-Webapp/backend/requirements.txt`.
 - A pre-commit hook blocks commits when any staged file exceeds 99 MB.
 
 ## Data and Artifact Notes
 
-- Source-of-truth transform code is under `foundry/transforms-python/src/myproject/`.
 - Data folder layout at repo root:
   - `01-Raw-Data/` (ignored in git except `.gitkeep`)
   - `02-Data-Staging/` (tracked)
   - `03-Processed-Data/` (tracked)
-- Root `.gitignore` ignores `foundry/` from the outer repo context (`foundry/` is managed separately).
-- Inside `foundry/`, generated/build artifacts are ignored (`.gradle/`, `build/`, `out/`, generated sources, caches).
-- Do not commit credentials/tokens; Foundry token is required for clone/push auth.
+- The living data inventory is `01-Raw-Data/Georgia_Data_Inventory.csv`.
+- Root `.gitignore` ignores large raw files, database artifacts, generated frontend output, virtual environments, and local worktrees.
+- Do not commit credentials, `.env` files, database dumps, or generated artifacts unless explicitly required.
 
 ## Branch and Merge Workflow
 
-- Default branch is `master` (see `foundry/gradle.properties` and CI trigger).
-- Never commit directly to `master`; work from a feature branch.
-- Merge queue is configured (GitHub `merge_group` event in `.github/workflows/ci.yml`).
-- PR and queue commands:
+- Default branch is `master`.
+- Do not do feature work in the main checkout.
+- Each agent or sub-agent works in its own local feature branch and dedicated worktree.
+- Do not push feature branches by default.
+- Merge completed task branches locally into `master`.
+- Push `master` to remote after the merge milestone.
+- Retire merged worktrees immediately after `master` is pushed.
+
+### Recommended task flow
+
+1. Update local `master`
+2. Create a dedicated worktree:
 
 ```powershell
-gh pr create --base master --fill
-gh pr merge --auto --merge
+.\repo-tools\new-worktree.ps1 -Agent codex -Task short-description
 ```
 
-- If merge conflicts occur, rebase on latest `master` and push:
+3. Change into the new worktree and do the task there
+4. Commit locally in the worktree as needed
+5. Return to the main checkout on `master`
+6. Merge the completed feature branch locally into `master`
+7. Push `master` and retire merged worktrees:
 
 ```powershell
-git pull --rebase origin master
-git push --force-with-lease
+.\repo-tools\push-master-and-cleanup.ps1
+```
+
+### Worktree cleanup commands
+
+```powershell
+# preview cleanup only
+.\repo-tools\cleanup-worktrees.ps1
+
+# apply cleanup after master has been pushed
+.\repo-tools\cleanup-worktrees.ps1 -RequireRemoteBaseMatch -Apply
 ```
 
 ## Core Folder Layout
 
 - `00-Project-Management/` project documentation
 - `.github/workflows/` CI workflow(s)
-- `foundry/` Foundry-managed Gradle project
-- `foundry/transforms-python/` Python transforms project
-- `foundry/docs/` local setup and push workflow notes
+- `01-Raw-Data/` raw downloads and the living data inventory
+- `02-Data-Staging/` ETL scripts, config, staging databases, and GeoPackage generation
+- `03-Processed-Data/` processed outputs
+- `04-Webapp/` local-first statewide web app source tree
+- `05-RAPTOR-Integration/` Georgia RAPTOR integration staging
+- `repo-tools/` local repository-maintenance scripts
 
 ## Primary In-Repo References
 
-- `.claude/CLAUDE.md`
+- `AGENT.md`
 - `.github/workflows/ci.yml`
-- `foundry/docs/local-development-setup.md`
-- `foundry/docs/pushing-changes-to-foundry.md`
-- `foundry/transforms-python/README.md`
-- `foundry/transforms-python/conda_recipe/meta.yaml`
+- `04-Webapp/README.md`
+- `repo-tools/README.md`
+- `repo-tools/new-worktree.ps1`
+- `repo-tools/push-master-and-cleanup.ps1`
+- `repo-tools/cleanup-worktrees.ps1`
+
+## Assessment And Options References
+
+Open these from the VS Code editor or Markdown preview:
+
+- [Assessment And Options Index](./Assessment_and_Options/README.md)
+- [2026-04-03 Roadway Gap-Fill Exploratory Report](./Assessment_and_Options/2026-04-03-roadway-gap-fill-exploratory-report.md)
+- [Roadway Gap-Fill Options](./Assessment_and_Options/roadway-gap-fill-options.md)
+- [Roadway Supplement Options](./Assessment_and_Options/roadway-supplement-options.md)
+- [Roadway Gap-Fill Options CSV](./Assessment_and_Options/roadway-gap-fill-options.csv)

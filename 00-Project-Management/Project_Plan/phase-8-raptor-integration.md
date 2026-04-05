@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ### 8.2 Copy Georgia code
 ```bash
-cp -r scripts/states/Georgia/ RAPTOR_Pipeline/states/Georgia/
+cp -r 05-RAPTOR-Integration/states/Georgia/ RAPTOR_Pipeline/states/Georgia/
 ```
 
 ### 8.3 Add Georgia CRS

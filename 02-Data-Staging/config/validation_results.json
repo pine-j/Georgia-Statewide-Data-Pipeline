@@ -1,0 +1,217 @@
+[
+  {
+    "name": "Row count",
+    "status": "PASS",
+    "detail": "622,255 rows loaded"
+  },
+  {
+    "name": "unique_id exists",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "unique_id uniqueness",
+    "status": "PASS",
+    "detail": "All unique"
+  },
+  {
+    "name": "Null check: unique_id",
+    "status": "PASS",
+    "detail": "0.0% null"
+  },
+  {
+    "name": "Null check: ROUTE_ID",
+    "status": "PASS",
+    "detail": "0.0% null"
+  },
+  {
+    "name": "Null check: COUNTY_ID",
+    "status": "PASS",
+    "detail": "1.4% null"
+  },
+  {
+    "name": "Null check: GDOT_District",
+    "status": "PASS",
+    "detail": "1.4% null"
+  },
+  {
+    "name": "Null check: SYSTEM_CODE",
+    "status": "PASS",
+    "detail": "0.0% null"
+  },
+  {
+    "name": "District range (1-7)",
+    "status": "PASS",
+    "detail": "Values found: [1, 2, 3, 4, 5, 6, 7]"
+  },
+  {
+    "name": "Current AADT coverage",
+    "status": "PASS",
+    "detail": "185,748 segments with current AADT"
+  },
+  {
+    "name": "Historic AADT coverage",
+    "status": "PASS",
+    "detail": "AADT_2010=82,786, AADT_2011=83,319, AADT_2012=83,775, AADT_2013=90,082, AADT_2014=104,022, AADT_2015=312,416, AADT_2016=207,449, AADT_2017=166,834, AADT_2018=166,311, AADT_2019=535,080, AADT_2020=548,343"
+  },
+  {
+    "name": "Decoded label: COUNTY_NAME",
+    "status": "PASS",
+    "detail": "613,557/613,557 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: DISTRICT_NAME",
+    "status": "PASS",
+    "detail": "613,557/613,557 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: DISTRICT_LABEL",
+    "status": "PASS",
+    "detail": "613,557/613,557 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: SYSTEM_CODE_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: FUNCTION_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: PARSED_FUNCTION_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: F_SYSTEM_LABEL",
+    "status": "PASS",
+    "detail": "475,960/475,960 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: FUNCTIONAL_CLASS_LABEL",
+    "status": "PASS",
+    "detail": "475,960/475,960 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: FACILITY_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "502,901/502,901 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: NHS_LABEL",
+    "status": "PASS",
+    "detail": "7,662/7,662 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: NHS_IND_LABEL",
+    "status": "PASS",
+    "detail": "7,662/7,662 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: MEDIAN_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "390/390 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: SHOULDER_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "390/390 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: SURFACE_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "7/7 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: URBAN_CODE_LABEL",
+    "status": "PASS",
+    "detail": "492,871/492,871 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: PARSED_DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: ROUTE_DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: PARSED_SYSTEM_CODE_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: ROUTE_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "622,255/622,255 source-coded rows decoded"
+  },
+  {
+    "name": "CRS verification",
+    "status": "PASS",
+    "detail": "CRS = EPSG:32617"
+  },
+  {
+    "name": "Geometry validity",
+    "status": "PASS",
+    "detail": "0 invalid, 0 empty out of 622,255"
+  },
+  {
+    "name": "Boundary layers exist",
+    "status": "PASS",
+    "detail": "county_boundaries, district_boundaries"
+  },
+  {
+    "name": "County boundary count",
+    "status": "PASS",
+    "detail": "159 features"
+  },
+  {
+    "name": "District boundary count",
+    "status": "PASS",
+    "detail": "7 features"
+  },
+  {
+    "name": "County district labels",
+    "status": "PASS",
+    "detail": "DISTRICT_NAME populated"
+  },
+  {
+    "name": "District names",
+    "status": "PASS",
+    "detail": "DISTRICT_NAME populated"
+  },
+  {
+    "name": "Database tables",
+    "status": "PASS",
+    "detail": "Tables: ['segments', 'load_summary']"
+  },
+  {
+    "name": "Database row count",
+    "status": "PASS",
+    "detail": "622,255 rows"
+  },
+  {
+    "name": "Load summary table",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "name": "RoadwayData statewide load",
+    "status": "PASS",
+    "detail": "109,314 rows loaded"
+  },
+  {
+    "name": "RoadwayData district load",
+    "status": "PASS",
+    "detail": "10,217 rows; districts=[np.int64(7)]"
+  }
+]

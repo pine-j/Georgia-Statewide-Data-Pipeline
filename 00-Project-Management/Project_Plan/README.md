@@ -7,12 +7,12 @@ A Georgia state pipeline matching the Texas pipeline in the [RAPTOR_Pipeline](ht
 ### RAPTOR Scoring Categories (matching Texas pipeline structure)
 | Category | Weight | RAPTOR Class | What It Measures | Data Readiness |
 |----------|--------|-------------|-----------------|----------------|
-| Asset Preservation | 0.20 | `AssetPreservation` | Pavement condition, bridge sufficiency/clearance | Bridges: NBI (public). Pavement: **blocked — GDOT data request needed** |
-| Safety | 0.20 | `Safety` | Crash counts and rates (5yr/3yr/1yr) | **Blocked — GEARS DSA required**. FARS interim (fatal only) |
-| Mobility | 0.20 | `Mobility` | AADT, V/C ratio, railroad crossings, congestion, travel time reliability | Ready. 2050 projection needs historic AADT (no design AADT like Texas) |
 | Connectivity | 0.15 | `Connectivity` | Priority routes, traffic generators, network connections, EV corridors | Ready |
-| Freight | 0.10 | `Freight` | Truck AADT, commodity tonnage/value, freight corridors | **Major gap — no Transearch data**. FAF5 workaround |
 | Socioeconomic | 0.15 | `SocioEconomic` | Population & employment density (Census block level) | Ready (Census + LEHD + OPB projections) |
+| Safety | 0.20 | `Safety` | Crash counts and rates (5yr/3yr/1yr) | Public interim data available. Full build still needs GEARS DSA |
+| Asset Preservation | 0.20 | `AssetPreservation` | Pavement condition, bridge sufficiency/clearance | Bridges: NBI (public). Pavement: GDOT request still needed |
+| Mobility | 0.20 | `Mobility` | AADT, V/C ratio, railroad crossings, congestion, travel time reliability | Mostly available. NPMRDS and 2050 projection inputs need extra unblocking |
+| Freight | 0.10 | `Freight` | Truck AADT, commodity tonnage/value, freight corridors | **Major gap — no Transearch data**. FAF5 workaround |
 
 ### Database-Only Categories (Post-RAPTOR)
 | Category | Datasets | Status |
@@ -47,11 +47,11 @@ Each dataset follows the same pipeline:
 | GPKG File | Layers | Phase |
 |-----------|--------|-------|
 | `base_network.gpkg` | roadway_segments, district_boundaries, county_boundaries | 1 |
-| `assets.gpkg` | bridges, pavement_sections | 2 |
-| `safety.gpkg` | crash_points | 3 |
-| `mobility.gpkg` | railroad_crossings, hpms_segments | 4 |
-| `connectivity.gpkg` | priority_routes, nevi_corridors, alt_fuel_stations, airports, seaports, universities, military_bases, national_parks, rail_facilities, freight_generators | 5 |
-| `demographics.gpkg` | census_blocks, block_groups, tracts, opportunity_zones | 6 |
+| `connectivity.gpkg` | priority_routes, nevi_corridors, alt_fuel_stations, airports, seaports, universities, military_bases, national_parks, rail_facilities, freight_generators | 2 |
+| `demographics.gpkg` | census_blocks, block_groups, tracts, opportunity_zones | 3 |
+| `safety.gpkg` | crash_points | 4 |
+| `assets.gpkg` | bridges, pavement_sections | 5 |
+| `mobility.gpkg` | railroad_crossings, hpms_segments | 6 |
 | `climate.gpkg` | flood_zones, elevation | 9 |
 | `land_use.gpkg` | land_cover, parcels_fulton | 10 |
 | `environmental.gpkg` | wetlands, critical_habitat, protected_areas, water_quality_sites | 11 |
@@ -64,6 +64,10 @@ Each dataset follows the same pipeline:
 ### Data Inventory
 All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This is a living document — add new datasets as they're discovered. Currently tracking **88 datasets** across 20+ categories.
 
+### Assessment And Options
+
+- [Roadway Supplement Options](../Assessment_and_Options/roadway-supplement-options.md)
+
 ---
 
 ### Two-Repo Workflow
@@ -73,7 +77,21 @@ All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This
 | **RAPTOR_Pipeline** (clone later) | Integration — wire Georgia into framework, scoring engine, output. Clone in Phase 8. |
 
 ### Transfer Strategy
-Code lives under `scripts/states/Georgia/` here, mirroring the RAPTOR layout. When ready, copy to RAPTOR clone, push branch, open PR.
+Code lives under `05-RAPTOR-Integration/states/Georgia/` here, mirroring the RAPTOR layout. When ready, copy to RAPTOR clone, push branch, open PR.
+
+---
+
+### Georgia Web App Shape
+
+The Georgia web app should stay local-first:
+
+- Frontend: Vite + React + TypeScript
+- Backend: FastAPI
+- Database: local PostGIS
+- Mapping: MapLibre
+- Runtime: local Docker Compose or direct local development commands
+
+This keeps the app aligned with the current project scope while preserving a clear frontend/backend split.
 
 ---
 
@@ -83,11 +101,11 @@ Code lives under `scripts/states/Georgia/` here, mirroring the RAPTOR layout. Wh
 | Phase | Focus | Depends On |
 |-------|-------|------------|
 | [Phase 1](phase-1-foundation.md) | Roadways Base Layer (Road Inventory, boundaries) | Road Inventory GDB download |
-| [Phase 2](phase-2-asset-preservation.md) | Asset Preservation (NBI Bridges, COPACES) | Phase 1 |
-| [Phase 3](phase-3-safety.md) | Safety (Crash Data, FARS, GOHS) | Phase 1 |
-| [Phase 4](phase-4-mobility.md) | Mobility (HPMS, Traffic Counts, NPMRDS, Railroad Crossings) | Phase 1 |
-| [Phase 5](phase-5-connectivity.md) | Connectivity (SRP, NEVI, AFDC, Traffic Generators) | Phase 1 |
-| [Phase 6](phase-6-socioeconomic.md) | Socioeconomic (Nationwide Census, LEHD, OPB, Employment Projections) | Phase 1 |
+| [Phase 2](phase-2-connectivity.md) | Connectivity (SRP, NEVI, AFDC, Traffic Generators) | Phase 1 |
+| [Phase 3](phase-3-socioeconomic.md) | Socioeconomic (Nationwide Census, LEHD, OPB, Employment Projections) | Phase 1 |
+| [Phase 4](phase-4-safety.md) | Safety (Crash Data, FARS, GOHS) | Phase 1 |
+| [Phase 5](phase-5-asset-preservation.md) | Asset Preservation (NBI Bridges, COPACES) | Phase 1 |
+| [Phase 6](phase-6-mobility.md) | Mobility (HPMS, Traffic Counts, NPMRDS, Railroad Crossings) | Phase 1 |
 | [Phase 7](phase-7-sharepoint.md) | SharePoint Data Organization | Phases 1-6 |
 | [Phase 8](phase-8-raptor-integration.md) | RAPTOR Integration + Output | Phases 1-7 |
 
@@ -103,11 +121,42 @@ Code lives under `scripts/states/Georgia/` here, mirroring the RAPTOR layout. Wh
 | [Phase 15](archive/phase-15-bicycle-pedestrian.md) | Bicycle & Pedestrian (GDOT, ARC, Atlanta) |
 | [Phase 16](archive/phase-16-environmental-justice.md) | Environmental Justice (EJScreen, EJI) |
 
-Phases 2-6 can run in any order after Phase 1. Post-RAPTOR plans are in `archive/` for future reference.
+Phases 2-6 are ordered by current data availability after Phase 1: Connectivity, Socioeconomic, Safety, Asset Preservation, then Mobility. Post-RAPTOR plans are in `archive/` for future reference.
 
 ---
 
 ### Georgia-Specific Notes
+
+### Phase 1 Status Snapshot
+
+Phase 1 is complete for the current project scope and serves as the closed roadway-foundation baseline for downstream phases.
+
+Current staged outputs:
+- `02-Data-Staging/databases/roadway_inventory.db`: `622,255` segmented roadway rows
+- `02-Data-Staging/spatial/base_network.gpkg`:
+  - `roadway_segments` (`622,255` features)
+  - `county_boundaries` (`159` features)
+  - `district_boundaries` (`7` features)
+
+Current traffic coverage in the staged roadway network:
+- Current AADT is present on `185,748` of `622,255` segments (`29.85%`)
+- Current AADT covers `38,359.71` of `133,992.56` staged segment miles (`28.63%`)
+- Historical route-segment traffic is staged for `2010-2020`
+- Historical route-segment traffic is not available for `2021-2023`
+
+Current classification available in Phase 1:
+- `SYSTEM_CODE` for roadway system / ownership class
+- `F_SYSTEM` / `FUNCTIONAL_CLASS` for functional class
+- Route-ID-derived fields for route parsing
+
+Phase 1 closeout position:
+- the GDOT-based staged roadway network is accepted as the working statewide baseline
+- validation results and web-app inspection are sufficient to proceed into later phases without first doing a statewide roadway supplement merge
+- supplementation and richer route-family labeling remain optional follow-on improvements, not closeout blockers
+
+Current working note for Phase 1:
+- A `2026-04-04` Playwright visual check of the fully loaded staged roadway layer found no obvious planning-relevant gaps in sampled Columbus / Dinglewood, Atlanta, and Savannah views.
+- The current GDOT-based network should be treated as adequate for initial statewide planning, with roadway supplementation kept as a follow-on validation/improvement track unless later QA shows planning-relevant omissions.
 
 **Key Differences from Texas** (see [Texas_vs_Georgia_Data_Comparison.md](../Texas_vs_Georgia_Data_Comparison.md) for full analysis):
 | Aspect | Texas | Georgia |
@@ -144,8 +193,15 @@ Phases 2-6 can run in any order after Phase 1. Post-RAPTOR plans are in `archive
 The pipeline is designed to grow. Post-RAPTOR phases (Transit, Bike/Ped, EJ, Climate, Land Use, Environmental, Cultural) are already documented and can be promoted to active RAPTOR categories when needed. When the team adds a new category:
 
 1. **Build the ETL** — download, normalize, create_db, validate scripts in `02-Data-Staging/scripts/`
-2. **Build the RAPTOR class** — `scripts/states/Georgia/categories/NewCategory.py` following the `generate_metrics(roadways)` pattern
+2. **Build the RAPTOR class** — `05-RAPTOR-Integration/states/Georgia/categories/NewCategory.py` following the `generate_metrics(roadways)` pattern
 3. **Update the scoring schema** — add category with weight (all weights must sum to 1.0)
 4. **Wire into `pipeline.py`** — import, instantiate, call `generate_metrics()`
 5. **Update data inventory** — add datasets to `Georgia_Data_Inventory_GDOT.csv`
 6. **Re-run** — the scoring engine picks up new categories automatically
+
+---
+
+### Assessment And Options
+
+- [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
+  - Compares GDOT live services, TIGER/Line, OpenStreetMap, USGS NTD, and Georgia GIS clearinghouse options for filling local-road gaps in the staged GPKG while preserving source provenance.
