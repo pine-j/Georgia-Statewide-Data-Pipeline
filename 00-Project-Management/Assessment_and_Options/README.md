@@ -12,3 +12,14 @@
 
 - These files document exploratory analysis only.
 - They are intended to preserve dataset screening, local verification, and merge-design decisions before production changes are made.
+
+## Utilities
+
+- [gdot_statewide_roads_probe.py](../../02-Data-Staging/scripts/01_roadway_inventory/gdot_statewide_roads_probe.py)
+  - Exploratory probe and tiled extractor for the GDOT live `ARCWEBSVCMAP / Statewide Roads` layer.
+  - Saves metadata, probe responses, checkpoints, and tile outputs under `01-Raw-Data/GDOT_Statewide_Roads_Live/`.
+  - Not production-ready merge input: tiled outputs can duplicate features across tile boundaries.
+- [analyze_aoi_roadway_coverage.py](../../02-Data-Staging/scripts/01_roadway_inventory/analyze_aoi_roadway_coverage.py)
+  - Clips the staged `base_network.gpkg` to one or more AOIs and writes review artifacts under `.tmp/roadway_gap_fill/aoi_roadway_reviews/`.
+- [aoi_samples.example.csv](../../02-Data-Staging/scripts/01_roadway_inventory/aoi_samples.example.csv)
+  - Starter AOIs for the Columbus, Atlanta, and Savannah exploratory checks.

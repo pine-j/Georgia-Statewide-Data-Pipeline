@@ -1,0 +1,4 @@
+aoi_id,xmin,ymin,xmax,ymax,srid,notes
+columbus-dinglewood,-84.999,32.450,-84.985,32.465,4326,Confirmed exploratory gap area from the April 2026 assessment work.
+atlanta-sample,-84.369,33.748,-84.353,33.764,4326,Starter urban AOI for follow-up comparison work.
+savannah-sample,-81.111,32.064,-81.095,32.080,4326,Starter urban AOI for follow-up comparison work.
