@@ -1,0 +1,829 @@
+{
+  "districts": [
+    {
+      "id": 1,
+      "label": "District 1"
+    },
+    {
+      "id": 2,
+      "label": "District 2"
+    },
+    {
+      "id": 3,
+      "label": "District 3"
+    },
+    {
+      "id": 4,
+      "label": "District 4"
+    },
+    {
+      "id": 5,
+      "label": "District 5"
+    },
+    {
+      "id": 6,
+      "label": "District 6"
+    },
+    {
+      "id": 7,
+      "label": "District 7"
+    }
+  ],
+  "counties": [
+    {
+      "county": "Appling",
+      "county_fips": "001",
+      "district": 5
+    },
+    {
+      "county": "Atkinson",
+      "county_fips": "003",
+      "district": 4
+    },
+    {
+      "county": "Bacon",
+      "county_fips": "005",
+      "district": 5
+    },
+    {
+      "county": "Baker",
+      "county_fips": "007",
+      "district": 4
+    },
+    {
+      "county": "Baldwin",
+      "county_fips": "009",
+      "district": 2
+    },
+    {
+      "county": "Banks",
+      "county_fips": "011",
+      "district": 1
+    },
+    {
+      "county": "Barrow",
+      "county_fips": "013",
+      "district": 1
+    },
+    {
+      "county": "Bartow",
+      "county_fips": "015",
+      "district": 6
+    },
+    {
+      "county": "Ben Hill",
+      "county_fips": "017",
+      "district": 4
+    },
+    {
+      "county": "Berrien",
+      "county_fips": "019",
+      "district": 4
+    },
+    {
+      "county": "Bibb",
+      "county_fips": "021",
+      "district": 3
+    },
+    {
+      "county": "Bleckley",
+      "county_fips": "023",
+      "district": 2
+    },
+    {
+      "county": "Brantley",
+      "county_fips": "025",
+      "district": 5
+    },
+    {
+      "county": "Brooks",
+      "county_fips": "027",
+      "district": 4
+    },
+    {
+      "county": "Bryan",
+      "county_fips": "029",
+      "district": 5
+    },
+    {
+      "county": "Bulloch",
+      "county_fips": "031",
+      "district": 5
+    },
+    {
+      "county": "Burke",
+      "county_fips": "033",
+      "district": 2
+    },
+    {
+      "county": "Butts",
+      "county_fips": "035",
+      "district": 3
+    },
+    {
+      "county": "Calhoun",
+      "county_fips": "037",
+      "district": 4
+    },
+    {
+      "county": "Camden",
+      "county_fips": "039",
+      "district": 5
+    },
+    {
+      "county": "Candler",
+      "county_fips": "043",
+      "district": 5
+    },
+    {
+      "county": "Carroll",
+      "county_fips": "045",
+      "district": 6
+    },
+    {
+      "county": "Catoosa",
+      "county_fips": "047",
+      "district": 6
+    },
+    {
+      "county": "Charlton",
+      "county_fips": "049",
+      "district": 5
+    },
+    {
+      "county": "Chatham",
+      "county_fips": "051",
+      "district": 5
+    },
+    {
+      "county": "Chattahoochee",
+      "county_fips": "053",
+      "district": 3
+    },
+    {
+      "county": "Chattooga",
+      "county_fips": "055",
+      "district": 6
+    },
+    {
+      "county": "Cherokee",
+      "county_fips": "057",
+      "district": 6
+    },
+    {
+      "county": "Clarke",
+      "county_fips": "059",
+      "district": 1
+    },
+    {
+      "county": "Clay",
+      "county_fips": "061",
+      "district": 4
+    },
+    {
+      "county": "Clayton",
+      "county_fips": "063",
+      "district": 7
+    },
+    {
+      "county": "Clinch",
+      "county_fips": "065",
+      "district": 5
+    },
+    {
+      "county": "Cobb",
+      "county_fips": "067",
+      "district": 7
+    },
+    {
+      "county": "Coffee",
+      "county_fips": "069",
+      "district": 4
+    },
+    {
+      "county": "Colquitt",
+      "county_fips": "071",
+      "district": 4
+    },
+    {
+      "county": "Columbia",
+      "county_fips": "073",
+      "district": 2
+    },
+    {
+      "county": "Cook",
+      "county_fips": "075",
+      "district": 4
+    },
+    {
+      "county": "Coweta",
+      "county_fips": "077",
+      "district": 3
+    },
+    {
+      "county": "Crawford",
+      "county_fips": "079",
+      "district": 3
+    },
+    {
+      "county": "Crisp",
+      "county_fips": "081",
+      "district": 4
+    },
+    {
+      "county": "Dade",
+      "county_fips": "083",
+      "district": 6
+    },
+    {
+      "county": "Dawson",
+      "county_fips": "085",
+      "district": 1
+    },
+    {
+      "county": "DeKalb",
+      "county_fips": "089",
+      "district": 7
+    },
+    {
+      "county": "Decatur",
+      "county_fips": "087",
+      "district": 4
+    },
+    {
+      "county": "Dodge",
+      "county_fips": "091",
+      "district": 2
+    },
+    {
+      "county": "Dooly",
+      "county_fips": "093",
+      "district": 3
+    },
+    {
+      "county": "Dougherty",
+      "county_fips": "095",
+      "district": 4
+    },
+    {
+      "county": "Douglas",
+      "county_fips": "097",
+      "district": 7
+    },
+    {
+      "county": "Early",
+      "county_fips": "099",
+      "district": 4
+    },
+    {
+      "county": "Echols",
+      "county_fips": "101",
+      "district": 4
+    },
+    {
+      "county": "Effingham",
+      "county_fips": "103",
+      "district": 5
+    },
+    {
+      "county": "Elbert",
+      "county_fips": "105",
+      "district": 1
+    },
+    {
+      "county": "Emanuel",
+      "county_fips": "107",
+      "district": 2
+    },
+    {
+      "county": "Evans",
+      "county_fips": "109",
+      "district": 5
+    },
+    {
+      "county": "Fannin",
+      "county_fips": "111",
+      "district": 6
+    },
+    {
+      "county": "Fayette",
+      "county_fips": "113",
+      "district": 3
+    },
+    {
+      "county": "Floyd",
+      "county_fips": "115",
+      "district": 6
+    },
+    {
+      "county": "Forsyth",
+      "county_fips": "117",
+      "district": 1
+    },
+    {
+      "county": "Franklin",
+      "county_fips": "119",
+      "district": 1
+    },
+    {
+      "county": "Fulton",
+      "county_fips": "121",
+      "district": 7
+    },
+    {
+      "county": "Gilmer",
+      "county_fips": "123",
+      "district": 6
+    },
+    {
+      "county": "Glascock",
+      "county_fips": "125",
+      "district": 2
+    },
+    {
+      "county": "Glynn",
+      "county_fips": "127",
+      "district": 5
+    },
+    {
+      "county": "Gordon",
+      "county_fips": "129",
+      "district": 6
+    },
+    {
+      "county": "Grady",
+      "county_fips": "131",
+      "district": 4
+    },
+    {
+      "county": "Greene",
+      "county_fips": "133",
+      "district": 2
+    },
+    {
+      "county": "Gwinnett",
+      "county_fips": "135",
+      "district": 1
+    },
+    {
+      "county": "Habersham",
+      "county_fips": "137",
+      "district": 1
+    },
+    {
+      "county": "Hall",
+      "county_fips": "139",
+      "district": 1
+    },
+    {
+      "county": "Hancock",
+      "county_fips": "141",
+      "district": 2
+    },
+    {
+      "county": "Haralson",
+      "county_fips": "143",
+      "district": 6
+    },
+    {
+      "county": "Harris",
+      "county_fips": "145",
+      "district": 3
+    },
+    {
+      "county": "Hart",
+      "county_fips": "147",
+      "district": 1
+    },
+    {
+      "county": "Heard",
+      "county_fips": "149",
+      "district": 3
+    },
+    {
+      "county": "Henry",
+      "county_fips": "151",
+      "district": 3
+    },
+    {
+      "county": "Houston",
+      "county_fips": "153",
+      "district": 3
+    },
+    {
+      "county": "Irwin",
+      "county_fips": "155",
+      "district": 4
+    },
+    {
+      "county": "Jackson",
+      "county_fips": "157",
+      "district": 1
+    },
+    {
+      "county": "Jasper",
+      "county_fips": "159",
+      "district": 2
+    },
+    {
+      "county": "Jeff Davis",
+      "county_fips": "161",
+      "district": 5
+    },
+    {
+      "county": "Jefferson",
+      "county_fips": "163",
+      "district": 2
+    },
+    {
+      "county": "Jenkins",
+      "county_fips": "165",
+      "district": 2
+    },
+    {
+      "county": "Johnson",
+      "county_fips": "167",
+      "district": 2
+    },
+    {
+      "county": "Jones",
+      "county_fips": "169",
+      "district": 3
+    },
+    {
+      "county": "Lamar",
+      "county_fips": "171",
+      "district": 3
+    },
+    {
+      "county": "Lanier",
+      "county_fips": "173",
+      "district": 4
+    },
+    {
+      "county": "Laurens",
+      "county_fips": "175",
+      "district": 2
+    },
+    {
+      "county": "Lee",
+      "county_fips": "177",
+      "district": 4
+    },
+    {
+      "county": "Liberty",
+      "county_fips": "179",
+      "district": 5
+    },
+    {
+      "county": "Lincoln",
+      "county_fips": "181",
+      "district": 2
+    },
+    {
+      "county": "Long",
+      "county_fips": "183",
+      "district": 5
+    },
+    {
+      "county": "Lowndes",
+      "county_fips": "185",
+      "district": 4
+    },
+    {
+      "county": "Lumpkin",
+      "county_fips": "187",
+      "district": 1
+    },
+    {
+      "county": "Macon",
+      "county_fips": "193",
+      "district": 3
+    },
+    {
+      "county": "Madison",
+      "county_fips": "195",
+      "district": 1
+    },
+    {
+      "county": "Marion",
+      "county_fips": "197",
+      "district": 3
+    },
+    {
+      "county": "McDuffie",
+      "county_fips": "189",
+      "district": 2
+    },
+    {
+      "county": "McIntosh",
+      "county_fips": "191",
+      "district": 5
+    },
+    {
+      "county": "Meriwether",
+      "county_fips": "199",
+      "district": 3
+    },
+    {
+      "county": "Miller",
+      "county_fips": "201",
+      "district": 4
+    },
+    {
+      "county": "Mitchell",
+      "county_fips": "205",
+      "district": 4
+    },
+    {
+      "county": "Monroe",
+      "county_fips": "207",
+      "district": 3
+    },
+    {
+      "county": "Montgomery",
+      "county_fips": "209",
+      "district": 5
+    },
+    {
+      "county": "Morgan",
+      "county_fips": "211",
+      "district": 2
+    },
+    {
+      "county": "Murray",
+      "county_fips": "213",
+      "district": 6
+    },
+    {
+      "county": "Muscogee",
+      "county_fips": "215",
+      "district": 3
+    },
+    {
+      "county": "Newton",
+      "county_fips": "217",
+      "district": 2
+    },
+    {
+      "county": "Oconee",
+      "county_fips": "219",
+      "district": 1
+    },
+    {
+      "county": "Oglethorpe",
+      "county_fips": "221",
+      "district": 2
+    },
+    {
+      "county": "Paulding",
+      "county_fips": "223",
+      "district": 6
+    },
+    {
+      "county": "Peach",
+      "county_fips": "225",
+      "district": 3
+    },
+    {
+      "county": "Pickens",
+      "county_fips": "227",
+      "district": 6
+    },
+    {
+      "county": "Pierce",
+      "county_fips": "229",
+      "district": 5
+    },
+    {
+      "county": "Pike",
+      "county_fips": "231",
+      "district": 3
+    },
+    {
+      "county": "Polk",
+      "county_fips": "233",
+      "district": 6
+    },
+    {
+      "county": "Pulaski",
+      "county_fips": "235",
+      "district": 3
+    },
+    {
+      "county": "Putnam",
+      "county_fips": "237",
+      "district": 2
+    },
+    {
+      "county": "Quitman",
+      "county_fips": "239",
+      "district": 4
+    },
+    {
+      "county": "Rabun",
+      "county_fips": "241",
+      "district": 1
+    },
+    {
+      "county": "Randolph",
+      "county_fips": "243",
+      "district": 4
+    },
+    {
+      "county": "Richmond",
+      "county_fips": "245",
+      "district": 2
+    },
+    {
+      "county": "Rockdale",
+      "county_fips": "247",
+      "district": 7
+    },
+    {
+      "county": "Schley",
+      "county_fips": "249",
+      "district": 3
+    },
+    {
+      "county": "Screven",
+      "county_fips": "251",
+      "district": 5
+    },
+    {
+      "county": "Seminole",
+      "county_fips": "253",
+      "district": 4
+    },
+    {
+      "county": "Spalding",
+      "county_fips": "255",
+      "district": 3
+    },
+    {
+      "county": "Stephens",
+      "county_fips": "257",
+      "district": 1
+    },
+    {
+      "county": "Stewart",
+      "county_fips": "259",
+      "district": 3
+    },
+    {
+      "county": "Sumter",
+      "county_fips": "261",
+      "district": 3
+    },
+    {
+      "county": "Talbot",
+      "county_fips": "263",
+      "district": 3
+    },
+    {
+      "county": "Taliaferro",
+      "county_fips": "265",
+      "district": 2
+    },
+    {
+      "county": "Tattnall",
+      "county_fips": "267",
+      "district": 5
+    },
+    {
+      "county": "Taylor",
+      "county_fips": "269",
+      "district": 3
+    },
+    {
+      "county": "Telfair",
+      "county_fips": "271",
+      "district": 5
+    },
+    {
+      "county": "Terrell",
+      "county_fips": "273",
+      "district": 4
+    },
+    {
+      "county": "Thomas",
+      "county_fips": "275",
+      "district": 4
+    },
+    {
+      "county": "Tift",
+      "county_fips": "277",
+      "district": 4
+    },
+    {
+      "county": "Toombs",
+      "county_fips": "279",
+      "district": 5
+    },
+    {
+      "county": "Towns",
+      "county_fips": "281",
+      "district": 1
+    },
+    {
+      "county": "Treutlen",
+      "county_fips": "283",
+      "district": 2
+    },
+    {
+      "county": "Troup",
+      "county_fips": "285",
+      "district": 3
+    },
+    {
+      "county": "Turner",
+      "county_fips": "287",
+      "district": 4
+    },
+    {
+      "county": "Twiggs",
+      "county_fips": "289",
+      "district": 3
+    },
+    {
+      "county": "Union",
+      "county_fips": "291",
+      "district": 1
+    },
+    {
+      "county": "Upson",
+      "county_fips": "293",
+      "district": 3
+    },
+    {
+      "county": "Walker",
+      "county_fips": "295",
+      "district": 6
+    },
+    {
+      "county": "Walton",
+      "county_fips": "297",
+      "district": 1
+    },
+    {
+      "county": "Ware",
+      "county_fips": "299",
+      "district": 5
+    },
+    {
+      "county": "Warren",
+      "county_fips": "301",
+      "district": 2
+    },
+    {
+      "county": "Washington",
+      "county_fips": "303",
+      "district": 2
+    },
+    {
+      "county": "Wayne",
+      "county_fips": "305",
+      "district": 5
+    },
+    {
+      "county": "Webster",
+      "county_fips": "307",
+      "district": 3
+    },
+    {
+      "county": "Wheeler",
+      "county_fips": "309",
+      "district": 5
+    },
+    {
+      "county": "White",
+      "county_fips": "311",
+      "district": 1
+    },
+    {
+      "county": "Whitfield",
+      "county_fips": "313",
+      "district": 6
+    },
+    {
+      "county": "Wilcox",
+      "county_fips": "315",
+      "district": 4
+    },
+    {
+      "county": "Wilkes",
+      "county_fips": "317",
+      "district": 2
+    },
+    {
+      "county": "Wilkinson",
+      "county_fips": "319",
+      "district": 2
+    },
+    {
+      "county": "Worth",
+      "county_fips": "321",
+      "district": 4
+    }
+  ]
+}

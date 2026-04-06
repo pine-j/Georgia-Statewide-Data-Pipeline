@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MAX_BYTES=$((99 * 1024 * 1024))
+MAX_MB=99
+has_oversized_file=0
+
+while IFS= read -r -d '' file; do
+    if [[ -f "$file" ]]; then
+        size_bytes=$(wc -c <"$file")
+        if (( size_bytes > MAX_BYTES )); then
+            size_mb=$(awk "BEGIN { printf \"%.2f\", $size_bytes / 1024 / 1024 }")
+            echo "ERROR: '$file' is ${size_mb} MB (> ${MAX_MB} MB limit)."
+            has_oversized_file=1
+        fi
+    fi
+done < <(git diff --cached --name-only --diff-filter=AM -z)
+
+if (( has_oversized_file == 1 )); then
+    echo ""
+    echo "Commit blocked: staged files above 99 MB are not allowed."
+    echo "Move large raw inputs under '01-Raw-Data/' (ignored) or remove from staging."
+    exit 1
+fi
+
+exit 0

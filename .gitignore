@@ -1,2 +1,41 @@
-# Foundry project (managed separately)
-foundry/
+# Data files
+01-Raw-Data/**
+!01-Raw-Data/.gitkeep
+!01-Raw-Data/**/
+!01-Raw-Data/**/.gitkeep
+
+# SQLite databases
+*.db
+
+# GeoPackage files
+*.gpkg
+
+# Esri geodatabases
+*.gdb
+
+# Staging outputs
+02-Data-Staging/databases/
+02-Data-Staging/spatial/
+02-Data-Staging/cleaned/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+.claude/
+.cursor/
+.worktrees/
+.playwright-mcp/
+.tmp/
+
+# Webapp
+04-Webapp/frontend/node_modules/
+04-Webapp/frontend/dist/
+04-Webapp/backend/__pycache__/

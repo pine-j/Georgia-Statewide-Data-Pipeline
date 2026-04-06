@@ -1,0 +1,100 @@
+{
+  "system_code": {
+    "1": "State Highway Route",
+    "2": "Public Road",
+    "3": "Private Road",
+    "4": "Federal Route",
+    "6": "Ramp",
+    "7": "Private Road",
+    "8": "Public Road",
+    "9": "Collector Distributor"
+  },
+  "function_type": {
+    "1": "Main Line",
+    "2": "Ramp",
+    "3": "Collector Distributor",
+    "4": "Ramp-CD Connector",
+    "5": "Frontage Road",
+    "7": "Separate Managed Facility",
+    "8": "Local",
+    "9": "Private",
+    "P": "Projected",
+    "Z": "Other"
+  },
+  "functional_class": {
+    "1": "Interstate",
+    "2": "Principal Arterial - Other Freeways and Expressways",
+    "3": "Principal Arterial - Other",
+    "4": "Minor Arterial",
+    "5": "Major Collector",
+    "6": "Minor Collector",
+    "7": "Local"
+  },
+  "facility_type": {
+    "1": "One-Way (non-restricted)",
+    "2": "Two-Way (non-restricted)",
+    "3": "Ramp",
+    "4": "Non Mainline",
+    "5": "Non Inventory",
+    "6": "Planned/Unbuilt"
+  },
+  "nhs": {
+    "1": "Non Connector NHS",
+    "2": "Major Airport",
+    "3": "Major Port Facility",
+    "4": "Major Amtrak Station",
+    "5": "Major Rail/Truck Terminal",
+    "6": "Major Inter City Bus Terminal",
+    "7": "Major Public Transportation or Multi-Modal Passenger Terminal",
+    "8": "Major Pipeline Terminal",
+    "9": "Major Ferry Terminal"
+  },
+  "median_type": {
+    "1": "No Median",
+    "2": "Unprotected",
+    "3": "Curbed",
+    "4": "Positive Barrier (unspecified)",
+    "5": "Positive Barrier (flexible)"
+  },
+  "shoulder_type": {
+    "1": "No Shoulder",
+    "2": "Surface Shoulder Exists - Bituminous Concrete (AC)",
+    "3": "Surface Shoulder Exists - Portland Cement Concrete (PCC) Surface",
+    "4": "Stabilized Shoulder Exists",
+    "5": "Combination Shoulder Exists",
+    "6": "Earth Shoulder Exists",
+    "7": "Barrier Curb Exists; no shoulder in front of curb"
+  },
+  "surface_type": {
+    "1": "Unpaved",
+    "2": "Bituminous",
+    "3": "JPCP - Jointed Plain Concrete Pavement",
+    "5": "CRCP - Continuously Reinforced Concrete Pavement",
+    "7": "AC Overlay over Existing Jointed Concrete Pavement"
+  },
+  "route_direction": {
+    "INC": "Increasing",
+    "DEC": "Decreasing"
+  },
+  "urban_code": {
+    "00901": "Albany",
+    "03763": "Athens-Clarke County",
+    "03817": "Atlanta",
+    "04222": "Augusta-Richmond County",
+    "11026": "Brunswick",
+    "14185": "Cartersville",
+    "15832": "Chattanooga",
+    "19099": "Columbus",
+    "22069": "Dalton",
+    "32194": "Gainesville",
+    "39133": "Hinesville",
+    "52822": "Macon",
+    "76204": "Rome",
+    "79768": "Savannah",
+    "89974": "Valdosta",
+    "91783": "Warner Robins",
+    "96130": "Winder",
+    "99998": "Small Urban Sections",
+    "99999": "Rural Area Sections"
+  }
+}
