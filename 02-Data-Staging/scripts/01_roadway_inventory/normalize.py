@@ -42,10 +42,6 @@ from shapely.ops import substring
 from hpms_enrichment import apply_hpms_enrichment, write_hpms_enrichment_summary
 from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
 from route_family import classify_route_families
-from route_verification import (
-    apply_signed_route_verification,
-    write_signed_route_verification_summary,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -2167,7 +2163,6 @@ def main() -> None:
         logger.warning("No CRS set on segmented network; cannot reproject")
 
     segmented = compute_segment_length(segmented)
-    segmented = apply_signed_route_verification(segmented)
     segmented = apply_rnhp_enrichment(segmented)
     existing_gpkg_path = SPATIAL_DIR / "base_network.gpkg"
     county_boundaries_for_backfill = load_county_boundaries_for_attribute_backfill(existing_gpkg_path)
@@ -2220,7 +2215,6 @@ def main() -> None:
 
     write_match_summary(segmented)
     write_current_aadt_coverage_audit(segmented)
-    write_signed_route_verification_summary(segmented)
     write_enrichment_summary(segmented)
     write_hpms_enrichment_summary(segmented)
     logger.info("Normalization complete.")

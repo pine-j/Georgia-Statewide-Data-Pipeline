@@ -237,7 +237,7 @@
   {
     "name": "Decoded label: F_SYSTEM_LABEL",
     "status": "PASS",
-    "detail": "215,416/215,416 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FUNCTIONAL_CLASS_LABEL",
@@ -247,12 +247,12 @@
   {
     "name": "Decoded label: FACILITY_TYPE_LABEL",
     "status": "PASS",
-    "detail": "222,060/222,060 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_LABEL",
     "status": "PASS",
-    "detail": "1,150/1,150 source-coded rows decoded"
+    "detail": "7,830/7,830 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_IND_LABEL",
@@ -262,7 +262,7 @@
   {
     "name": "Decoded label: OWNERSHIP_LABEL",
     "status": "PASS",
-    "detail": "209,829/209,829 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: STRAHNET_LABEL",
@@ -272,17 +272,17 @@
   {
     "name": "Decoded label: MEDIAN_TYPE_LABEL",
     "status": "PASS",
-    "detail": "114/114 source-coded rows decoded"
+    "detail": "3,980/3,980 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SHOULDER_TYPE_LABEL",
     "status": "PASS",
-    "detail": "114/114 source-coded rows decoded"
+    "detail": "3,980/3,980 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SURFACE_TYPE_LABEL",
     "status": "PASS",
-    "detail": "4/4 source-coded rows decoded"
+    "detail": "10,466/10,466 source-coded rows decoded"
   },
   {
     "name": "Decoded label: URBAN_CODE_LABEL",

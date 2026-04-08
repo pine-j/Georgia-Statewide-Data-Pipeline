@@ -1,7 +1,7 @@
 """Download RNHP enrichment layers for Georgia roadway ETL.
 
 Outputs are written under:
-`01-Raw-Data/GA_RDWY_INV/rnhp_enrichment/`
+`01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/rnhp_enrichment/`
 """
 
 from __future__ import annotations

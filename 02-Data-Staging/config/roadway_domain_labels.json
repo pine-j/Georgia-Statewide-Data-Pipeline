@@ -87,7 +87,9 @@
     "2": "Unprotected",
     "3": "Curbed",
     "4": "Positive Barrier (unspecified)",
-    "5": "Positive Barrier (flexible)"
+    "5": "Positive Barrier (flexible)",
+    "6": "Positive Barrier (rigid)",
+    "7": "Positive Barrier (cable)"
   },
   "shoulder_type": {
     "1": "No Shoulder",
@@ -103,7 +105,8 @@
     "2": "Bituminous",
     "3": "JPCP - Jointed Plain Concrete Pavement",
     "5": "CRCP - Continuously Reinforced Concrete Pavement",
-    "7": "AC Overlay over Existing Jointed Concrete Pavement"
+    "7": "AC Overlay over Existing Jointed Concrete Pavement",
+    "11": "Gravel"
   },
   "route_direction": {
     "INC": "Increasing",

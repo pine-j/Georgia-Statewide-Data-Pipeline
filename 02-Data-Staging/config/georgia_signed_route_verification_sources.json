@@ -4,14 +4,14 @@
       "layer_name": "GDOT Interstates",
       "reference_family": "Interstate",
       "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/7",
-      "local_geojson": "01-Raw-Data/GA_RDWY_INV/signed_route_references/interstates.geojson",
+      "local_geojson": "01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/signed_route_references/interstates.geojson",
       "match_key": "route_id_base"
     },
     "us_highway": {
       "layer_name": "US Route",
       "reference_family": "U.S. Route",
       "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/6",
-      "local_geojson": "01-Raw-Data/GA_RDWY_INV/signed_route_references/us_highway.geojson",
+      "local_geojson": "01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/signed_route_references/us_highway.geojson",
       "match_key": "route_id_base"
     }
   },

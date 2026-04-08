@@ -1,6 +1,7 @@
 {
   "segment_count": 244904,
   "hpms_aadt_filled": 196247,
+  "hpms_signing_upgrades": 223136,
   "hpms_iri_coverage": 10410,
   "hpms_psr_coverage": 56,
   "hpms_rutting_coverage": 9591,
@@ -8,6 +9,26 @@
   "hpms_access_control_coverage": 10519,
   "hpms_terrain_coverage": 891,
   "hpms_route_signing_coverage": 223136,
+  "signed_route_source_counts": {
+    "hpms_2024": 223136,
+    "route_id_crosswalk": 21768
+  },
+  "gap_fill_coverage": {
+    "hpms_gap_fill_through_lanes": 241728,
+    "hpms_gap_fill_lane_width": 3980,
+    "hpms_gap_fill_median_type": 3980,
+    "hpms_gap_fill_median_width": 1076,
+    "hpms_gap_fill_shoulder_type": 3980,
+    "hpms_gap_fill_shoulder_width_l": 1076,
+    "hpms_gap_fill_shoulder_width_r": 3980,
+    "hpms_gap_fill_surface_type": 10466,
+    "hpms_gap_fill_f_system": 241744,
+    "hpms_gap_fill_facility_type": 241744,
+    "hpms_gap_fill_nhs": 7830,
+    "hpms_gap_fill_ownership": 241744,
+    "hpms_gap_fill_urban_id": 241728,
+    "hpms_gap_fill_speed_limit": 20343
+  },
   "final_aadt_coverage": 244819,
   "final_aadt_source_counts": {
     "hpms_2024": 196247,
