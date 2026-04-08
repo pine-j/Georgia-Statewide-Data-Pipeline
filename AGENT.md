@@ -18,6 +18,10 @@ Multiple agents may run concurrently. Each agent must:
 
 Never commit directly to `master`.
 
+If you inherit a checkout where `master` is already ahead of `origin/master`,
+treat those local commits as existing state to preserve. Do not rewrite,
+discard, or "fix" that history unless the user explicitly asks.
+
 ## Worktree Requirement
 
 Every agent and sub-agent must create and use its own git worktree when starting a task. Do not have two agents work from the same checkout when they may touch overlapping files.
@@ -59,7 +63,8 @@ Cleanup command:
 
 ## Context Exclusions
 
-Ignore the `.tmp/` folder for project decisions and summaries. Treat it as scratch/reference space, not project source-of-truth.
+Ignore the `.tmp/` and `.playwright-mcp/` folders for project decisions and
+summaries. Treat them as scratch/reference space, not project source-of-truth.
 
 ## Current Repo Structure
 
@@ -104,11 +109,16 @@ When supplementing the roadway network from a secondary source, preserve explici
 
 - frontend: Vite + React + TypeScript
 - backend: FastAPI
-- database: local PostGIS
+- default current backend data mode: staged SQLite + GeoPackage reads from `02-Data-Staging/`
+- local database target: PostGIS
 - mapping: MapLibre
 - runtime: local Docker Compose or direct local development commands
 
 Do not introduce remote-hosting or cloud-specific assumptions into the Georgia web app unless the user explicitly asks for them.
+
+The current default backend runtime serves staged roadway data directly from
+`02-Data-Staging/`. Keep that path working unless the user explicitly asks to
+move more of the app onto PostGIS-backed tables or services.
 
 ## Repo Hygiene
 

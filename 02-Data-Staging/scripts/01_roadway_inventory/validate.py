@@ -274,20 +274,25 @@ def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
     historical_cols = sorted(
         col for col in df.columns if col.startswith("AADT_") and col[5:].isdigit() and col != "AADT_2024"
     )
-    if not historical_cols:
-        result.add("Historic AADT columns", False, "No historic AADT_* columns found")
-        return
+    if historical_cols:
+        covered_years = {
+            col: int(df[col].notna().sum())
+            for col in historical_cols
+        }
+        years_with_data = {col: count for col, count in covered_years.items() if count > 0}
+        result.add(
+            "Historic AADT coverage",
+            len(years_with_data) > 0,
+            ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
+        )
 
-    covered_years = {
-        col: int(df[col].notna().sum())
-        for col in historical_cols
-    }
-    years_with_data = {col: count for col, count in covered_years.items() if count > 0}
-    result.add(
-        "Historic AADT coverage",
-        len(years_with_data) > 0,
-        ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
-    )
+    if "FUTURE_AADT_2044" in df.columns:
+        future_count = int(df["FUTURE_AADT_2044"].notna().sum())
+        result.add(
+            "Future AADT 2044 coverage",
+            future_count > 0,
+            f"{future_count:,} segments with future AADT (2044 projection)",
+        )
 
 
 def validate_decoded_labels(result: ValidationResult, df: pd.DataFrame) -> None:

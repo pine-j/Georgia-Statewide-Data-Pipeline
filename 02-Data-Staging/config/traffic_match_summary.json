@@ -1,54 +1,10 @@
 {
-  "segment_count": 622255,
+  "segment_count": 244904,
   "unique_route_ids": 206994,
-  "current_aadt_segments": 185748,
-  "current_aadt_miles": 38359.71269722844,
-  "historical_year_coverage": {
-    "2010": {
-      "segments": 82786,
-      "miles": 16945.681393346393
-    },
-    "2011": {
-      "segments": 83319,
-      "miles": 17071.153641749825
-    },
-    "2012": {
-      "segments": 83775,
-      "miles": 17182.184074375036
-    },
-    "2013": {
-      "segments": 90082,
-      "miles": 18043.13072058471
-    },
-    "2014": {
-      "segments": 104022,
-      "miles": 24883.197568479285
-    },
-    "2015": {
-      "segments": 312416,
-      "miles": 91744.17089126402
-    },
-    "2016": {
-      "segments": 207449,
-      "miles": 48796.55546228701
-    },
-    "2017": {
-      "segments": 166834,
-      "miles": 31579.56814615519
-    },
-    "2018": {
-      "segments": 166311,
-      "miles": 31815.409606158213
-    },
-    "2019": {
-      "segments": 535080,
-      "miles": 126904.68813595927
-    },
-    "2020": {
-      "segments": 548343,
-      "miles": 127462.19202916793
-    }
-  },
+  "current_aadt_official_segments": 44983,
+  "current_aadt_segments": 244819,
+  "current_aadt_miles": 133830.63953097165,
+  "historical_year_coverage": {},
   "historical_unavailable_years": {
     "2021": "GDOT release is station-based Excel only; no route-segment network geometry found.",
     "2022": "GDOT release is station-based Excel only; no route-segment network geometry found.",

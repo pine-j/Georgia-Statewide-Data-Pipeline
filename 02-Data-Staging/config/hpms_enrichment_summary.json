@@ -1,20 +1,19 @@
 {
-  "segment_count": 622255,
-  "hpms_aadt_filled": 423976,
-  "hpms_iri_coverage": 62111,
-  "hpms_psr_coverage": 147,
-  "hpms_rutting_coverage": 56461,
-  "hpms_cracking_coverage": 62111,
-  "hpms_access_control_coverage": 62456,
-  "hpms_terrain_coverage": 7311,
-  "hpms_route_signing_coverage": 573680,
-  "final_aadt_coverage": 621444,
+  "segment_count": 244904,
+  "hpms_aadt_filled": 196247,
+  "hpms_iri_coverage": 10410,
+  "hpms_psr_coverage": 56,
+  "hpms_rutting_coverage": 9591,
+  "hpms_cracking_coverage": 10410,
+  "hpms_access_control_coverage": 10519,
+  "hpms_terrain_coverage": 891,
+  "hpms_route_signing_coverage": 223136,
+  "final_aadt_coverage": 244819,
   "final_aadt_source_counts": {
-    "hpms_2024": 423976,
-    "official_exact": 185748,
-    "direction_mirror": 6223,
-    "analytical_gap_fill": 3016,
-    "nearest_neighbor": 2481,
-    "missing": 811
+    "hpms_2024": 196247,
+    "official_exact": 44983,
+    "direction_mirror": 3091,
+    "analytical_gap_fill": 498,
+    "missing": 85
   }
 }

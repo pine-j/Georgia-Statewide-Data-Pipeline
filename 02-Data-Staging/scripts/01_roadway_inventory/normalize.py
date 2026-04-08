@@ -869,6 +869,12 @@ def build_segment_row(
     row["TRUCK_AADT"] = np.nan
     row["TRUCK_PCT"] = np.nan
     row["FUTURE_AADT"] = np.nan
+    row["FUTURE_AADT_2044"] = np.nan
+    row["FUTURE_AADT_2044_OFFICIAL"] = np.nan
+    row["FUTURE_AADT_2044_SOURCE"] = "missing"
+    row["FUTURE_AADT_2044_CONFIDENCE"] = None
+    row["FUTURE_AADT_2044_FILL_METHOD"] = None
+    row["future_aadt_covered"] = False
     row["VMT"] = np.nan
     row["TruckVMT"] = np.nan
     row["current_aadt_official_covered"] = False
@@ -891,6 +897,13 @@ def build_segment_row(
             row["TRUCK_AADT"] = (0 if pd.isna(single) else single) + (0 if pd.isna(combo) else combo)
         row["TRUCK_PCT"] = compute_truck_pct(row["AADT"], row["TRUCK_AADT"])
         row["FUTURE_AADT"] = current_record.get("FUTURE_AADT_2024")
+        future_val = current_record.get("FUTURE_AADT_2024")
+        if pd.notna(future_val):
+            row["FUTURE_AADT_2044"] = future_val
+            row["FUTURE_AADT_2044_OFFICIAL"] = future_val
+            row["FUTURE_AADT_2044_SOURCE"] = "official_exact"
+            row["FUTURE_AADT_2044_CONFIDENCE"] = "high"
+            row["future_aadt_covered"] = True
         row["VMT"] = current_record.get("VMT_2024")
         row["TruckVMT"] = current_record.get("TRUCK_VMT_2024")
         row["K_FACTOR"] = current_record.get("K_FACTOR")
@@ -1265,6 +1278,167 @@ def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             fill_count += 1
 
     logger.info("Nearest-neighbor AADT: filled %d segments", fill_count)
+    return filled
+
+
+def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Apply the same multi-source fill chain to FUTURE_AADT_2044.
+
+    Fill order:
+    1. GDOT official (already set in build_segment_row)
+    2. HPMS future_aadt (via hpms_enrichment, if wired)
+    3. Direction mirror (INC→DEC)
+    4. Interpolation between adjacent covered segments
+    5. Nearest-neighbor on same route (capped at 20 miles)
+    """
+
+    filled = gdf.copy()
+
+    for col, default in {
+        "FUTURE_AADT_2044": np.nan,
+        "FUTURE_AADT_2044_OFFICIAL": np.nan,
+        "FUTURE_AADT_2044_SOURCE": "missing",
+        "FUTURE_AADT_2044_CONFIDENCE": None,
+        "FUTURE_AADT_2044_FILL_METHOD": None,
+        "future_aadt_covered": False,
+    }.items():
+        if col not in filled.columns:
+            filled[col] = default
+
+    filled["FUTURE_AADT_2044"] = pd.to_numeric(filled["FUTURE_AADT_2044"], errors="coerce")
+    filled["FROM_MILEPOINT"] = pd.to_numeric(filled["FROM_MILEPOINT"], errors="coerce")
+    filled["TO_MILEPOINT"] = pd.to_numeric(filled["TO_MILEPOINT"], errors="coerce")
+
+    # --- Direction mirror ---
+    dec_uncovered = filled[
+        (filled["ROUTE_ID"].str.endswith("DEC"))
+        & (~filled["future_aadt_covered"].fillna(False).astype(bool))
+    ]
+    inc_covered = filled[
+        (filled["ROUTE_ID"].str.endswith("INC"))
+        & (filled["future_aadt_covered"].fillna(False).astype(bool))
+    ]
+    inc_lookup: dict[str, list[tuple[float, float, int]]] = {}
+    for idx, row in inc_covered.iterrows():
+        route_base = str(row["ROUTE_ID"])[:-3]
+        from_mp = float(row["FROM_MILEPOINT"]) if pd.notna(row["FROM_MILEPOINT"]) else 0.0
+        to_mp = float(row["TO_MILEPOINT"]) if pd.notna(row["TO_MILEPOINT"]) else 0.0
+        inc_lookup.setdefault(route_base, []).append((from_mp, to_mp, idx))
+
+    mirror_count = 0
+    for dec_idx, dec_row in dec_uncovered.iterrows():
+        route_base = str(dec_row["ROUTE_ID"])[:-3]
+        candidates = inc_lookup.get(route_base, [])
+        if not candidates:
+            continue
+        dec_from = float(dec_row["FROM_MILEPOINT"]) if pd.notna(dec_row["FROM_MILEPOINT"]) else 0.0
+        dec_to = float(dec_row["TO_MILEPOINT"]) if pd.notna(dec_row["TO_MILEPOINT"]) else 0.0
+        best_idx, best_overlap = None, -1.0
+        for inc_from, inc_to, inc_idx in candidates:
+            overlap = min(dec_to, inc_to) - max(dec_from, inc_from)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_idx = inc_idx
+        if best_idx is None or best_overlap < -MILEPOINT_TOLERANCE:
+            continue
+        val = filled.loc[best_idx, "FUTURE_AADT_2044"]
+        if pd.notna(val):
+            filled.at[dec_idx, "FUTURE_AADT_2044"] = val
+            filled.at[dec_idx, "FUTURE_AADT_2044_SOURCE"] = "direction_mirror"
+            filled.at[dec_idx, "FUTURE_AADT_2044_CONFIDENCE"] = "high"
+            filled.at[dec_idx, "FUTURE_AADT_2044_FILL_METHOD"] = "inc_to_dec_direction_mirror"
+            filled.at[dec_idx, "future_aadt_covered"] = True
+            mirror_count += 1
+
+    logger.info("Future AADT direction mirror: filled %d DEC segments", mirror_count)
+
+    # --- Interpolation (state-system only) ---
+    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+    eligible = filled[filled["SYSTEM_CODE"].astype(str) == "1"].copy()
+    interp_count = 0
+    if not eligible.empty:
+        eligible = eligible.sort_values(by=["ROUTE_ID", "FROM_MILEPOINT"])
+        eligible["source_index"] = eligible.index
+        for route_id, route_group in eligible.groupby("ROUTE_ID", sort=False):
+            route_group = route_group.reset_index(drop=True)
+            route_group["_covered"] = route_group["future_aadt_covered"].fillna(False).astype(bool)
+            route_group["_run_id"] = route_group["_covered"].ne(route_group["_covered"].shift()).cumsum()
+            for _, run_group in route_group.groupby("_run_id", sort=False):
+                if bool(run_group["_covered"].iloc[0]):
+                    continue
+                run_start = int(run_group.index.min())
+                run_end = int(run_group.index.max())
+                if run_start == 0 or run_end >= len(route_group) - 1:
+                    continue
+                prev_row = route_group.iloc[run_start - 1]
+                next_row = route_group.iloc[run_end + 1]
+                if not (bool(prev_row["_covered"]) and bool(next_row["_covered"])):
+                    continue
+                run_miles = float(run_group["segment_length_mi"].sum()) if "segment_length_mi" in run_group.columns else 999
+                if run_miles > AADT_2024_GAP_FILL_MAX_INTERPOLATION_MILES:
+                    continue
+                prev_val = prev_row["FUTURE_AADT_2044"]
+                next_val = next_row["FUTURE_AADT_2044"]
+                if pd.isna(prev_val) or pd.isna(next_val):
+                    continue
+                anchor_start = float(prev_row["TO_MILEPOINT"])
+                anchor_end = float(next_row["FROM_MILEPOINT"])
+                anchor_span = anchor_end - anchor_start
+                for run_row in run_group.itertuples(index=False):
+                    midpoint = (float(run_row.FROM_MILEPOINT) + float(run_row.TO_MILEPOINT)) / 2.0
+                    if anchor_span > MILEPOINT_TOLERANCE:
+                        ratio = max(0.0, min(1.0, (midpoint - anchor_start) / anchor_span))
+                    else:
+                        ratio = 0.5
+                    interp_val = int(round(float(prev_val) + (float(next_val) - float(prev_val)) * ratio))
+                    seg_idx = run_row.source_index
+                    filled.at[seg_idx, "FUTURE_AADT_2044"] = interp_val
+                    filled.at[seg_idx, "FUTURE_AADT_2044_SOURCE"] = "analytical_gap_fill"
+                    filled.at[seg_idx, "FUTURE_AADT_2044_CONFIDENCE"] = "medium"
+                    filled.at[seg_idx, "FUTURE_AADT_2044_FILL_METHOD"] = "interpolate_between_adjacent"
+                    filled.at[seg_idx, "future_aadt_covered"] = True
+                    interp_count += 1
+
+    logger.info("Future AADT interpolation: filled %d segments", interp_count)
+
+    # --- Nearest-neighbor (capped at 20 miles) ---
+    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+    uncovered = filled[~filled["future_aadt_covered"]]
+    covered = filled[filled["future_aadt_covered"]]
+    nn_lookup: dict[str, list[tuple[float, float]]] = {}
+    for idx, row in covered.iterrows():
+        rid = str(row["ROUTE_ID"])
+        mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
+        val = row["FUTURE_AADT_2044"]
+        if pd.notna(val):
+            nn_lookup.setdefault(rid, []).append((mid, float(val)))
+    nn_count = 0
+    for idx, row in uncovered.iterrows():
+        rid = str(row["ROUTE_ID"])
+        candidates = nn_lookup.get(rid)
+        if not candidates:
+            continue
+        seg_mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
+        best_dist, best_val = float("inf"), None
+        for cand_mid, cand_val in candidates:
+            dist = abs(seg_mid - cand_mid)
+            if dist < best_dist:
+                best_dist = dist
+                best_val = cand_val
+        if best_val is not None and best_dist <= NEAREST_NEIGHBOR_MAX_DISTANCE_MI:
+            filled.at[idx, "FUTURE_AADT_2044"] = int(best_val)
+            filled.at[idx, "FUTURE_AADT_2044_SOURCE"] = "nearest_neighbor"
+            filled.at[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "low"
+            filled.at[idx, "FUTURE_AADT_2044_FILL_METHOD"] = "nearest_covered_segment_same_route"
+            filled.at[idx, "future_aadt_covered"] = True
+            nn_count += 1
+
+    logger.info("Future AADT nearest-neighbor: filled %d segments", nn_count)
+
+    # Sync FUTURE_AADT alias
+    filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
+    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+
     return filled
 
 
@@ -1976,16 +2150,12 @@ def main() -> None:
     route_id_set, route_base_lookup = build_route_id_lookup(routes)
 
     current_traffic = load_current_traffic(traffic_gdb)
-    historical_traffic = load_historical_traffic(historical_zip, route_id_set, route_base_lookup)
 
     routes = prepare_route_attributes(routes, current_traffic)
     routes = build_unique_id(routes)
 
     current_lookup = build_interval_lookup(current_traffic)
-    historical_lookup = {
-        year: build_interval_lookup(df)
-        for year, df in historical_traffic.items()
-    }
+    historical_lookup: dict[int, dict[str, list[dict]]] = {}
 
     segmented = segment_routes(routes, current_lookup, historical_lookup)
     segmented = build_unique_id(segmented)
@@ -2009,15 +2179,24 @@ def main() -> None:
     segmented = apply_direction_mirror_aadt(segmented)
     segmented = apply_state_system_current_aadt_gap_fill(segmented)
     segmented = apply_nearest_neighbor_aadt(segmented)
+    segmented = apply_future_aadt_fill_chain(segmented)
     segmented = add_decoded_label_columns(segmented)
 
     logger.info("Final segment count: %d", len(segmented))
     logger.info("Current AADT official coverage: %d segments", segmented["AADT_2024_OFFICIAL"].notna().sum())
     logger.info("Current AADT final coverage: %d segments", segmented["AADT_2024"].notna().sum())
-    for year in HISTORICAL_YEARS:
-        col = f"AADT_{year}"
-        if col in segmented.columns:
-            logger.info("%s coverage: %d segments", col, segmented[col].notna().sum())
+    if "FUTURE_AADT_2044" in segmented.columns:
+        logger.info("Future AADT 2044 coverage: %d segments", segmented["FUTURE_AADT_2044"].notna().sum())
+
+    historic_cols_to_drop = [
+        c for c in segmented.columns
+        if (c.startswith("AADT_20") and c != "AADT_2024" and not c.startswith("AADT_2024"))
+        or c.startswith("TRUCK_AADT_20")
+        or c.startswith("TRUCK_PCT_20")
+    ]
+    if historic_cols_to_drop:
+        segmented = segmented.drop(columns=historic_cols_to_drop)
+        logger.info("Dropped %d historic AADT columns: %s", len(historic_cols_to_drop), ", ".join(sorted(historic_cols_to_drop)))
 
     CLEANED_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"

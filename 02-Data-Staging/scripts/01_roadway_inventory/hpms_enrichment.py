@@ -158,6 +158,17 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 enriched.at[idx, "current_aadt_covered"] = True
                 aadt_fill_count += 1
 
+        # Future AADT gap-fill: only fill if not already covered
+        if not bool(row.get("future_aadt_covered", False)):
+            hpms_future = match.get("future_aadt")
+            if hpms_future is not None and not pd.isna(hpms_future):
+                enriched.at[idx, "FUTURE_AADT_2044"] = int(hpms_future)
+                enriched.at[idx, "FUTURE_AADT"] = int(hpms_future)
+                enriched.at[idx, "FUTURE_AADT_2044_SOURCE"] = "hpms_2024"
+                enriched.at[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "medium"
+                enriched.at[idx, "FUTURE_AADT_2044_FILL_METHOD"] = "hpms_route_id_milepoint_match"
+                enriched.at[idx, "future_aadt_covered"] = True
+
         # Pavement condition — always fill if HPMS has data and we don't
         iri = match.get("iri")
         if iri is not None and not pd.isna(iri):
