@@ -1120,8 +1120,6 @@ def apply_state_system_current_aadt_gap_fill(gdf: gpd.GeoDataFrame) -> gpd.GeoDa
         (filled["SYSTEM_CODE"].astype(str) == "1")
     ].copy()
     if eligible.empty:
-        filled["AADT"] = filled["AADT_2024"]
-        filled["current_aadt_covered"] = filled["AADT_2024"].notna()
         return filled
 
     eligible = eligible.sort_values(
@@ -1193,9 +1191,10 @@ def apply_state_system_current_aadt_gap_fill(gdf: gpd.GeoDataFrame) -> gpd.GeoDa
             filled_segments += int(len(run_group))
             filled_miles += run_miles
 
-    filled["AADT"] = filled["AADT_2024"]
+    gap_fill_mask = filled["AADT_2024_SOURCE"] == "analytical_gap_fill"
+    filled.loc[gap_fill_mask, "AADT"] = filled.loc[gap_fill_mask, "AADT_2024"]
+    filled.loc[gap_fill_mask, "current_aadt_covered"] = True
     filled["current_aadt_official_covered"] = filled["AADT_2024_OFFICIAL"].notna()
-    filled["current_aadt_covered"] = filled["AADT_2024"].notna()
 
     logger.info(
         "Applied analytical 2024 AADT gap fill to %d segments across %d runs (%.2f miles)",
