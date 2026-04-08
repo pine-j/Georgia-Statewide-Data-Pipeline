@@ -1101,7 +1101,8 @@ Closed with Phase 1:
 - 2024 AADT coverage at 99.97% (244,831 segments) via five-tier fill chain
 - Future AADT 2044 coverage at 21.3% (52,181 segments) via same fill chain
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
-- official signed-route verification for Interstates and US Routes
+- official signed-route verification for Interstates, US Routes, and State Routes via HPMS (223,136 segments, 91%)
+- HPMS gap-fill for 13 GDOT roadway attributes
 - posted speed limit enrichment from GDOT SpeedZone OnSystem
 - staged SQLite database, GeoPackage, and cleaned CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
@@ -1110,8 +1111,6 @@ Closed with Phase 1:
 
 Deferred beyond Phase 1:
 
-- State Route signed-label verification (blocked by `egisp.dot.ga.gov` query endpoint returning HTTP 500)
-- historical AADT integration from HPMS 2020/2022 snapshots (data to be downloaded)
 - crash and fatality data enrichment from FCRS layers (data available on `rnhp.dot.ga.gov`)
 - off-system speed zone enrichment (requires spatial matching, 80,310 records without ROUTE_ID)
 - statewide roadway supplementation from TIGER / OSM unless later QA shows a planning-relevant omission pattern
