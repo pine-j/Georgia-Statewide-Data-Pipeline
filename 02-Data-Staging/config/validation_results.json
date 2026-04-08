@@ -47,7 +47,7 @@
   {
     "name": "Current AADT coverage",
     "status": "PASS",
-    "detail": "185,748 segments with current AADT"
+    "detail": "621,878 segments with canonical current AADT; official=185,748"
   },
   {
     "name": "Historic AADT coverage",
@@ -166,6 +166,41 @@
   },
   {
     "name": "Signed-route field: SIGNED_ROUTE_VERIFY_NOTES",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_OFFICIAL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_SOURCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_CONFIDENCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_FILL_METHOD",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: current_aadt_official_covered",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: current_aadt_covered",
     "status": "PASS",
     "detail": "Column present"
   },

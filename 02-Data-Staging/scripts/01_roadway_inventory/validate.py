@@ -88,6 +88,16 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_ROUTE_VERIFY_NOTES",
 ]
 
+EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
+    "AADT_2024",
+    "AADT_2024_OFFICIAL",
+    "AADT_2024_SOURCE",
+    "AADT_2024_CONFIDENCE",
+    "AADT_2024_FILL_METHOD",
+    "current_aadt_official_covered",
+    "current_aadt_covered",
+]
+
 CURRENT_AADT_AUDIT_ARTIFACTS = [
     PROJECT_ROOT / "02-Data-Staging" / "config" / "current_aadt_coverage_audit_summary.json",
     PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_uncovered_segments.csv",
@@ -244,15 +254,21 @@ def validate_state_system_location_fields(result: ValidationResult, df: pd.DataF
 
 def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
     """Report current and historic AADT coverage."""
-    if "AADT" not in df.columns:
-        result.add("Current AADT coverage", False, "AADT column not found")
+    if "AADT_2024" not in df.columns and "AADT" not in df.columns:
+        result.add("Current AADT coverage", False, "AADT_2024/AADT column not found")
         return
 
-    current_count = int(df["AADT"].notna().sum())
+    canonical_current_col = "AADT_2024" if "AADT_2024" in df.columns else "AADT"
+    current_count = int(df[canonical_current_col].notna().sum())
+    official_count = (
+        int(df["AADT_2024_OFFICIAL"].notna().sum())
+        if "AADT_2024_OFFICIAL" in df.columns
+        else current_count
+    )
     result.add(
         "Current AADT coverage",
         current_count > 0,
-        f"{current_count:,} segments with current AADT",
+        f"{current_count:,} segments with canonical current AADT; official={official_count:,}",
     )
 
     historical_cols = sorted(
@@ -323,6 +339,16 @@ def validate_signed_route_verification_columns(result: ValidationResult, df: pd.
     for column in EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS:
         result.add(
             f"Signed-route field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_current_aadt_provenance_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that canonical 2024 AADT provenance fields are staged."""
+    for column in EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS:
+        result.add(
+            f"Current AADT provenance field: {column}",
             column in df.columns,
             "Column present" if column in df.columns else "Column not found",
         )
@@ -498,6 +524,7 @@ def main() -> None:
         validate_phase1_attribute_columns(result, df)
         validate_route_family_columns(result, df)
         validate_signed_route_verification_columns(result, df)
+        validate_current_aadt_provenance_columns(result, df)
         validate_decoded_labels(result, df)
 
     validate_crs(result)

@@ -1,0 +1,20 @@
+{
+  "segment_count": 622255,
+  "hpms_aadt_filled": 423976,
+  "hpms_iri_coverage": 62111,
+  "hpms_psr_coverage": 147,
+  "hpms_rutting_coverage": 56461,
+  "hpms_cracking_coverage": 62111,
+  "hpms_access_control_coverage": 62456,
+  "hpms_terrain_coverage": 7311,
+  "hpms_route_signing_coverage": 573680,
+  "final_aadt_coverage": 621878,
+  "final_aadt_source_counts": {
+    "hpms_2024": 423976,
+    "official_exact": 185748,
+    "direction_mirror": 6223,
+    "analytical_gap_fill": 3016,
+    "nearest_neighbor": 2915,
+    "missing": 377
+  }
+}
