@@ -22,7 +22,6 @@ RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 
 TARGET_CRS = "EPSG:32617"
-HISTORICAL_AADT_YEARS = list(range(2010, 2021))
 
 
 class RoadwayData:
@@ -119,13 +118,28 @@ class RoadwayData:
             "ACCESS_CONTROL",
             "current_aadt_official_covered",
             "current_aadt_covered",
-            "historical_aadt_years_available",
+            "HPMS_ROUTE_NAME",
+            "HPMS_ROUTE_NUMBER",
+            "HPMS_IRI",
+            "HPMS_PSR",
+            "HPMS_RUTTING",
+            "HPMS_CRACKING_PCT",
+            "HPMS_ACCESS_CONTROL",
+            "HPMS_TERRAIN_TYPE",
+            "VMT",
+            "TruckVMT",
+            "FUTURE_AADT",
+            "FUTURE_AADT_2044",
+            "FUTURE_AADT_2044_SOURCE",
+            "FUTURE_AADT_2044_CONFIDENCE",
+            "FROM_MILEPOINT",
+            "TO_MILEPOINT",
             "segment_length_m",
+            "segment_length_mi",
             "geometry",
         ]
-        self.COLUMNS_TO_KEEP.extend([f"AADT_{year}" for year in HISTORICAL_AADT_YEARS])
-        self.COLUMNS_TO_KEEP.extend([f"TRUCK_AADT_{year}" for year in HISTORICAL_AADT_YEARS])
-        self.COLUMNS_TO_KEEP.extend([f"TRUCK_PCT_{year}" for year in HISTORICAL_AADT_YEARS])
+        # Historical AADT columns (2010-2020) have been removed from the pipeline output.
+        # Raw source files are retained in 01-Raw-Data/ for future use if needed.
 
     @staticmethod
     def _normalize_numeric_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
