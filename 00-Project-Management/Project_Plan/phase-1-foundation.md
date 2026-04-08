@@ -9,7 +9,7 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 
 ## Current Implementation Snapshot
 
-Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, and staged web-app data path are all working. Remaining questions about supplemental roadway sources and richer route-family labeling are deferred follow-on improvements, not Phase 1 blockers.
+Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, official signed-route verification via GDOT GPAS layers, and posted speed limit enrichment are all working. 72/72 validation checks pass. Remaining questions about supplemental roadway sources and State Route signed-label verification are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
 - `roadway_inventory.db` contains `622,255` segmented roadway records
@@ -40,6 +40,15 @@ Related exploratory note:
 
 Related exploratory memo:
 - [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
+- [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+- [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
+
+Official Georgia sources used for the roadway base layer and route-family crosswalk:
+
+- GDOT Road & Traffic Data: `https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx`
+- GDOT Understanding Route IDs: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Guides/UnderstandingRouteIDs_Doc.pdf`
+- GDOT Road Inventory Data Dictionary: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Road_Inventory_Data_Dictionary.pdf`
+- GDOT live LRS metadata: `https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Network_LRSN/MapServer/exts/LRSServer/layers`
 
 Current working note:
 
@@ -50,7 +59,7 @@ Current working note:
 Phase 1 closeout decision:
 
 - Close Phase 1 using the current GDOT-based staged roadway network and documented validation results.
-- Defer roadway supplementation, expanded route-family taxonomy, and any optional archival-source integration to later targeted work only if downstream QA or scoring needs justify it.
+- Defer roadway supplementation, State Route signed-label verification (blocked by `egisp.dot.ga.gov` query endpoint), and any optional archival-source integration to later targeted work only if downstream QA or scoring needs justify it.
 
 ---
 
@@ -116,6 +125,11 @@ scripts/
     01_roadway_inventory/
       download.py                    # Download GDB from GDOT
       normalize.py                   # Clean, normalize, build unique_id
+      download_signed_route_references.py   # Snapshot official GDOT signed-route verifier layers
+      route_family.py                # Georgia ROUTE_ID family crosswalk helper
+      route_verification.py          # Official GDOT signed-route verification (GPAS layers)
+      rnhp_enrichment.py             # RNHP enrichment (speed zones)
+      download_rnhp_enrichment.py    # Download RNHP enrichment layers
       create_db.py                   # Load into SQLite
       validate.py                    # Verify row counts, nulls, CRS
     requirements.txt                 # Shared Python dependencies
@@ -124,6 +138,9 @@ scripts/
     district_codes.json              # 7 GDOT districts
     county_codes.json                # 159 GA counties
     system_codes.json                # Route system codes
+    georgia_route_family_crosswalk.json   # GDOT-based Interstate / US / State / Local rule tables
+    georgia_signed_route_verification_sources.json   # GDOT GPAS signed-route reference layer config
+    rnhp_enrichment_sources.json     # RNHP enrichment layer config (speed zones)
   databases/                         # Per-dataset SQLite DBs (gitignored)
     roadway_inventory.db
   spatial/                           # Themed GeoPackage files (gitignored)
@@ -183,12 +200,13 @@ geopandas, pyogrio, shapely, pandas, numpy, pyarrow, tqdm, python-dotenv, openpy
 1. Load the official full roadway geometry from `Road_Inventory_2024.gdb` layer `GA_2024_Routes`
 2. Document ALL columns and their types (don't filter yet — keep the complete dataset)
 3. Clean column names (standardize case, remove spaces)
-4. Parse RCLINK route IDs into component fields (county, route type, number, suffix, direction)
-5. Build `unique_id`: `{ROUTE_ID}_{FROM_MEASURE:.3f}_{TO_MEASURE:.3f}`
-6. Compute segment length in miles from geometry
-7. Reproject to `EPSG:32617` (UTM Zone 17N)
-8. Join or map in traffic attributes from GDOT traffic products where a defensible relationship exists
-9. Export cleaned data as CSV/GeoPackage to `02-Data-Staging/cleaned/`
+4. Parse GDOT 16-character `ROUTE_ID` values into component fields (function type, county, system code, route code, suffix, direction)
+5. Apply the Georgia route-family crosswalk to derive `BASE_ROUTE_NUMBER`, `ROUTE_SUFFIX_LABEL`, `ROUTE_FAMILY`, `ROUTE_FAMILY_DETAIL`, `ROUTE_FAMILY_CONFIDENCE`, and `ROUTE_FAMILY_SOURCE`
+6. Build `unique_id`: `{ROUTE_ID}_{FROM_MEASURE:.3f}_{TO_MEASURE:.3f}`
+7. Compute segment length in miles from geometry
+8. Reproject to `EPSG:32617` (UTM Zone 17N)
+9. Join or map in traffic attributes from GDOT traffic products where a defensible relationship exists
+10. Export cleaned data as CSV/GeoPackage to `02-Data-Staging/cleaned/`
 
 **`02-Data-Staging/scripts/01_roadway_inventory/create_db.py`**:
 1. Read cleaned data
@@ -267,6 +285,10 @@ The staged roadway network is built from the official GDOT route geometry, then 
   `COUNTY_CODE`, `GDOT_District`, `DISTRICT`, `FUNCTIONAL_CLASS`,
   `NUM_LANES`, `URBAN_CODE`, `NHS_IND`, `ROUTE_TYPE`, `ROUTE_NUMBER`,
   `ROUTE_SUFFIX`, `ROUTE_DIRECTION`
+- Georgia route-family fields:
+  `BASE_ROUTE_NUMBER`, `ROUTE_SUFFIX_LABEL`, `ROUTE_FAMILY`,
+  `ROUTE_FAMILY_DETAIL`, `ROUTE_FAMILY_CONFIDENCE`,
+  `ROUTE_FAMILY_SOURCE`
 - Segment identifiers and metrics:
   `unique_id`, `segment_length_m`, `segment_length_mi`
 - Current-traffic summary fields:
@@ -283,7 +305,7 @@ The staged roadway network is built from the official GDOT route geometry, then 
   `FROM_MILEPOINT`, `TO_MILEPOINT`, `BeginPoint`, `EndPoint`, `geometry`, and `unique_id`.
 - The staged output therefore preserves the selected original roadway-inventory attributes, but only for the layers explicitly joined above. Any roadway GDB layer not joined in the ETL is not carried into the staged network.
 
-### 1.4b Current Roadway Classification in the Staged Data
+### 1.4b Georgia Route-Family Classification in the Staged Data
 
 The staged roadway network currently supports multiple kinds of classification, but they answer different questions:
 
@@ -291,39 +313,81 @@ The staged roadway network currently supports multiple kinds of classification, 
 - Field: `SYSTEM_CODE`
 - Current values present in the staged build:
   - `1` = State Highway Route
-  - `2` = County Road
+  - `2` = Public Road
 - Current segment counts:
   - `SYSTEM_CODE = 1`: `109,314` segments
   - `SYSTEM_CODE = 2`: `512,941` segments
-- GDOT's code table also defines:
-  - `3` = City Street
-  - `6` = Ramp
-  - `7` = Private Road
-  - `8` = Public Road
-  - `9` = Collector-Distributor
-- Those codes are documented in config, but they are not currently present in the staged `segments` table
+- Official GDOT LRS metadata also documents:
+  - `3` = Private
+  - `4` = Federal
+- The current staged build only contains `1` and `2`
 
 **Functional classification**:
 - Source field: `F_SYSTEM`
 - Derived field: `FUNCTIONAL_CLASS`
 - Current values present in the staged build:
   - `1` through `7` in the GDOT roadway inventory
-- This is the clearest current classification for arterial / collector / local-road hierarchy, but it is numeric and still needs a finalized Georgia-specific label mapping in project documentation
+- This remains the clearest statewide arterial / collector / local-road hierarchy and should not be replaced by route-family labels
 
 **Route identity / route-family parsing**:
-- Fields derived from `ROUTE_ID`:
+- Existing fields derived from `ROUTE_ID`:
   - `PARSED_FUNCTION_TYPE`
   - `PARSED_SYSTEM_CODE`
   - `ROUTE_TYPE`
   - `ROUTE_NUMBER`
   - `ROUTE_SUFFIX`
   - `ROUTE_DIRECTION`
-- These fields help distinguish route identifiers and route-family encoding in the GDOT network, but the current Phase 1 docs do not yet provide a formal crosswalk for categories like Interstate vs U.S. Highway vs State Route
+- New Georgia route-family fields:
+  - `BASE_ROUTE_NUMBER`
+  - `ROUTE_SUFFIX_LABEL`
+  - `ROUTE_FAMILY`
+  - `ROUTE_FAMILY_DETAIL`
+  - `ROUTE_FAMILY_CONFIDENCE`
+  - `ROUTE_FAMILY_SOURCE`
+- Official Georgia classification priority:
+  - `Interstate`
+  - `U.S. Route`
+  - `State Route`
+  - `Local/Other`
+- Detailed rules and source notes are documented in:
+  - [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
 
 **Current closeout position on classification**:
-- Phase 1 does have a clear system classification (`SYSTEM_CODE`) and functional classification (`F_SYSTEM` / `FUNCTIONAL_CLASS`)
-- Phase 1 does not yet have a finished, documented statewide crosswalk that cleanly labels every segment as Interstate, U.S. Route, State Route, county road, city street, ramp, etc.
-- If that route-family classification is needed for downstream reporting or scoring, it should be added as an explicit follow-on task using the route ID schema and GDOT data dictionary
+- Phase 1 now has:
+  - a clear system classification (`SYSTEM_CODE`)
+  - a clear functional classification (`F_SYSTEM` / `FUNCTIONAL_CLASS`)
+  - a documented Georgia-specific route-family crosswalk grounded in GDOT route-ID documentation
+- Important limitation:
+  - `U.S. Route` versus `State Route` remains a medium-confidence interpretation because Georgia `ROUTE_ID` values encode state route numbers and concurrency can still exist
+- Use `FUNCTION_TYPE`, `F_SYSTEM`, `NHS`, and `STRAHNET` as separate dimensions rather than forcing those concepts into a single route-family field
+
+**Signed-route verification (operational)**:
+- Official-first verification path:
+  - GDOT ArcWeb / statewide-viewer layers `Interstates`, `US Highway`, `State Routes`, then `Statewide Roads`
+  - TIGER only as secondary corroboration
+  - OSM only as tertiary edge-case QA
+- Current ETL implementation:
+  - initializes signed-route verification fields from the existing `ROUTE_ID` crosswalk
+  - attempts official `Interstates`, `US Highway`, and `State Routes` verification using derived `RCLINK` candidates, then prefers milepoint overlap where the official layer exposes interval fields
+  - continues with whichever official references are available and falls back to baseline crosswalk values only if no official references can be loaded at runtime
+- Proposed staged verification fields:
+  - `SIGNED_INTERSTATE_FLAG`
+  - `SIGNED_US_ROUTE_FLAG`
+  - `SIGNED_STATE_ROUTE_FLAG`
+  - `SIGNED_ROUTE_FAMILY_PRIMARY`
+  - `SIGNED_ROUTE_FAMILY_ALL`
+  - `SIGNED_ROUTE_VERIFY_SOURCE`
+  - `SIGNED_ROUTE_VERIFY_METHOD`
+  - `SIGNED_ROUTE_VERIFY_CONFIDENCE`
+  - `SIGNED_ROUTE_VERIFY_SCORE`
+  - `SIGNED_ROUTE_VERIFY_NOTES`
+- Proposed matching order:
+  - exact `RCLINK` match where official split layers expose it
+  - `RCLINK` + milepoint overlap where official layers expose interval fields
+  - geometry-overlap fallback against official signed-route layers
+  - TIGER / OSM only for corroboration and conflict review
+- Detailed design:
+  - [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
 
 ### 1.5 Build config JSON files
 
@@ -344,12 +408,9 @@ The staged roadway network currently supports multiple kinds of classification, 
 ```json
 {
   "1": "State Highway Route",
-  "2": "County Road",
-  "3": "City Street",
-  "6": "Ramp",
-  "7": "Private Road",
-  "8": "Public Road",
-  "9": "Collector-Distributor"
+  "2": "Public",
+  "3": "Private",
+  "4": "Federal"
 }
 ```
 
@@ -357,14 +418,21 @@ The staged roadway network currently supports multiple kinds of classification, 
 
 **Class**: `RoadwayData` — reads from `roadway_inventory.db` (not directly from GDB)
 
-**Georgia Route ID System (RCLINK)** — 11-character identifier:
+**Georgia Route ID System (`ROUTE_ID`)** — 16-character identifier:
 | Chars | Component | Example |
 |-------|-----------|---------|
-| 1-3 | County Code (odd 001-321) | `123` |
-| 4 | Route Type (1=SR, 2=CR, 3=City, 6=Ramp) | `1` |
-| 5-8 | Route Number | `0036` |
-| 9-10 | Suffix (00-99 or AL,BU,BY,NO,SO,etc.) | `NO` |
-| 11 | Direction (I=inventory, D=divided opposite) | `I` |
+| 1 | Function Type | `1` |
+| 2-4 | County Code | `000` |
+| 5 | System Code | `1` |
+| 6-11 | Route Code | `000401` |
+| 12-13 | Suffix | `00` |
+| 14-16 | Direction | `INC` |
+
+Example: `1000100040100INC` = state-system mainline route code `000401` in increasing inventory direction.
+
+Important note:
+
+- For `FUNCTION_TYPE` `2` through `4`, GDOT uses a special route-code layout where digits `6` through `8` are reference post and digits `9` through `11` are the underlying route number.
 
 **Key columns for RAPTOR** (subset of the full DB):
 ```python
@@ -432,11 +500,14 @@ COLUMNS_TO_KEEP = [
 - [x] `RoadwayData` class is implemented and loads staged roadway geometry for RAPTOR use
 - [x] SYSTEM_CODE filtering is supported in `Roadways.py`
 - [x] District filtering is supported in `Roadways.py`
+- [x] Georgia-specific route-family fields are implemented and staged
+- [x] Signed-route verification is operational via GDOT GPAS layers (9,271 interstate + 35,560 US highway segments verified)
+- [x] Speed limit enrichment is operational via GDOT GPAS SpeedZone OnSystem (102,335 segments)
 - [x] Critical-field null checks pass within the validation thresholds
 - [x] Validation script passes all recorded checks in `02-Data-Staging/config/validation_results.json`
 
 ## Deferred From Phase 1
 
 - statewide roadway supplementation from TIGER / OSM / alternate GDOT services
-- expanded route-family labeling beyond the current system and functional classifications
+- State Route signed-label verification (blocked by `egisp.dot.ga.gov` returning HTTP 500 on queries)
 - any decision to operationalize currently archival-only raw source packages beyond the active ETL inputs

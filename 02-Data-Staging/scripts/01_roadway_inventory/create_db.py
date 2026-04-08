@@ -7,6 +7,7 @@ metadata table, and exports geometry to base_network.gpkg.
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
+SQLITE_TEMP_DIR = PROJECT_ROOT / ".tmp" / "sqlite_runtime"
 
 INDEX_COLUMNS = [
     "ROUTE_ID",
@@ -30,6 +32,15 @@ INDEX_COLUMNS = [
     "SYSTEM_CODE",
     "unique_id",
 ]
+
+
+def configure_local_sqlite_temp() -> None:
+    """Force SQLite temp files into the workspace on Windows."""
+    SQLITE_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    sqlite_temp = str(SQLITE_TEMP_DIR.resolve())
+    os.environ["TMP"] = sqlite_temp
+    os.environ["TEMP"] = sqlite_temp
+    os.environ["TMPDIR"] = sqlite_temp
 
 
 def find_cleaned_csv() -> Path:
@@ -56,6 +67,9 @@ def create_segments_table(db_path: Path, df: pd.DataFrame) -> None:
     """Create the segments table and populate it from the DataFrame."""
     conn = sqlite3.connect(db_path)
     try:
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA journal_mode=MEMORY")
+        conn.execute("PRAGMA synchronous=OFF")
         df.to_sql("segments", conn, if_exists="replace", index=False)
         logger.info("Created 'segments' table with %d rows", len(df))
 
@@ -87,6 +101,9 @@ def create_load_summary(db_path: Path, df: pd.DataFrame) -> None:
     """Create a load_summary metadata table."""
     conn = sqlite3.connect(db_path)
     try:
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA journal_mode=MEMORY")
+        conn.execute("PRAGMA synchronous=OFF")
         summary = {
             "load_timestamp": datetime.now(timezone.utc).isoformat(),
             "total_rows": len(df),
@@ -119,6 +136,7 @@ def create_load_summary(db_path: Path, df: pd.DataFrame) -> None:
 def main() -> None:
     """Run the database creation workflow."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    configure_local_sqlite_temp()
 
     csv_path = find_cleaned_csv()
     logger.info("Reading cleaned CSV: %s", csv_path)
