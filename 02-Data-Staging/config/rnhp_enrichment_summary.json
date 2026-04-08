@@ -18,7 +18,8 @@
     "70": 636
   },
   "speed_limit_source_counts": {
-    "None": 230138,
-    "gdot_speed_zone_on_system": 14766
+    "None": 224561,
+    "gdot_speed_zone_on_system": 14766,
+    "hpms_2024": 5577
   }
 }

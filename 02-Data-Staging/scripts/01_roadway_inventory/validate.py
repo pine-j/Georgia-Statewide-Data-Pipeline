@@ -359,6 +359,36 @@ def validate_current_aadt_provenance_columns(result: ValidationResult, df: pd.Da
         )
 
 
+def validate_provenance_consistency(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that populated values have matching provenance fields."""
+
+    # Speed limit: every populated SPEED_LIMIT should have a source
+    if "SPEED_LIMIT" in df.columns and "SPEED_LIMIT_SOURCE" in df.columns:
+        has_speed = df["SPEED_LIMIT"].notna()
+        has_source = df["SPEED_LIMIT_SOURCE"].notna()
+        orphaned = int((has_speed & ~has_source).sum())
+        result.add(
+            "Speed limit provenance",
+            orphaned == 0,
+            f"{int(has_speed.sum()):,} with speed limit, {orphaned} missing source"
+            if orphaned > 0
+            else f"{int(has_speed.sum()):,} with speed limit, all have source",
+        )
+
+    # Future AADT: every populated FUTURE_AADT_2044 should have a source
+    if "FUTURE_AADT_2044" in df.columns and "FUTURE_AADT_2044_SOURCE" in df.columns:
+        has_val = df["FUTURE_AADT_2044"].notna()
+        has_source = df["FUTURE_AADT_2044_SOURCE"].notna() & (df["FUTURE_AADT_2044_SOURCE"] != "missing")
+        orphaned = int((has_val & ~has_source).sum())
+        result.add(
+            "Future AADT provenance",
+            orphaned == 0,
+            f"{int(has_val.sum()):,} with future AADT, {orphaned} missing source"
+            if orphaned > 0
+            else f"{int(has_val.sum()):,} with future AADT, all have source",
+        )
+
+
 def validate_current_aadt_audit_artifacts(result: ValidationResult) -> None:
     """Check that current-year AADT audit artifacts were written."""
     for path in CURRENT_AADT_AUDIT_ARTIFACTS:
@@ -457,10 +487,20 @@ def validate_database(result: ValidationResult) -> None:
         ]
         result.add("Database tables", "segments" in tables, f"Tables: {tables}")
 
-        # Check row count matches CSV
+        # Check row count matches CSV and GeoPackage
         if "segments" in tables:
             db_count = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
             result.add("Database row count", db_count > 0, f"{db_count:,} rows")
+
+            csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+            if csv_path.exists():
+                csv_count = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
+                match = db_count == csv_count
+                result.add(
+                    "DB/CSV row count match",
+                    match,
+                    f"DB={db_count:,}, CSV={csv_count:,}" + ("" if match else " — MISMATCH"),
+                )
 
         # Check load_summary exists
         result.add("Load summary table", "load_summary" in tables)
@@ -530,6 +570,7 @@ def main() -> None:
         validate_route_family_columns(result, df)
         validate_signed_route_verification_columns(result, df)
         validate_current_aadt_provenance_columns(result, df)
+        validate_provenance_consistency(result, df)
         validate_decoded_labels(result, df)
 
     validate_crs(result)

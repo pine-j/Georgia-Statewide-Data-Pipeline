@@ -310,6 +310,9 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             if casted is not None:
                 enriched.at[idx, target_col] = casted
                 gap_fill_counts[target_col] = gap_fill_counts.get(target_col, 0) + 1
+                # Set provenance for speed limit gap-fill
+                if target_col == "SPEED_LIMIT":
+                    enriched.at[idx, "SPEED_LIMIT_SOURCE"] = "hpms_2024"
 
     # Sync only HPMS-filled rows (avoid clobbering pre-existing AADT values)
     hpms_mask = enriched["AADT_2024_SOURCE"] == "hpms_2024"

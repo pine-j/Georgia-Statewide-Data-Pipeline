@@ -205,6 +205,16 @@
     "detail": "Column present"
   },
   {
+    "name": "Speed limit provenance",
+    "status": "PASS",
+    "detail": "20,343 with speed limit, all have source"
+  },
+  {
+    "name": "Future AADT provenance",
+    "status": "PASS",
+    "detail": "52,236 with future AADT, all have source"
+  },
+  {
     "name": "Decoded label: COUNTY_NAME",
     "status": "PASS",
     "detail": "244,904/244,904 source-coded rows decoded"
@@ -358,6 +368,11 @@
     "name": "Database row count",
     "status": "PASS",
     "detail": "244,904 rows"
+  },
+  {
+    "name": "DB/CSV row count match",
+    "status": "PASS",
+    "detail": "DB=244,904, CSV=244,904"
   },
   {
     "name": "Load summary table",
