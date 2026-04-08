@@ -46,7 +46,7 @@ from route_family import classify_route_families
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV"
+RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"

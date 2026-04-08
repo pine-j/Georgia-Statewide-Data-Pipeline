@@ -167,7 +167,7 @@ VC_Ratio = Volume / Capacity
 - `02-Data-Staging/databases/mobility.db`
 - `02-Data-Staging/spatial/mobility.gpkg`
 - `05-RAPTOR-Integration/states/Georgia/categories/Mobility.py`
-- Updated `Georgia_Data_Inventory_GDOT.csv`
+- Updated `Georgia_Data_Inventory.csv`
 
 ## Verification
 - [ ] Railroad crossing count for Georgia is plausible

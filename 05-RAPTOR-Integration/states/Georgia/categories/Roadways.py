@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
-RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV"
+RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 
 TARGET_CRS = "EPSG:32617"
@@ -34,12 +34,12 @@ class RoadwayData:
     by GDOT district.
 
     Attributes:
-        GA_RDWY_INV: GeoDataFrame of filtered roadway segments.
+        Roadway_Inventory: GeoDataFrame of filtered roadway segments.
         district_id: Optional district filter (1-7).
     """
 
     def __init__(self, district_id: int | None = None):
-        self.GA_RDWY_INV: gpd.GeoDataFrame | None = None
+        self.Roadway_Inventory: gpd.GeoDataFrame | None = None
         self.district_id = district_id
 
         # RAPTOR-relevant columns to retain
@@ -230,10 +230,10 @@ class RoadwayData:
             gdf = gdf.to_crs(TARGET_CRS)
             logger.info("Reprojected to %s", TARGET_CRS)
 
-        self.GA_RDWY_INV = gdf
+        self.Roadway_Inventory = gdf
         logger.info("Loaded %d roadway segments for RAPTOR analysis", len(gdf))
 
     def clear_data(self) -> None:
         """Release roadway data from memory."""
-        self.GA_RDWY_INV = None
+        self.Roadway_Inventory = None
         logger.info("Cleared roadway data")

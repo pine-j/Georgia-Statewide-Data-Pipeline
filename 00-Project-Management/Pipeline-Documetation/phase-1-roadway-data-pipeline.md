@@ -62,7 +62,7 @@ The roadway pipeline follows the project-wide ETL pattern:
 For Phase 1 specifically:
 
 ```text
-01-Raw-Data/GA_RDWY_INV/
+01-Raw-Data/Roadway-Inventory/
 02-Data-Staging/scripts/01_roadway_inventory/
 02-Data-Staging/databases/roadway_inventory.db
 02-Data-Staging/spatial/base_network.gpkg
@@ -78,16 +78,16 @@ For Phase 1 specifically:
 
 The main raw source directory is:
 
-- `01-Raw-Data/GA_RDWY_INV/`
+- `01-Raw-Data/Roadway-Inventory/`
 
 The download metadata file is:
 
-- `01-Raw-Data/GA_RDWY_INV/download_metadata.json`
+- `01-Raw-Data/Roadway-Inventory/download_metadata.json`
 
 That directory is organized by source:
 
 ```text
-GA_RDWY_INV/
+Roadway-Inventory/
 ├── GDOT_Road_Inventory/   (Road_Inventory_2024.gdb, DataDictionary)
 ├── GDOT_Traffic/           (TRAFFIC_Data_2024.gdb, Traffic_Historical.zip, 2010_thr_2019)
 ├── GDOT_GPAS/              (rnhp_enrichment — speed zones)
@@ -101,7 +101,7 @@ GDOT data is downloaded from `https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/
 
 The foundational roadway geometry comes from:
 
-- `01-Raw-Data/GA_RDWY_INV/GDOT_Road_Inventory/Road_Inventory_2024.gdb`
+- `01-Raw-Data/Roadway-Inventory/GDOT_Road_Inventory/Road_Inventory_2024.gdb`
 - layer: `GA_2024_Routes`
 
 This is the canonical route geometry for the staged roadway network.
@@ -110,7 +110,7 @@ This is the canonical route geometry for the staged roadway network.
 
 Current traffic fields come from:
 
-- `01-Raw-Data/GA_RDWY_INV/GDOT_Traffic/TRAFFIC_Data_2024.gdb`
+- `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/TRAFFIC_Data_2024.gdb`
 - layer: `TRAFFIC_DataYear2024`
 
 This source contributes current AADT and related traffic measures.
@@ -119,7 +119,7 @@ This source contributes current AADT and related traffic measures.
 
 Historical route-segment traffic files are available at:
 
-- `01-Raw-Data/GA_RDWY_INV/GDOT_Traffic/Traffic_Historical.zip`
+- `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`
 
 These files are retained for future use but are no longer loaded into the pipeline output. Removing historic traffic breakpoints reduced the segment count from 622,255 to 244,904, producing a cleaner network that segments only on current-year traffic intervals.
 
@@ -131,7 +131,7 @@ The earlier approach used GDOT GPAS reference layers (Interstates: 22 features, 
 
 The speed zone enrichment downloads from GDOT GPAS to:
 
-- `01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson`
+- `01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson`
 
 This snapshot is cached locally and only re-downloaded when `download_rnhp_enrichment.py` is run with `refresh=True`.
 
@@ -143,9 +143,9 @@ Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/Featu
 
 Downloaded snapshot:
 
-- `01-Raw-Data/GA_RDWY_INV/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
+- `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
 
-Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. HPMS covers 498,214 of 499,372 segments with AADT (99.8% coverage), compared to the GDOT traffic GDB which only attaches AADT to 185,748 of our 622,255 segments.
+Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. In the current simplified build, direct official current-year coverage is `44,983` of `244,904` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `244,819` segments.
 
 HPMS contributes:
 
@@ -797,7 +797,7 @@ This fixes the null district/county issue at the roadway-segment level without c
 
 Historical AADT columns (2010-2020) have been removed from the pipeline output to produce a cleaner network. This eliminated historic traffic breakpoints as segmentation drivers, reducing the segment count from 622,255 to 244,904.
 
-Raw historical source files remain available in `01-Raw-Data/GA_RDWY_INV/GDOT_Traffic/Traffic_Historical.zip` for future use.
+Raw historical source files remain available in `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip` for future use.
 
 ---
 
@@ -1098,8 +1098,8 @@ Phase 1 is complete and usable as the foundation for downstream work.
 Closed with Phase 1:
 
 - statewide staged roadway ETL with 244,904 segments and 128 columns
-- 2024 AADT coverage at 99.97% (244,831 segments) via five-tier fill chain
-- Future AADT 2044 coverage at 21.3% (52,181 segments) via same fill chain
+- 2024 AADT coverage at 99.97% (`244,819` segments) via five-tier fill chain
+- Future AADT 2044 coverage at 21.3% (`52,236` segments) via same fill chain
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - official signed-route verification for Interstates, US Routes, and State Routes via HPMS (223,136 segments, 91%)
 - HPMS gap-fill for 13 GDOT roadway attributes
@@ -1107,7 +1107,7 @@ Closed with Phase 1:
 - staged SQLite database, GeoPackage, and cleaned CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
-- 79/79 validation checks passing
+- `82/82` validation checks passing
 
 Deferred beyond Phase 1:
 

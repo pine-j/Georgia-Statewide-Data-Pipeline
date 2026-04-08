@@ -3,7 +3,7 @@
 Current enrichment layers:
 - SpeedZone OnSystem: posted speed limits for state highway routes
 
-Downloads are cached under 01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/rnhp_enrichment/.
+Downloads are cached under 01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/.
 """
 
 from __future__ import annotations

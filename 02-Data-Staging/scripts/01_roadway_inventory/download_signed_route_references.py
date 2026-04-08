@@ -7,7 +7,7 @@ This stages the first verification inputs used by `route_verification.py`:
 - `State Routes`
 
 Outputs are written under:
-`01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/signed_route_references/`
+`01-Raw-Data/Roadway-Inventory/GDOT_GPAS/signed_route_references/`
 """
 
 from __future__ import annotations

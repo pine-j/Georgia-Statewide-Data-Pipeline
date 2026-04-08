@@ -520,14 +520,14 @@ def validate_raptor_loader(result: ValidationResult) -> None:
 
         statewide = RoadwayData()
         statewide.load_data()
-        statewide_count = len(statewide.GA_RDWY_INV) if statewide.GA_RDWY_INV is not None else 0
+        statewide_count = len(statewide.Roadway_Inventory) if statewide.Roadway_Inventory is not None else 0
 
         district = RoadwayData(district_id=7)
         district.load_data()
-        district_count = len(district.GA_RDWY_INV) if district.GA_RDWY_INV is not None else 0
+        district_count = len(district.Roadway_Inventory) if district.Roadway_Inventory is not None else 0
         district_values = (
-            set(pd.to_numeric(district.GA_RDWY_INV["DISTRICT"], errors="coerce").dropna().astype(int).unique())
-            if district.GA_RDWY_INV is not None and "DISTRICT" in district.GA_RDWY_INV.columns
+            set(pd.to_numeric(district.Roadway_Inventory["DISTRICT"], errors="coerce").dropna().astype(int).unique())
+            if district.Roadway_Inventory is not None and "DISTRICT" in district.Roadway_Inventory.columns
             else set()
         )
 

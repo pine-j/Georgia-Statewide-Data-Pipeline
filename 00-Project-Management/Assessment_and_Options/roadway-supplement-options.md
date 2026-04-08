@@ -12,13 +12,15 @@ The current Georgia roadway GeoPackage in `02-Data-Staging/spatial/base_network.
 
 This is exploratory analysis only. No merge decision is being made in this document.
 
+Current note: a `2026-04-04` full-load visual re-check lowered the urgency of supplementation for immediate planning use, but this source-completeness analysis is still relevant for follow-on QA.
+
 ## Executive Summary
 
 - The current staged network is behaving as designed. It is not a frontend rendering problem.
 - `base_network.gpkg` is built from GDOT `GA_2024_Routes` and preserves that source faithfully through normalization.
 - In the current raw GDOT extract, `GA_2024_Routes` only exposes `SYSTEM_CODE` values `1` and `2`. The live GDOT LRS metadata interprets those as `1 = State Highway Routes` and `2 = Public Roads`. Even with public roads present, the staged network is still not giving us complete named local-street coverage in places where the basemap clearly shows additional public streets.
 - In the Columbus / Dinglewood test area, the raw GDOT route layer only returns 6 route records and the staged GPKG only returns 14 segmented features. That is too sparse for the visible street grid.
-- A supplemental statewide street source is justified if the web app needs complete local-road display.
+- A supplemental statewide street source is worth evaluating if the web app needs complete local-road display, but it is not currently treated as a Phase 1 blocker.
 - The most pragmatic path is:
   1. keep GDOT as the authoritative primary inventory layer,
   2. evaluate the GDOT live `Statewide Roads` service as the highest-alignment supplement,
@@ -30,14 +32,14 @@ This is exploratory analysis only. No merge decision is being made in this docum
 
 The staged roadway layer is built from the GDOT road inventory workflow:
 
-- Raw source layer: `01-Raw-Data/GA_RDWY_INV/Road_Inventory_2024.gdb`, layer `GA_2024_Routes`
+- Raw source layer: `01-Raw-Data/Roadway-Inventory/Road_Inventory_2024.gdb`, layer `GA_2024_Routes`
 - Normalization: `02-Data-Staging/scripts/01_roadway_inventory/normalize.py`
 - SQLite output: `02-Data-Staging/databases/roadway_inventory.db`
 - Spatial output: `02-Data-Staging/spatial/base_network.gpkg`, layer `roadway_segments`
 
 Relevant implementation points:
 
-- [`normalize.py`](../../02-Data-Staging/scripts/01_roadway_inventory/normalize.py) loads `GA_2024_Routes` as the base network and then segments it using current and historic traffic milepoint breaks.
+- [`normalize.py`](../../02-Data-Staging/scripts/01_roadway_inventory/normalize.py) loads `GA_2024_Routes` as the base network and then segments it using the current traffic milepoint breaks retained in the simplified build.
 - [`create_db.py`](../../02-Data-Staging/scripts/01_roadway_inventory/create_db.py) writes the normalized records into SQLite and GeoPackage.
 - [`Roadways.py`](../../05-RAPTOR-Integration/states/Georgia/categories/Roadways.py) is separate from the web app and applies an additional RAPTOR-specific filter later, but that is not the source of the web app gap.
 
@@ -45,18 +47,18 @@ Relevant implementation points:
 
 Observed from `roadway_inventory.db` and `base_network.gpkg`:
 
-- Total staged segments: `622,255`
+- Total staged segments: `244,904`
 - Unique route IDs: `206,994`
-- Current AADT coverage: `185,748` segments
-- Total staged miles: `133,992.6`
-- Miles with current AADT: `38,359.7`
+- Current AADT coverage: `244,819` segments
+- Total staged miles: `133,994.4`
+- Miles with current AADT: `133,830.6`
 
 Observed `SYSTEM_CODE` distribution in the staged database:
 
 | SYSTEM_CODE | Segment Count | Miles | Notes |
 |---|---:|---:|---|
-| `1` | 109,314 | 24,976.2 | State Highway Route |
-| `2` | 512,941 | 109,016.3 | Public roads as represented in this extract |
+| `1` | 18,499 | 24,976.5 | State Highway Route |
+| `2` | 226,405 | 109,017.9 | Public roads as represented in this extract |
 
 Important note:
 

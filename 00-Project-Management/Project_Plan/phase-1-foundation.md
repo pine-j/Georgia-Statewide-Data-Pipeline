@@ -9,7 +9,7 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 
 ## Current Implementation Snapshot
 
-Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, official signed-route verification via GDOT GPAS layers, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. 79/79 validation checks pass. Remaining questions about supplemental roadway sources and State Route signed-label verification are deferred follow-on improvements, not Phase 1 blockers.
+Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, HPMS-based signed-route verification, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. `82/82` validation checks pass. Remaining questions about supplemental roadway sources and optional GDOT live-layer corroboration are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
 - `roadway_inventory.db` contains `244,904` segmented roadway records with `128` columns
@@ -49,7 +49,7 @@ Current working note:
 Phase 1 closeout decision:
 
 - Close Phase 1 using the current GDOT-based staged roadway network and documented validation results.
-- Defer roadway supplementation, State Route signed-label verification (blocked by `egisp.dot.ga.gov` query endpoint), and any optional archival-source integration to later targeted work only if downstream QA or scoring needs justify it.
+- Defer roadway supplementation, optional GDOT live-layer corroboration, and any optional archival-source integration to later targeted work only if downstream QA or scoring needs justify it.
 
 ---
 
@@ -140,7 +140,7 @@ scripts/
 ### 1.2 Download Georgia Road Inventory GDB
 - **Source**: `https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/Road_Inventory_Geodatabase.zip` (~492 MB, Jul 2025 version)
 - **Data Dictionary**: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Road_Inventory_Data_Dictionary.pdf`
-- **Place in**: `01-Raw-Data/GA_RDWY_INV/` (raw, unmodified)
+- **Place in**: `01-Raw-Data/Roadway-Inventory/` (raw, unmodified)
 - **IMPORTANT**: GDOT only publishes a single rolling snapshot — no yearly archives. Document the download date in a `download_metadata.json` file alongside the GDB.
 
 ### 1.2b Download all available GDOT Road and Traffic Data directory files
@@ -152,7 +152,7 @@ scripts/
   - `Traffic_GeoDatabase.zip`
   - `Traffic_Historical.zip`
   - `Traffic_Tabular.zip`
-- **Action**: Download every file in the directory into `01-Raw-Data/GA_RDWY_INV/` and record the source URLs, directory timestamps, and file sizes in `download_metadata.json`
+- **Action**: Download every file in the directory into `01-Raw-Data/Roadway-Inventory/` and record the source URLs, directory timestamps, and file sizes in `download_metadata.json`
 - **Why**: GDOT provides the full roadway geometry and the traffic/AADT products in separate packages, and the historic traffic archives are needed for later growth analysis
 
 ### 1.2a Catalog all GDB columns
@@ -305,8 +305,8 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `1` = State Highway Route
   - `2` = Public Road
 - Current segment counts:
-  - `SYSTEM_CODE = 1`: `109,314` segments
-  - `SYSTEM_CODE = 2`: `512,941` segments
+  - `SYSTEM_CODE = 1`: `18,499` segments
+  - `SYSTEM_CODE = 2`: `226,405` segments
 - Official GDOT LRS metadata also documents:
   - `3` = Private
   - `4` = Federal
@@ -352,14 +352,10 @@ The staged roadway network currently supports multiple kinds of classification, 
 - Use `FUNCTION_TYPE`, `F_SYSTEM`, `NHS`, and `STRAHNET` as separate dimensions rather than forcing those concepts into a single route-family field
 
 **Signed-route verification (operational)**:
-- Official-first verification path:
-  - GDOT ArcWeb / statewide-viewer layers `Interstates`, `US Highway`, `State Routes`, then `Statewide Roads`
-  - TIGER only as secondary corroboration
-  - OSM only as tertiary edge-case QA
 - Current ETL implementation:
   - initializes signed-route verification fields from the existing `ROUTE_ID` crosswalk
-  - attempts official `Interstates`, `US Highway`, and `State Routes` verification using derived `RCLINK` candidates, then prefers milepoint overlap where the official layer exposes interval fields
-  - continues with whichever official references are available and falls back to baseline crosswalk values only if no official references can be loaded at runtime
+  - uses FHWA HPMS `routesigning` codes as the operational verifier for `Interstate`, `U.S. Route`, and `State Route`
+  - falls back to the baseline crosswalk only where HPMS does not provide a signed-route classification
 - Proposed staged verification fields:
   - `SIGNED_INTERSTATE_FLAG`
   - `SIGNED_US_ROUTE_FLAG`
@@ -371,11 +367,13 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `SIGNED_ROUTE_VERIFY_CONFIDENCE`
   - `SIGNED_ROUTE_VERIFY_SCORE`
   - `SIGNED_ROUTE_VERIFY_NOTES`
-- Proposed matching order:
-  - exact `RCLINK` match where official split layers expose it
-  - `RCLINK` + milepoint overlap where official layers expose interval fields
-  - geometry-overlap fallback against official signed-route layers
-  - TIGER / OSM only for corroboration and conflict review
+- Current verification coverage:
+  - HPMS `routesigning` coverage on `223,136` segments
+  - `SIGNED_ROUTE_FAMILY_PRIMARY` distribution:
+    - `Interstate`: `3,659`
+    - `U.S. Route`: `10,169`
+    - `State Route`: `4,671`
+    - `Local/Other`: `226,405`
 - Detailed design:
   - [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
 
@@ -444,7 +442,7 @@ COLUMNS_TO_KEEP = [
 4. Filter by district if `district_id` specified
 5. Select RAPTOR-relevant columns
 6. Reproject to EPSG:32617
-7. Assign to `self.GA_RDWY_INV`
+7. Assign to `self.Roadway_Inventory`
 
 ### 1.7 Explore and validate
 - Verify segment count, CRS, column names
@@ -478,12 +476,12 @@ COLUMNS_TO_KEEP = [
 - `02-Data-Staging/config/` — district_codes.json, county_codes.json, system_codes.json, crs_config.json
 
 ### RAPTOR Category Class
-- `05-RAPTOR-Integration/states/Georgia/categories/Roadways.py` — `RoadwayData` class that reads from the database and returns a filtered GeoDataFrame as `self.GA_RDWY_INV`
+- `05-RAPTOR-Integration/states/Georgia/categories/Roadways.py` — `RoadwayData` class that reads from the database and returns a filtered GeoDataFrame as `self.Roadway_Inventory`
 
 ## Verification
 - [x] GDB downloads and unpacks without errors
 - [x] `roadway_inventory.db` created with staged source columns and load metadata
-- [x] Row count validation passes: `622,255` staged rows
+- [x] Row count validation passes: `244,904` staged rows
 - [x] `unique_id` exists and is unique across all staged segments
 - [x] CRS validation passes: `EPSG:32617`
 - [x] Staged database tables and indexes are implemented through the ETL load step
@@ -491,7 +489,7 @@ COLUMNS_TO_KEEP = [
 - [x] SYSTEM_CODE filtering is supported in `Roadways.py`
 - [x] District filtering is supported in `Roadways.py`
 - [x] Georgia-specific route-family fields are implemented and staged
-- [x] Signed-route verification is operational via GDOT GPAS layers (9,271 interstate + 35,560 US highway segments verified)
+- [x] Signed-route verification is operational via FHWA HPMS `routesigning` codes (`223,136` segments with signed-route coverage)
 - [x] Speed limit enrichment is operational via GDOT GPAS SpeedZone OnSystem (102,335 segments)
 - [x] Critical-field null checks pass within the validation thresholds
 - [x] Validation script passes all recorded checks in `02-Data-Staging/config/validation_results.json`
@@ -499,5 +497,5 @@ COLUMNS_TO_KEEP = [
 ## Deferred From Phase 1
 
 - statewide roadway supplementation from TIGER / OSM / alternate GDOT services
-- State Route signed-label verification (blocked by `egisp.dot.ga.gov` returning HTTP 500 on queries)
+- optional GDOT live-layer corroboration against `egisp.dot.ga.gov` or similar official services
 - any decision to operationalize currently archival-only raw source packages beyond the active ETL inputs

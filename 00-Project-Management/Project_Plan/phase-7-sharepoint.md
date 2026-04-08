@@ -18,7 +18,7 @@ https://jacobsengineering.sharepoint.com/:f:/r/sites/ICDataInsightsandDigitalInt
 
 ```
 Raptor/DATA/Georgia/
-├── GA_RDWY_INV/
+├── Roadway-Inventory/
 │   └── Road_Inventory_Geodatabase.gdb/
 ├── pavement/
 │   └── COPACES_Ratings_{year}.csv

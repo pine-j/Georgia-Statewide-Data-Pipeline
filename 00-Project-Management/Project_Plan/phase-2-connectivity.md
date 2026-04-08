@@ -121,7 +121,7 @@ Download, clean, and load priority route and traffic generator data into the Geo
 - `02-Data-Staging/databases/connectivity.db`
 - `02-Data-Staging/spatial/connectivity.gpkg` (9 layers)
 - `05-RAPTOR-Integration/states/Georgia/categories/Connectivity/` (3 files)
-- Updated `Georgia_Data_Inventory_GDOT.csv`
+- Updated `Georgia_Data_Inventory.csv`
 
 ## Verification
 - [ ] SRP Critical routes include major interstates

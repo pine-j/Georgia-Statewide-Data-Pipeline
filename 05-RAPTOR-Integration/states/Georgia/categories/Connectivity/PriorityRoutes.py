@@ -70,10 +70,10 @@ class PriorityRoutes:
         Parameters
         ----------
         roadways:
-            Object with a ``GA_RDWY_INV`` GeoDataFrame attribute.
+            Object with a ``Roadway_Inventory`` GeoDataFrame attribute.
         """
         print("Calculating SRP priority route flags ...")
-        gdf = roadways.GA_RDWY_INV
+        gdf = roadways.Roadway_Inventory
 
         if self.priority_routes is None or self.priority_routes.empty:
             print("  No priority route data – setting all flags to False.")

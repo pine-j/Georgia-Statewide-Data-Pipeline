@@ -1,3 +1,12 @@
+# Deprecated
+
+This handoff note is redundant with the maintained Phase 1 docs:
+
+- `00-Project-Management/Pipeline-Documetation/phase-1-roadway-data-pipeline.md`
+- `00-Project-Management/Project_Plan/phase-1-foundation.md`
+
+Keep those files as the canonical current references.
+
 # 2026-04-08 Phase 1 Implementation Summary for Claude Review
 
 ## Scope

@@ -13,7 +13,7 @@ Current enrichment:
   surface_type, f_system, facility_type, nhs, ownership, urban_id
 
 Downloaded data lives at:
-  01-Raw-Data/GA_RDWY_INV/FHWA_HPMS/2024/hpms_ga_2024_tabular.json
+  01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import geopandas as gpd
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-HPMS_PATH = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV" / "FHWA_HPMS" / "2024" / "hpms_ga_2024_tabular.json"
+HPMS_PATH = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "FHWA_HPMS" / "2024" / "hpms_ga_2024_tabular.json"
 
 MILEPOINT_TOLERANCE = 1e-4
 

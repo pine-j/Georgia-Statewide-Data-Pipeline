@@ -3,7 +3,7 @@
     "speed_zone_on_system": {
       "layer_name": "SpeedZone OnSystem",
       "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10",
-      "local_geojson": "01-Raw-Data/GA_RDWY_INV/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson",
+      "local_geojson": "01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson",
       "match_key": "route_id_base",
       "route_id_field": "RNH_ROUTE_ID",
       "from_field": "FROM_MILEPOINT_STATEWIDE",

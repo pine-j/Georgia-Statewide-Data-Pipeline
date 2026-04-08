@@ -198,10 +198,10 @@ Applying the proposed rule set to the current `roadway_inventory.db` route IDs y
 
 | Proposed `ROUTE_FAMILY` | Segment count |
 |---|---:|
-| `Local/Other` | `512,941` |
-| `U.S. Route` | `65,754` |
-| `State Route` | `30,219` |
-| `Interstate` | `13,341` |
+| `Local/Other` | `226,405` |
+| `U.S. Route` | `9,936` |
+| `State Route` | `4,904` |
+| `Interstate` | `3,659` |
 
 Important interpretation note:
 

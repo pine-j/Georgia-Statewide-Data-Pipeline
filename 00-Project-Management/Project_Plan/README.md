@@ -132,17 +132,17 @@ Phases 2-6 are ordered by current data availability after Phase 1: Connectivity,
 Phase 1 is complete for the current project scope and serves as the closed roadway-foundation baseline for downstream phases.
 
 Current staged outputs:
-- `02-Data-Staging/databases/roadway_inventory.db`: `622,255` segmented roadway rows
+- `02-Data-Staging/databases/roadway_inventory.db`: `244,904` segmented roadway rows
 - `02-Data-Staging/spatial/base_network.gpkg`:
-  - `roadway_segments` (`622,255` features)
+  - `roadway_segments` (`244,904` features)
   - `county_boundaries` (`159` features)
   - `district_boundaries` (`7` features)
 
 Current traffic coverage in the staged roadway network:
-- Current AADT is present on `185,748` of `622,255` segments (`29.85%`)
-- Current AADT covers `38,359.71` of `133,992.56` staged segment miles (`28.63%`)
-- Historical route-segment traffic is staged for `2010-2020`
-- Historical route-segment traffic is not available for `2021-2023`
+- Current AADT is present on `244,819` of `244,904` segments (`99.97%`)
+- Current AADT covers `133,830.64` of `133,994.38` staged segment miles (`99.88%`)
+- Future AADT 2044 is present on `52,236` of `244,904` segments (`21.3%`)
+- Historical AADT columns were removed from staged output; raw source files are retained for future trend work
 
 Current classification available in Phase 1:
 - `SYSTEM_CODE` for roadway system / ownership class
@@ -196,7 +196,7 @@ The pipeline is designed to grow. Post-RAPTOR phases (Transit, Bike/Ped, EJ, Cli
 2. **Build the RAPTOR class** — `05-RAPTOR-Integration/states/Georgia/categories/NewCategory.py` following the `generate_metrics(roadways)` pattern
 3. **Update the scoring schema** — add category with weight (all weights must sum to 1.0)
 4. **Wire into `pipeline.py`** — import, instantiate, call `generate_metrics()`
-5. **Update data inventory** — add datasets to `Georgia_Data_Inventory_GDOT.csv`
+5. **Update data inventory** — add datasets to `Georgia_Data_Inventory.csv`
 6. **Re-run** — the scoring engine picks up new categories automatically
 
 ---

@@ -9,7 +9,7 @@ from pathlib import Path
 import fitz
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV"
+RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 PDF_PATH = RAW_DIR / "DataDictionary.pdf"
 OUTPUT_MD = RAW_DIR / "DataDictionary.agent.md"
 ASSET_DIR = RAW_DIR / "DataDictionary-assets"
