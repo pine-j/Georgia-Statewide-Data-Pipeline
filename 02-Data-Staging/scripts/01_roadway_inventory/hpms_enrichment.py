@@ -192,15 +192,19 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
         routenum = match.get("routenumber")
         if routenum is not None and not pd.isna(routenum):
-            enriched.at[idx, "HPMS_ROUTE_NUMBER"] = int(routenum)
+            try:
+                enriched.at[idx, "HPMS_ROUTE_NUMBER"] = int(routenum)
+            except (ValueError, TypeError):
+                enriched.at[idx, "HPMS_ROUTE_NUMBER"] = str(routenum).strip()
 
         routename = match.get("routename")
         if routename is not None and not pd.isna(routename):
             enriched.at[idx, "HPMS_ROUTE_NAME"] = str(routename).strip()
 
-    # Sync canonical AADT after fills
-    enriched["AADT"] = enriched["AADT_2024"]
-    enriched["current_aadt_covered"] = enriched["AADT_2024"].notna()
+    # Sync only HPMS-filled rows (avoid clobbering pre-existing AADT values)
+    hpms_mask = enriched["AADT_2024_SOURCE"] == "hpms_2024"
+    enriched.loc[hpms_mask, "AADT"] = enriched.loc[hpms_mask, "AADT_2024"]
+    enriched.loc[hpms_mask, "current_aadt_covered"] = True
 
     LOGGER.info(
         "HPMS enrichment: %d segments matched, %d AADT gaps filled, %d with pavement data",

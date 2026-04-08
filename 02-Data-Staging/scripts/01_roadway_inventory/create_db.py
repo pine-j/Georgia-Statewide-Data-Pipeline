@@ -140,7 +140,11 @@ def main() -> None:
 
     csv_path = find_cleaned_csv()
     logger.info("Reading cleaned CSV: %s", csv_path)
-    df = pd.read_csv(csv_path, low_memory=False)
+    try:
+        df = pd.read_csv(csv_path, low_memory=False)
+    except Exception:
+        logger.info("Retrying CSV read with default memory settings")
+        df = pd.read_csv(csv_path)
     logger.info("Loaded %d rows, %d columns", len(df), len(df.columns))
 
     # Create database

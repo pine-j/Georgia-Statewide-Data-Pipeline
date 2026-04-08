@@ -47,7 +47,7 @@
   {
     "name": "Current AADT coverage",
     "status": "PASS",
-    "detail": "621,878 segments with canonical current AADT; official=185,748"
+    "detail": "621,444 segments with canonical current AADT; official=185,748"
   },
   {
     "name": "Historic AADT coverage",

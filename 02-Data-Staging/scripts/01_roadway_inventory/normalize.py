@@ -1206,13 +1206,15 @@ def apply_state_system_current_aadt_gap_fill(gdf: gpd.GeoDataFrame) -> gpd.GeoDa
     return filled
 
 
+NEAREST_NEIGHBOR_MAX_DISTANCE_MI = 20.0
+
+
 def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Fill remaining AADT gaps using the nearest covered segment on the same route.
 
     For each uncovered segment, find the closest covered segment (by milepoint
-    distance) on the same ROUTE_ID and copy its AADT value. This is lower
-    confidence than direct matching but avoids leaving gaps where the same
-    route has known traffic nearby.
+    distance) on the same ROUTE_ID and copy its AADT value. Limited to a
+    maximum distance of 20 miles to prevent nonsensical fills.
     """
 
     filled = gdf.copy()
@@ -1253,7 +1255,7 @@ def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 best_dist = dist
                 best_aadt = cand_aadt
 
-        if best_aadt is not None:
+        if best_aadt is not None and best_dist <= NEAREST_NEIGHBOR_MAX_DISTANCE_MI:
             filled.at[idx, "AADT_2024"] = int(best_aadt)
             filled.at[idx, "AADT"] = int(best_aadt)
             filled.at[idx, "AADT_YEAR"] = 2024
@@ -1262,9 +1264,6 @@ def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             filled.at[idx, "AADT_2024_FILL_METHOD"] = "nearest_covered_segment_same_route"
             filled.at[idx, "current_aadt_covered"] = True
             fill_count += 1
-
-    filled["AADT"] = filled["AADT_2024"]
-    filled["current_aadt_covered"] = filled["AADT_2024"].notna()
 
     logger.info("Nearest-neighbor AADT: filled %d segments", fill_count)
     return filled
