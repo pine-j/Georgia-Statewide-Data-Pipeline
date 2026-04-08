@@ -12,6 +12,16 @@ Current closeout position:
 - the GDOT-based staged network is accepted as the initial statewide planning baseline
 - supplementation remains a separate validation/improvement track rather than part of the closed Phase 1 build
 
+Official Georgia sources used for the roadway base layer, route-family crosswalk, and enrichment:
+
+- GDOT Road & Traffic Data: `https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx`
+- GDOT Understanding Route IDs: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Guides/UnderstandingRouteIDs_Doc.pdf`
+- GDOT Road Inventory Data Dictionary: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Road_Inventory_Data_Dictionary.pdf`
+- GDOT live LRS metadata: `https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Network_LRSN/MapServer/exts/LRSServer/layers`
+- GDOT GPAS Interstates: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/7`
+- GDOT GPAS US Routes: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/6`
+- GDOT GPAS SpeedZone OnSystem: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
+
 ---
 
 ## Pipeline Goal
@@ -28,6 +38,8 @@ Together, these provide:
 - joined roadway-inventory attributes from GDOT
 - current traffic fields from GDOT 2024 traffic data
 - historical traffic fields from GDOT route-segment traffic archives
+- official signed-route verification from GDOT GPAS layers
+- posted speed limits from GDOT SpeedZone OnSystem permits
 - county and district boundary layers
 
 The staged outputs are then consumed by:
@@ -111,6 +123,23 @@ Historical route-segment traffic is read from:
 
 The current ETL reads historical route-segment traffic records from this archive and aligns them back to the official route geometry by route ID and milepoint interval.
 
+### Official signed-route reference snapshots
+
+The signed-route verification downloads official GDOT GPAS reference layers to:
+
+- `01-Raw-Data/GA_RDWY_INV/signed_route_references/interstates.geojson`
+- `01-Raw-Data/GA_RDWY_INV/signed_route_references/us_highway.geojson`
+
+These snapshots are cached locally and only re-downloaded when `download_signed_route_references.py` is run with `refresh=True`.
+
+### RNHP enrichment snapshots
+
+The speed zone enrichment downloads from GDOT GPAS to:
+
+- `01-Raw-Data/GA_RDWY_INV/rnhp_enrichment/speed_zone_on_system.geojson`
+
+This snapshot is cached locally and only re-downloaded when `download_rnhp_enrichment.py` is run with `refresh=True`.
+
 ### Official boundary source
 
 County and district polygons currently come from the GDOT-hosted ArcGIS boundary service:
@@ -157,8 +186,14 @@ The ETL also joins selected attribute layers from the same GDOT geodatabase:
 - `NHS`
 - `FACILITY_TYPE`
 - `THROUGH_LANES`
+- `LANE_WIDTH`
 - `MEDIAN_TYPE`
+- `MEDIAN_WIDTH`
 - `SHOULDER_TYPE`
+- `SHOULDER_WIDTH_L`
+- `SHOULDER_WIDTH_R`
+- `OWNERSHIP`
+- `STRAHNET`
 - `SURFACE_TYPE`
 - `URBAN_ID`
 
@@ -217,7 +252,12 @@ The key scripts are:
 
 - `02-Data-Staging/scripts/01_roadway_inventory/download.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/catalog_columns.py`
+- `02-Data-Staging/scripts/01_roadway_inventory/download_signed_route_references.py`
+- `02-Data-Staging/scripts/01_roadway_inventory/download_rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/normalize.py`
+- `02-Data-Staging/scripts/01_roadway_inventory/route_family.py`
+- `02-Data-Staging/scripts/01_roadway_inventory/route_verification.py`
+- `02-Data-Staging/scripts/01_roadway_inventory/rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/create_db.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/validate.py`
 
@@ -240,8 +280,14 @@ Selected roadway-inventory attribute layers are joined from the same GDB:
 - `NHS`
 - `FACILITY_TYPE`
 - `THROUGH_LANES`
+- `LANE_WIDTH`
 - `MEDIAN_TYPE`
+- `MEDIAN_WIDTH`
 - `SHOULDER_TYPE`
+- `SHOULDER_WIDTH_L`
+- `SHOULDER_WIDTH_R`
+- `OWNERSHIP`
+- `STRAHNET`
 - `SURFACE_TYPE`
 - `URBAN_ID`
 
@@ -271,6 +317,15 @@ It also derives standardized fields used downstream:
 - `ROUTE_NUMBER`
 - `ROUTE_SUFFIX`
 - `ROUTE_DIRECTION`
+- `BASE_ROUTE_NUMBER`
+- `ROUTE_SUFFIX_LABEL`
+- `ROUTE_FAMILY`
+- `ROUTE_FAMILY_DETAIL`
+- `ROUTE_FAMILY_CONFIDENCE`
+- `ROUTE_FAMILY_SOURCE`
+
+The route-family crosswalk is Georgia-specific and grounded in GDOT
+`ROUTE_ID` documentation plus GDOT Interstate and U.S.-route appendix tables.
 
 ### 4. Load current traffic data
 
@@ -322,7 +377,85 @@ The fields that change during splitting are:
 
 The pipeline therefore does not intentionally discard the selected original network attributes during segmentation. The main limitation is that only the roadway-inventory layers explicitly joined by the ETL are preserved downstream.
 
-### 8. Reproject and compute segment length
+### 8. Apply official signed-route verification
+
+After segmentation, the ETL initializes signed-route verification fields from
+the baseline `ROUTE_ID` crosswalk and then runs an official-source
+verification pass using GDOT GPAS layers.
+
+Official reference sources (from `rnhp.dot.ga.gov`):
+
+- GPAS/7 `GDOT Interstates` (22 features) — maps `ROUTE_ID` + milepoint intervals to `INTERSTATE_NAME`
+- GPAS/6 `US Route` (674 features) — maps `ROUTE_ID` + milepoint intervals to `US_ROUTE_NUM`
+
+Verification method:
+
+- match segments to official references by `ROUTE_ID` base (first 13 characters, direction-stripped) plus milepoint interval overlap
+- also try derived 10-character `RCLINK` candidates as fallback
+- segments matching an official reference are upgraded to `high` confidence with source `gdot_interstates` or `gdot_us_highway`
+- segments without an official match retain the baseline `route_id_crosswalk` values
+
+Current verification results:
+
+- `9,271` segments verified by `gdot_interstates`
+- `35,560` segments verified by `gdot_us_highway`
+- `577,424` segments retain baseline `route_id_crosswalk`
+
+Note: State Route signed labels are not available from GPAS. The GDOT ArcWeb
+`State Routes` layer on `egisp.dot.ga.gov` has the data but its query endpoint
+returns HTTP 500 errors. State Route classification remains at medium confidence
+via the route-family crosswalk fallback.
+
+Current signed-route verification fields:
+
+- `SIGNED_INTERSTATE_FLAG`
+- `SIGNED_US_ROUTE_FLAG`
+- `SIGNED_STATE_ROUTE_FLAG`
+- `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SIGNED_ROUTE_FAMILY_ALL`
+- `SIGNED_ROUTE_VERIFY_SOURCE`
+- `SIGNED_ROUTE_VERIFY_METHOD`
+- `SIGNED_ROUTE_VERIFY_CONFIDENCE`
+- `SIGNED_ROUTE_VERIFY_SCORE`
+- `SIGNED_ROUTE_VERIFY_NOTES`
+
+If the official references are unavailable at runtime, the ETL keeps the
+baseline crosswalk-derived values and logs a warning rather than failing hard.
+
+### 8a. Apply RNHP enrichment (speed zones)
+
+After signed-route verification, the ETL enriches state highway segments with
+posted speed limit data from the GDOT GPAS SpeedZone OnSystem layer.
+
+Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
+
+Matching method:
+
+- filter to active speed zone records (`RECORD_STATUS_CD = 'ACTV'`)
+- match by `RNH_ROUTE_ID` base (first 13 characters) plus statewide milepoint interval overlap
+- when multiple speed zones cover a segment, take the best-covering (longest overlap)
+
+Current enrichment results:
+
+- `102,335` segments with posted speed limits (93.6% of state highway segments)
+- `2,849` school zone segments flagged
+
+Speed limit distribution:
+
+- 25 mph: `3,061` segments
+- 35 mph: `8,681` segments
+- 45 mph: `13,125` segments
+- 55 mph: `55,169` segments (most common)
+- 65 mph: `7,700` segments
+- 70 mph: `6,431` segments
+
+Current enrichment fields:
+
+- `SPEED_LIMIT`
+- `IS_SCHOOL_ZONE`
+- `SPEED_LIMIT_SOURCE`
+
+### 9. Reproject and compute segment length
 
 After segmentation, the roadway network is reprojected to:
 
@@ -333,7 +466,7 @@ The ETL then computes:
 - `segment_length_m`
 - `segment_length_mi`
 
-### 9. Write staged outputs
+### 10. Write staged outputs
 
 The ETL writes:
 
@@ -386,8 +519,14 @@ with:
 - `NHS`
 - `FACILITY_TYPE`
 - `THROUGH_LANES`
+- `LANE_WIDTH`
 - `MEDIAN_TYPE`
+- `MEDIAN_WIDTH`
 - `SHOULDER_TYPE`
+- `SHOULDER_WIDTH_L`
+- `SHOULDER_WIDTH_R`
+- `OWNERSHIP`
+- `STRAHNET`
 - `SURFACE_TYPE`
 - `URBAN_ID`
 
@@ -410,10 +549,31 @@ with:
 - `TRUCK_AADT_2010` through `TRUCK_AADT_2020`
 - `TRUCK_PCT_2010` through `TRUCK_PCT_2020`
 
+### From GDOT GPAS signed-route verification
+
+- `SIGNED_INTERSTATE_FLAG`
+- `SIGNED_US_ROUTE_FLAG`
+- `SIGNED_STATE_ROUTE_FLAG`
+- `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SIGNED_ROUTE_FAMILY_ALL`
+- `SIGNED_ROUTE_VERIFY_SOURCE`
+- `SIGNED_ROUTE_VERIFY_METHOD`
+- `SIGNED_ROUTE_VERIFY_CONFIDENCE`
+- `SIGNED_ROUTE_VERIFY_SCORE`
+- `SIGNED_ROUTE_VERIFY_NOTES`
+
+### From GDOT GPAS SpeedZone OnSystem
+
+- `SPEED_LIMIT`
+- `IS_SCHOOL_ZONE`
+- `SPEED_LIMIT_SOURCE`
+
 ### Derived by ETL
 
 - parsed route fields
 - recoded route and district fields
+- decoded label fields for staged coded attributes
+- route-family fields
 - `unique_id`
 - `AADT`
 - `AADT_YEAR`
@@ -445,7 +605,7 @@ Tables:
 Current contents:
 
 - `622,255` roadway segment rows
-- `94` columns in `segments`
+- `141` columns in `segments`
 
 The SQLite database is the staged tabular source of truth. It contains roadway and traffic attributes but no geometry.
 
@@ -463,6 +623,32 @@ Current layers:
 
 The GeoPackage is the staged spatial source used by the web application and other geometry-aware workflows.
 
+### Coverage of newly added roadway event fields
+
+The Phase 1 ETL now stages six additional official roadway-inventory attributes from `Road_Inventory_2024.gdb`:
+
+- `LANE_WIDTH`
+- `MEDIAN_WIDTH`
+- `OWNERSHIP`
+- `SHOULDER_WIDTH_L`
+- `SHOULDER_WIDTH_R`
+- `STRAHNET`
+
+Current populated segment counts in the staged database:
+
+- `OWNERSHIP`: `452,912`
+- `STRAHNET`: `2,228`
+- `LANE_WIDTH`: `713`
+- `SHOULDER_WIDTH_R`: `390`
+- `MEDIAN_WIDTH`: `9`
+- `SHOULDER_WIDTH_L`: `9`
+
+This is operationally important:
+
+- `OWNERSHIP` came through at meaningful statewide coverage
+- `STRAHNET` is present but limited to a small subset of nationally strategic facilities
+- the width-related event layers are currently very sparse in the staged output under the current exact route-interval join strategy
+
 ---
 
 ## Current Traffic Coverage
@@ -477,6 +663,41 @@ Current AADT coverage in the staged roadway network:
 - coverage rate by staged miles: `28.63%`
 
 This is important for interpretation. The staged roadway network is much broader than the traffic-covered subset.
+
+### Where the current-year gap actually is
+
+The current-year AADT audit shows that the gap is concentrated in public/local roads, not the state-system network.
+
+- `SYSTEM_CODE = 1`: `109,314` segments total, `98,853` covered, `10,461` uncovered, `90.43%` covered
+- `SYSTEM_CODE = 2`: `512,941` segments total, `86,895` covered, `426,046` uncovered, `16.94%` covered
+
+Current-year coverage by route family is also strong on the signed state-system families:
+
+- `U.S. Route`: `92.10%`
+- `State Route`: `90.40%`
+- `Interstate`: `82.27%`
+- `Local/Other`: `16.94%`
+
+This changes the Phase 1 improvement priority:
+
+- analytical improvement should target the remaining `SYSTEM_CODE = 1` uncovered tail first
+- broader statewide current-year coverage improvement is a separate local-road supplementation problem, not just a route-interval tuning problem
+
+### State-system null county and district diagnosis
+
+The current-year audit also identified a distinct data-quality bucket inside the state-system tail:
+
+- `8,698` uncovered segments had null `COUNTY_CODE` and `DISTRICT`
+
+Investigation showed these are primarily statewide GDOT routes whose `ROUTE_ID` structure uses parsed county code `000`. Those rows do not pick up county or district through the normal non-spatial joins because the route ID itself does not resolve to a single county.
+
+The ETL now includes a spatial county/district backfill step for those segments:
+
+- use county polygons from the staged `county_boundaries` layer when available, with official GDOT county boundaries as fallback
+- generate a representative point for each affected roadway segment
+- spatially assign `COUNTY_ID`, `COUNTY_CODE`, `COUNTY_NAME`, `GDOT_District`, and `DISTRICT`
+
+This fixes the null district/county issue at the roadway-segment level without changing the underlying statewide route identity.
 
 ### Historical coverage
 
@@ -522,26 +743,23 @@ The staged network currently supports several distinct classification concepts.
 
 ### 1. System / ownership classification
 
-Field:
+Fields:
 
 - `SYSTEM_CODE`
+- `OWNERSHIP`
 
 Documented GDOT system codes include:
 
 - `1` = State Highway Route
-- `2` = County Road
-- `3` = City Street
-- `6` = Ramp
-- `7` = Private Road
-- `8` = Public Road
-- `9` = Collector-Distributor
+- `2` = Public
+- `3` = Private
 
 Current values actually present in the staged Phase 1 build:
 
 - `SYSTEM_CODE = 1`: `109,314` segments
 - `SYSTEM_CODE = 2`: `512,941` segments
 
-This means the current statewide staged network is mostly composed of state highway and county road records in the current build.
+`SYSTEM_CODE` is the broadest route-system bucket. `OWNERSHIP` is a separate legal/jurisdiction classification and is now also carried into the staged outputs with `OWNERSHIP_LABEL`.
 
 ### 2. Functional classification
 
@@ -560,7 +778,11 @@ Current values present in the staged build:
 - `6`
 - `7`
 
-This is the most direct hierarchy for roadway functional class in the staged data, but the current project documentation does not yet include a finalized descriptive label table for all GDOT functional-class codes.
+This is the most direct hierarchy for roadway functional class in the staged data, and the staged outputs now include readable label columns for those codes.
+The staged outputs also carry:
+
+- `F_SYSTEM_LABEL`
+- `FUNCTIONAL_CLASS_LABEL`
 
 ### 3. Route-family parsing
 
@@ -572,28 +794,98 @@ Fields:
 - `ROUTE_NUMBER`
 - `ROUTE_SUFFIX`
 - `ROUTE_DIRECTION`
+- `BASE_ROUTE_NUMBER`
+- `ROUTE_SUFFIX_LABEL`
+- `ROUTE_FAMILY`
+- `ROUTE_FAMILY_DETAIL`
+- `ROUTE_FAMILY_CONFIDENCE`
+- `ROUTE_FAMILY_SOURCE`
 
-These fields are useful for route interpretation and can support a more explicit route-family classification later.
+The route-family crosswalk now uses official Georgia rules with this priority:
 
-### 4. Current limitation
+- `Interstate`
+- `U.S. Route`
+- `State Route`
+- `Local/Other`
+
+Operationally:
+
+- `ROUTE_FAMILY` is the coarse reporting field
+- `ROUTE_FAMILY_DETAIL` captures Georgia-specific subtypes such as `Business`, `Spur`, `County Road`, `City Street`, `Ramp`, and `Frontage Road`
+- `ROUTE_FAMILY_CONFIDENCE` keeps `U.S. Route` vs `State Route` separation explicit as a medium-confidence interpretation
+
+### 4. Network significance classification
+
+Fields:
+
+- `NHS`
+- `NHS_IND`
+- `STRAHNET`
+
+These fields indicate whether a route segment is part of the National Highway System or the Strategic Highway Network.
+
+Important limitation:
+
+- `NHS` does not identify signed route family
+- it can help identify nationally significant facilities
+- it does not by itself tell us whether a segment is an `Interstate`, `U.S. Route`, or `State Route`
+
+The route-family classification comes from a dedicated crosswalk based primarily on `ROUTE_ID` parsing and GDOT route-code interpretation.
+
+### 5. Current limitation
 
 Phase 1 currently has:
 
 - a clear system classification
 - a clear functional classification
 - route-identity parsing
+- a Georgia-specific route-family crosswalk grounded in GDOT route documentation
 
-Phase 1 does not yet have a finalized, project-documented crosswalk that cleanly labels each route as:
+Important limitation:
 
-- Interstate
-- U.S. Route
-- State Route
-- county road
-- city street
-- ramp
-- other route-family categories
+- `U.S. Route` versus `State Route` remains a medium-confidence interpretation because Georgia `ROUTE_ID` values encode state route numbers and concurrency can still exist
 
-If that route-family classification is needed for reporting or downstream scoring, it should be added as an explicit follow-on enhancement.
+Reference note:
+
+- [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+
+### 6. Signed-route verification (operational)
+
+Official verification is operational for Interstates and US Routes using GDOT GPAS layers from `rnhp.dot.ga.gov`:
+
+- GPAS/7 `GDOT Interstates` — 22 features mapping `ROUTE_ID` to signed interstate numbers
+- GPAS/6 `US Route` — 674 features mapping `ROUTE_ID` to signed US route numbers
+
+Current verification coverage:
+
+- `9,271` segments verified by `gdot_interstates` (high confidence)
+- `35,560` segments verified by `gdot_us_highway` (high confidence)
+- `577,424` segments retain `route_id_crosswalk` baseline (medium or high confidence depending on family)
+
+Matching method:
+
+1. `ROUTE_ID` base (13-character, direction-stripped) plus milepoint interval overlap
+2. derived 10-character `RCLINK` candidates plus milepoint interval overlap as fallback
+
+State Route signed labels remain unavailable from GPAS. The GDOT ArcWeb
+`State Routes` layer on `egisp.dot.ga.gov` has the data but its query endpoint
+returns HTTP 500 errors. State Route classification remains at medium confidence.
+
+### 7. Speed limit enrichment (operational)
+
+Official posted speed limits are enriched from GDOT GPAS SpeedZone OnSystem
+permits from `rnhp.dot.ga.gov`:
+
+- GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits
+
+Current enrichment coverage:
+
+- `102,335` segments with posted speed limits (93.6% of state highway segments)
+- `2,849` school zone segments flagged
+
+Detailed design note:
+
+- [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
 
 ---
 
@@ -682,6 +974,8 @@ Current direct ETL inputs remain:
 - `TRAFFIC_Data_2024.gdb`
 - `Traffic_Historical.zip`
 - GDOT boundary service
+- GDOT GPAS `Interstates` and `US Route` signed-route reference layers (from `rnhp.dot.ga.gov`)
+- GDOT GPAS `SpeedZone OnSystem` enrichment layer (from `rnhp.dot.ga.gov`)
 
 ---
 
@@ -691,17 +985,55 @@ Current direct ETL inputs remain:
 
 Only about `29.85%` of staged segments currently have current AADT. This is not necessarily an ETL error. It reflects the fact that the full staged roadway network is broader than the subset of routes with matched current traffic coverage.
 
+Current interpretation should be more specific than that headline number:
+
+- the remaining Phase 1 analytical traffic-improvement work is concentrated on the `10,461` uncovered `SYSTEM_CODE = 1` segments
+- the much larger uncovered bucket is `SYSTEM_CODE = 2` public/local roads, which likely needs a different supplementation strategy
+- the former null `COUNTY_CODE` / `DISTRICT` state-system rows are primarily county-code-`000` statewide routes and are now handled by spatial backfill
+
 ### 2. Historical route-segment gap for 2021-2023
 
 The staged network currently lacks route-segment historical traffic records for `2021-2023`.
 
-### 3. Not every roadway-inventory layer is preserved
+### 3. Some official roadway event layers remain sparse after staging
 
-The staged network retains only the base route layer plus the roadway-inventory attribute layers explicitly joined by the ETL. Other layers in the roadway GDB are not automatically carried forward.
+The staged network now retains the main roadway-inventory event layers used for widths, ownership, STRAHNET, surface, shoulder, median, lanes, NHS, and functional class. However, some of those event layers remain sparsely populated after the current exact route-interval join, especially:
 
-### 4. Route-family classification is not fully documented
+- `LANE_WIDTH`
+- `MEDIAN_WIDTH`
+- `SHOULDER_WIDTH_L`
+- `SHOULDER_WIDTH_R`
+- `STRAHNET`
 
-The project currently has system and functional classification, but not a finished descriptive crosswalk for a full Interstate / U.S. Route / State Route taxonomy.
+That may reflect sparse source publication, segmentation differences, or both. If those attributes become important for downstream scoring, they should be evaluated as a dedicated refinement task.
+
+### 4. State Route signed-label verification is not yet available
+
+Official signed-route verification is operational for Interstates and US Routes
+via GDOT GPAS layers on `rnhp.dot.ga.gov`. State Route signed labels are not
+yet available because:
+
+- the GDOT ArcWeb `State Routes` layer on `egisp.dot.ga.gov` has the data but
+  its query endpoint returns HTTP 500 errors
+- no equivalent State Route label layer exists on `rnhp.dot.ga.gov`
+
+State Route classification remains at medium confidence via the route-family
+crosswalk. This could be upgraded if GDOT restores the `egisp.dot.ga.gov`
+query endpoint or if the data is obtained through a direct file export.
+
+### 4a. RNHP data source exploration results
+
+An inventory of all queryable layers on `rnhp.dot.ga.gov` was completed.
+Several layers were evaluated but not integrated:
+
+- **Bridges (FCRS/2)**: 15,478 features — RCLINK field is blank on all records, unusable for matching
+- **Railroad Crossings (FCRS/3)**: 12,154 features — all key fields (RCLINK, INT_MILEPT, SPEED_LMT) are null
+- **Traffic Counters (FCRS/4)**: 17,145 features — stuck at 2013 data, superseded by 2024 AADT
+- **Crashes (FCRS/6)**: 1,827,102 features — 2016-2021 data, available for future safety analysis
+- **Fatalities (FCRS/5)**: 41,869 features — 2024-2026 data, available for future safety analysis
+- **SpeedZone OffSystem (GPAS/9)**: 81,778 features — only 1,468 have ROUTE_ID, rest need spatial matching
+- **Scenic Byways (GPAS/16)**: 112 features — available for future integration
+- **Estimated ROW (GDOT_Estimated_ROW/1)**: 7,460 features — available for future integration
 
 ### 5. Base-network coverage versus commercial basemap coverage
 
@@ -723,12 +1055,16 @@ Closed with Phase 1:
 - statewide staged roadway ETL
 - staged SQLite and GeoPackage outputs
 - county and district boundaries in the staged build
+- official signed-route verification for Interstates and US Routes (44,831 segments verified)
+- posted speed limit enrichment from GDOT SpeedZone OnSystem (102,335 segments)
 - RAPTOR `RoadwayData` loader
-- documented validation results
+- 72/72 validation checks passing
 - visual confirmation that the staged web map is adequate for initial planning use
 
 Deferred beyond Phase 1:
 
+- State Route signed-label verification (blocked by `egisp.dot.ga.gov` query endpoint returning HTTP 500)
 - statewide roadway supplementation from TIGER / OSM / alternate GDOT services unless later QA shows a planning-relevant omission pattern
-- richer route-family classification documentation if needed by downstream scoring or reporting
+- crash and fatality data enrichment from FCRS layers (data available on `rnhp.dot.ga.gov`)
+- off-system speed zone enrichment (requires spatial matching, 80,310 records without ROUTE_ID)
 - expanded use of archival/reference raw packages that are not central to the current normalization path
