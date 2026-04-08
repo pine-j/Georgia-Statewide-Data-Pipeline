@@ -9,30 +9,21 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 
 ## Current Implementation Snapshot
 
-Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, official signed-route verification via GDOT GPAS layers, and posted speed limit enrichment are all working. 72/72 validation checks pass. Remaining questions about supplemental roadway sources and State Route signed-label verification are deferred follow-on improvements, not Phase 1 blockers.
+Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, official signed-route verification via GDOT GPAS layers, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. 79/79 validation checks pass. Remaining questions about supplemental roadway sources and State Route signed-label verification are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
-- `roadway_inventory.db` contains `622,255` segmented roadway records
+- `roadway_inventory.db` contains `244,904` segmented roadway records with `128` columns
 - `base_network.gpkg` contains:
-  - `roadway_segments` (`622,255` features)
+  - `roadway_segments` (`244,904` features)
   - `county_boundaries` (`159` features)
   - `district_boundaries` (`7` features)
 - Boundary layers are sourced from the official GDOT-hosted `GDOT_Boundaries` service and are now consumed by the staged web-app path
 
 Current traffic coverage in the staged roadway network:
-- Current AADT (`AADT` / `AADT_2024`) is available on `185,748` of `622,255` segments (`29.85%`)
-- Current AADT covers `38,359.71` of `133,992.56` staged segment miles (`28.63%`)
-- Historical AADT is currently present for:
-  - `2010` through `2020`
-- Historical route-segment traffic is currently unavailable for:
-  - `2021`
-  - `2022`
-  - `2023`
-- Important clarification: the current staged build does include `2020`; the missing route-segment years are `2021-2023`, not `2020-2023`
-
-Selected historical coverage highlights:
-- `AADT_2019` covers `535,080` segments (`85.99%`)
-- `AADT_2020` covers `548,343` segments (`88.12%`)
+- Current AADT (`AADT` / `AADT_2024`) is available on `244,819` of `244,904` segments (`99.97%`) via five-tier fill chain
+- Future AADT 2044 is available on `52,236` of `244,904` segments (`21.3%`)
+- Historical AADT columns (2010-2020) have been removed from pipeline output; raw source files retained in `01-Raw-Data/`
+- HPMS 2020 and 2022 snapshots planned for download for future multi-year analysis
 
 Related exploratory note:
 
