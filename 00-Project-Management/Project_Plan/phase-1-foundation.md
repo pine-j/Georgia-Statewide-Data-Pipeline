@@ -23,7 +23,6 @@ Current traffic coverage in the staged roadway network:
 - Current AADT (`AADT` / `AADT_2024`) is available on `244,819` of `244,904` segments (`99.97%`) via five-tier fill chain
 - Future AADT 2044 is available on `52,236` of `244,904` segments (`21.3%`)
 - Historical AADT columns (2010-2020) have been removed from pipeline output; raw source files retained in `01-Raw-Data/`
-- HPMS 2020 and 2022 snapshots planned for download for future multi-year analysis
 
 Related exploratory note:
 
