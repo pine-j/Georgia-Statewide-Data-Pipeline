@@ -44,6 +44,8 @@ DECODED_LABEL_COLUMNS = {
     "FACILITY_TYPE_LABEL": "FACILITY_TYPE",
     "NHS_LABEL": "NHS",
     "NHS_IND_LABEL": "NHS_IND",
+    "OWNERSHIP_LABEL": "OWNERSHIP",
+    "STRAHNET_LABEL": "STRAHNET",
     "MEDIAN_TYPE_LABEL": "MEDIAN_TYPE",
     "SHOULDER_TYPE_LABEL": "SHOULDER_TYPE",
     "SURFACE_TYPE_LABEL": "SURFACE_TYPE",
@@ -54,6 +56,44 @@ DECODED_LABEL_COLUMNS = {
     "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
     "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
 }
+
+EXPECTED_PHASE1_ATTRIBUTE_COLUMNS = [
+    "LANE_WIDTH",
+    "MEDIAN_WIDTH",
+    "OWNERSHIP",
+    "SHOULDER_WIDTH_L",
+    "SHOULDER_WIDTH_R",
+    "STRAHNET",
+]
+
+EXPECTED_ROUTE_FAMILY_COLUMNS = [
+    "BASE_ROUTE_NUMBER",
+    "ROUTE_SUFFIX_LABEL",
+    "ROUTE_FAMILY",
+    "ROUTE_FAMILY_DETAIL",
+    "ROUTE_FAMILY_CONFIDENCE",
+    "ROUTE_FAMILY_SOURCE",
+]
+
+EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
+    "SIGNED_INTERSTATE_FLAG",
+    "SIGNED_US_ROUTE_FLAG",
+    "SIGNED_STATE_ROUTE_FLAG",
+    "SIGNED_ROUTE_FAMILY_PRIMARY",
+    "SIGNED_ROUTE_FAMILY_ALL",
+    "SIGNED_ROUTE_VERIFY_SOURCE",
+    "SIGNED_ROUTE_VERIFY_METHOD",
+    "SIGNED_ROUTE_VERIFY_CONFIDENCE",
+    "SIGNED_ROUTE_VERIFY_SCORE",
+    "SIGNED_ROUTE_VERIFY_NOTES",
+]
+
+CURRENT_AADT_AUDIT_ARTIFACTS = [
+    PROJECT_ROOT / "02-Data-Staging" / "config" / "current_aadt_coverage_audit_summary.json",
+    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_uncovered_segments.csv",
+    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_uncovered_route_summary.csv",
+    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_state_system_gap_fill_candidates.csv",
+]
 
 
 class ValidationResult:
@@ -171,6 +211,37 @@ def validate_district_range(result: ValidationResult, df: pd.DataFrame) -> None:
     )
 
 
+def validate_state_system_location_fields(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that state-system segments have county and district assignments."""
+    required_columns = ["SYSTEM_CODE", "COUNTY_ID", "COUNTY_CODE", "DISTRICT", "GDOT_District"]
+    missing_columns = [column for column in required_columns if column not in df.columns]
+    if missing_columns:
+        result.add(
+            "State-system county/district coverage",
+            False,
+            f"Missing columns: {', '.join(missing_columns)}",
+        )
+        return
+
+    state_subset = df[df["SYSTEM_CODE"].astype(str) == "1"].copy()
+    if state_subset.empty:
+        result.add("State-system county/district coverage", True, "No SYSTEM_CODE = 1 rows present")
+        return
+
+    missing_mask = (
+        state_subset["COUNTY_ID"].isna()
+        | state_subset["COUNTY_CODE"].isna()
+        | state_subset["DISTRICT"].isna()
+        | state_subset["GDOT_District"].isna()
+    )
+    missing_count = int(missing_mask.sum())
+    result.add(
+        "State-system county/district coverage",
+        missing_count == 0,
+        f"{len(state_subset) - missing_count:,}/{len(state_subset):,} rows have county and district",
+    )
+
+
 def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
     """Report current and historic AADT coverage."""
     if "AADT" not in df.columns:
@@ -225,6 +296,44 @@ def validate_decoded_labels(result: ValidationResult, df: pd.DataFrame) -> None:
             decoded_count == source_count,
             f"{decoded_count:,}/{source_count:,} source-coded rows decoded",
         )
+
+
+def validate_phase1_attribute_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that the expanded raw roadway attribute columns are staged."""
+    for column in EXPECTED_PHASE1_ATTRIBUTE_COLUMNS:
+        result.add(
+            f"Phase 1 attribute: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_route_family_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that the Georgia route-family crosswalk fields are staged."""
+    for column in EXPECTED_ROUTE_FAMILY_COLUMNS:
+        result.add(
+            f"Route-family field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_signed_route_verification_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that signed-route verification fields are staged."""
+    for column in EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS:
+        result.add(
+            f"Signed-route field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_current_aadt_audit_artifacts(result: ValidationResult) -> None:
+    """Check that current-year AADT audit artifacts were written."""
+    for path in CURRENT_AADT_AUDIT_ARTIFACTS:
+        exists = path.exists()
+        detail = f"{path.name} present" if exists else f"Missing: {path}"
+        result.add(f"Current AADT audit artifact: {path.name}", exists, detail)
 
 
 def validate_geometry(result: ValidationResult) -> None:
@@ -385,12 +494,17 @@ def main() -> None:
         validate_null_checks(result, df)
         validate_district_range(result, df)
         validate_aadt_coverage(result, df)
+        validate_state_system_location_fields(result, df)
+        validate_phase1_attribute_columns(result, df)
+        validate_route_family_columns(result, df)
+        validate_signed_route_verification_columns(result, df)
         validate_decoded_labels(result, df)
 
     validate_crs(result)
     validate_geometry(result)
     validate_boundary_layers(result)
     validate_database(result)
+    validate_current_aadt_audit_artifacts(result)
     validate_raptor_loader(result)
 
     # Summary

@@ -1,0 +1,21 @@
+{
+  "segment_count": 622255,
+  "speed_limit_coverage": 102335,
+  "school_zone_segments": 2849,
+  "speed_limit_distribution": {
+    "25": 3061,
+    "30": 1434,
+    "35": 8681,
+    "40": 4250,
+    "45": 13125,
+    "50": 2204,
+    "55": 55169,
+    "60": 280,
+    "65": 7700,
+    "70": 6431
+  },
+  "speed_limit_source_counts": {
+    "None": 519920,
+    "gdot_speed_zone_on_system": 102335
+  }
+}

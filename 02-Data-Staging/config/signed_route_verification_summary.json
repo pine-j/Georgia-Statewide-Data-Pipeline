@@ -1,0 +1,25 @@
+{
+  "segment_count": 622255,
+  "signed_interstate_segments": 13341,
+  "signed_us_route_segments": 67050,
+  "signed_state_route_segments": 30219,
+  "primary_family_counts": {
+    "Local/Other": 512941,
+    "U.S. Route": 66421,
+    "State Route": 29552,
+    "Interstate": 13341
+  },
+  "verification_confidence_counts": {
+    "high": 561842,
+    "medium": 60413
+  },
+  "verification_source_counts": {
+    "route_id_crosswalk": 577424,
+    "gdot_us_highway": 35560,
+    "gdot_interstates": 9271
+  },
+  "verification_method_counts": {
+    "route_id_crosswalk": 577424,
+    "derived_rclink_interval": 44831
+  }
+}

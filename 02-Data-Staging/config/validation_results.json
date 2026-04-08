@@ -27,12 +27,12 @@
   {
     "name": "Null check: COUNTY_ID",
     "status": "PASS",
-    "detail": "1.4% null"
+    "detail": "0.0% null"
   },
   {
     "name": "Null check: GDOT_District",
     "status": "PASS",
-    "detail": "1.4% null"
+    "detail": "0.0% null"
   },
   {
     "name": "Null check: SYSTEM_CODE",
@@ -55,19 +55,134 @@
     "detail": "AADT_2010=82,786, AADT_2011=83,319, AADT_2012=83,775, AADT_2013=90,082, AADT_2014=104,022, AADT_2015=312,416, AADT_2016=207,449, AADT_2017=166,834, AADT_2018=166,311, AADT_2019=535,080, AADT_2020=548,343"
   },
   {
+    "name": "State-system county/district coverage",
+    "status": "PASS",
+    "detail": "109,314/109,314 rows have county and district"
+  },
+  {
+    "name": "Phase 1 attribute: LANE_WIDTH",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Phase 1 attribute: MEDIAN_WIDTH",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Phase 1 attribute: OWNERSHIP",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Phase 1 attribute: SHOULDER_WIDTH_L",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Phase 1 attribute: SHOULDER_WIDTH_R",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Phase 1 attribute: STRAHNET",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: BASE_ROUTE_NUMBER",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: ROUTE_SUFFIX_LABEL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: ROUTE_FAMILY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: ROUTE_FAMILY_DETAIL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: ROUTE_FAMILY_CONFIDENCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Route-family field: ROUTE_FAMILY_SOURCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_INTERSTATE_FLAG",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_US_ROUTE_FLAG",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_STATE_ROUTE_FLAG",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_FAMILY_PRIMARY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_FAMILY_ALL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_VERIFY_SOURCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_VERIFY_METHOD",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_VERIFY_CONFIDENCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_VERIFY_SCORE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SIGNED_ROUTE_VERIFY_NOTES",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
     "name": "Decoded label: COUNTY_NAME",
     "status": "PASS",
-    "detail": "613,557/613,557 source-coded rows decoded"
+    "detail": "622,255/622,255 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_NAME",
     "status": "PASS",
-    "detail": "613,557/613,557 source-coded rows decoded"
+    "detail": "622,255/622,255 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_LABEL",
     "status": "PASS",
-    "detail": "613,557/613,557 source-coded rows decoded"
+    "detail": "622,255/622,255 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SYSTEM_CODE_LABEL",
@@ -108,6 +223,16 @@
     "name": "Decoded label: NHS_IND_LABEL",
     "status": "PASS",
     "detail": "7,662/7,662 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: OWNERSHIP_LABEL",
+    "status": "PASS",
+    "detail": "452,912/452,912 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: STRAHNET_LABEL",
+    "status": "PASS",
+    "detail": "2,228/2,228 source-coded rows decoded"
   },
   {
     "name": "Decoded label: MEDIAN_TYPE_LABEL",
@@ -205,6 +330,26 @@
     "detail": ""
   },
   {
+    "name": "Current AADT audit artifact: current_aadt_coverage_audit_summary.json",
+    "status": "PASS",
+    "detail": "current_aadt_coverage_audit_summary.json present"
+  },
+  {
+    "name": "Current AADT audit artifact: current_aadt_uncovered_segments.csv",
+    "status": "PASS",
+    "detail": "current_aadt_uncovered_segments.csv present"
+  },
+  {
+    "name": "Current AADT audit artifact: current_aadt_uncovered_route_summary.csv",
+    "status": "PASS",
+    "detail": "current_aadt_uncovered_route_summary.csv present"
+  },
+  {
+    "name": "Current AADT audit artifact: current_aadt_state_system_gap_fill_candidates.csv",
+    "status": "PASS",
+    "detail": "current_aadt_state_system_gap_fill_candidates.csv present"
+  },
+  {
     "name": "RoadwayData statewide load",
     "status": "PASS",
     "detail": "109,314 rows loaded"
@@ -212,6 +357,6 @@
   {
     "name": "RoadwayData district load",
     "status": "PASS",
-    "detail": "10,217 rows; districts=[np.int64(7)]"
+    "detail": "10,845 rows; districts=[np.int64(7)]"
   }
 ]

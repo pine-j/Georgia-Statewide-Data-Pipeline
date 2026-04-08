@@ -15,7 +15,7 @@ Data sources:
 2. `TRAFFIC_Data_2024.gdb` layer `TRAFFIC_DataYear2024`
    Current traffic segmentation with AADT, truck counts, VMT, and factors.
 3. `Traffic_Historical.zip`
-   Historic segment traffic tables for 2010-2019.
+   Historic segment traffic tables for 2010-2020.
 
 Output:
 - `02-Data-Staging/cleaned/roadway_inventory_cleaned.csv`
@@ -29,7 +29,6 @@ import json
 import logging
 import shutil
 import sqlite3
-import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -39,6 +38,13 @@ import pandas as pd
 from shapely import force_2d, line_merge
 from shapely.geometry import LineString
 from shapely.ops import substring
+
+from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
+from route_family import classify_route_families
+from route_verification import (
+    apply_signed_route_verification,
+    write_signed_route_verification_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +113,14 @@ ROUTE_ATTRIBUTE_LAYERS = {
     "NHS": ("NHSVn", "NHS"),
     "FACILITY_TYPE": ("FACILITY_TYPEVn", "FACILITY_TYPE"),
     "THROUGH_LANES": ("THROUGH_LANESVn", "THROUGH_LANES"),
+    "LANE_WIDTH": ("LANE_WIDTHVn", "LANE_WIDTH"),
     "MEDIAN_TYPE": ("MEDIAN_TYPEVn", "MEDIAN_TYPE"),
+    "MEDIAN_WIDTH": ("MEDIAN_WIDTHVn", "MEDIAN_WIDTH"),
     "SHOULDER_TYPE": ("SHOULDER_TYPEVn", "SHOULDER_TYPE"),
+    "SHOULDER_WIDTH_L": ("SHOULDER_WIDTH_LVn", "SHOULDER_WIDTH_L"),
+    "SHOULDER_WIDTH_R": ("SHOULDER_WIDTH_RVn", "SHOULDER_WIDTH_R"),
+    "OWNERSHIP": ("OWNERSHIPVn", "OWNERSHIP"),
+    "STRAHNET_TYPE": ("STRAHNET_TYPEVn", "STRAHNET"),
     "SURFACE_TYPE": ("SURFACE_TYPEVn", "SURFACE_TYPE"),
     "URBAN_ID": ("URBAN_IDVn", "URBAN_ID"),
 }
@@ -249,6 +261,12 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
     gdf["NHS_IND_LABEL"] = get_or_empty_series(gdf, "NHS_IND").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["nhs"])
+    )
+    gdf["OWNERSHIP_LABEL"] = get_or_empty_series(gdf, "OWNERSHIP").map(
+        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["ownership"])
+    )
+    gdf["STRAHNET_LABEL"] = get_or_empty_series(gdf, "STRAHNET").map(
+        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["strahnet"])
     )
     gdf["MEDIAN_TYPE_LABEL"] = get_or_empty_series(gdf, "MEDIAN_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["median_type"])
@@ -655,14 +673,23 @@ def load_historical_traffic(
     route_base_lookup: dict[str, list[str]],
 ) -> dict[int, pd.DataFrame]:
     historical: dict[int, pd.DataFrame] = {}
-    with tempfile.TemporaryDirectory() as temp_dir_name:
-        temp_dir = Path(temp_dir_name)
+    temp_root = PROJECT_ROOT / ".tmp" / "normalize_historical_traffic"
+    if temp_root.exists():
+        shutil.rmtree(temp_root)
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    try:
         for year in HISTORICAL_YEARS:
+            year_temp_dir = temp_root / str(year)
+            if year_temp_dir.exists():
+                shutil.rmtree(year_temp_dir)
+            year_temp_dir.mkdir(parents=True, exist_ok=True)
+
             try:
                 historical[year] = load_historical_year(
                     traffic_zip,
                     year,
-                    temp_dir,
+                    year_temp_dir,
                     route_id_set,
                     route_base_lookup,
                 )
@@ -670,6 +697,9 @@ def load_historical_traffic(
                 logger.warning("Skipping historic year %s: %s", year, exc)
             except KeyError as exc:
                 logger.warning("Skipping historic year %s due to schema issue: %s", year, exc)
+    finally:
+        if temp_root.exists():
+            shutil.rmtree(temp_root, ignore_errors=True)
     return historical
 
 
@@ -723,6 +753,8 @@ def prepare_route_attributes(routes: gpd.GeoDataFrame, current_traffic: pd.DataF
     routes["ROUTE_NUMBER"] = routes["PARSED_ROUTE_NUMBER"]
     routes["ROUTE_SUFFIX"] = routes["PARSED_SUFFIX"]
     routes["ROUTE_DIRECTION"] = routes["PARSED_DIRECTION"]
+    route_families = classify_route_families(routes)
+    routes = pd.concat([routes, route_families], axis=1)
     return routes
 
 
@@ -980,6 +1012,497 @@ def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
     logger.info("Wrote traffic match summary to %s", output_path)
 
 
+def _group_current_aadt_coverage(
+    df: pd.DataFrame,
+    group_cols: list[str],
+    limit: int | None = None,
+) -> list[dict]:
+    grouped = (
+        df.groupby(group_cols, dropna=False)
+        .agg(
+            segment_count=("covered_segment", "size"),
+            covered_segments=("covered_segment", "sum"),
+            uncovered_segments=("uncovered_segment", "sum"),
+            segment_miles=("segment_length_mi", "sum"),
+            covered_miles=("covered_miles", "sum"),
+            uncovered_miles=("uncovered_miles", "sum"),
+        )
+        .reset_index()
+    )
+    grouped["covered_pct_segments"] = np.where(
+        grouped["segment_count"] > 0,
+        (grouped["covered_segments"] / grouped["segment_count"]) * 100.0,
+        np.nan,
+    )
+    grouped["covered_pct_miles"] = np.where(
+        grouped["segment_miles"] > 0,
+        (grouped["covered_miles"] / grouped["segment_miles"]) * 100.0,
+        np.nan,
+    )
+    grouped = grouped.sort_values(
+        by=["uncovered_segments", "uncovered_miles", "segment_count"],
+        ascending=[False, False, False],
+    )
+    if limit is not None:
+        grouped = grouped.head(limit)
+    grouped = grouped.replace({np.nan: None})
+    return grouped.to_dict("records")
+
+
+def build_state_system_gap_fill_candidates(audit: pd.DataFrame) -> pd.DataFrame:
+    """Summarize conservative gap-fill candidates for uncovered state-system runs.
+
+    The intent is analytical, not authoritative value imputation. Each row
+    represents a contiguous uncovered run on a `SYSTEM_CODE = 1` route, along
+    with the adjacent covered context that could support a future same-route
+    gap-fill rule.
+    """
+
+    required_columns = {
+        "ROUTE_ID",
+        "SYSTEM_CODE",
+        "FROM_MILEPOINT",
+        "TO_MILEPOINT",
+        "current_aadt_covered",
+    }
+    if not required_columns.issubset(audit.columns):
+        return pd.DataFrame()
+
+    state_subset = audit[audit["SYSTEM_CODE"].astype(str) == "1"].copy()
+    if state_subset.empty:
+        return pd.DataFrame()
+
+    state_subset["FROM_MILEPOINT"] = pd.to_numeric(
+        state_subset["FROM_MILEPOINT"],
+        errors="coerce",
+    )
+    state_subset["TO_MILEPOINT"] = pd.to_numeric(
+        state_subset["TO_MILEPOINT"],
+        errors="coerce",
+    )
+    state_subset["AADT"] = pd.to_numeric(
+        state_subset.get("AADT", pd.Series(index=state_subset.index, dtype="float64")),
+        errors="coerce",
+    )
+    state_subset["segment_length_mi"] = pd.to_numeric(
+        state_subset.get("segment_length_mi", pd.Series(index=state_subset.index, dtype="float64")),
+        errors="coerce",
+    ).fillna(0.0)
+    state_subset = state_subset.sort_values(
+        by=["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT"],
+        na_position="last",
+    )
+
+    candidate_rows: list[dict] = []
+    for route_id, route_group in state_subset.groupby("ROUTE_ID", sort=False):
+        route_group = route_group.reset_index(drop=True)
+        route_group["run_id"] = route_group["current_aadt_covered"].ne(
+            route_group["current_aadt_covered"].shift()
+        ).cumsum()
+        route_covered_segments = int(route_group["current_aadt_covered"].sum())
+
+        for _, run_group in route_group.groupby("run_id", sort=False):
+            if bool(run_group["current_aadt_covered"].iloc[0]):
+                continue
+
+            run_start = int(run_group.index.min())
+            run_end = int(run_group.index.max())
+            prev_row = route_group.iloc[run_start - 1] if run_start > 0 else None
+            next_row = route_group.iloc[run_end + 1] if run_end < len(route_group) - 1 else None
+
+            prev_covered = prev_row is not None and bool(prev_row["current_aadt_covered"])
+            next_covered = next_row is not None and bool(next_row["current_aadt_covered"])
+
+            if prev_covered and next_covered:
+                candidate_strategy = "interpolate_between_adjacent_covered"
+                candidate_priority = "high"
+            elif prev_covered or next_covered:
+                candidate_strategy = "single_side_extension"
+                candidate_priority = "medium"
+            elif route_covered_segments > 0:
+                candidate_strategy = "route_has_nonadjacent_covered_only"
+                candidate_priority = "low"
+            else:
+                candidate_strategy = "no_current_aadt_on_route"
+                candidate_priority = "low"
+
+            first_row = run_group.iloc[0]
+            last_row = run_group.iloc[-1]
+            candidate_rows.append(
+                {
+                    "ROUTE_ID": route_id,
+                    "COUNTY_CODE": first_row.get("COUNTY_CODE"),
+                    "COUNTY_NAME": first_row.get("COUNTY_NAME"),
+                    "DISTRICT": first_row.get("DISTRICT"),
+                    "ROUTE_FAMILY": first_row.get("ROUTE_FAMILY"),
+                    "ROUTE_FAMILY_DETAIL": first_row.get("ROUTE_FAMILY_DETAIL"),
+                    "PARSED_FUNCTION_TYPE": first_row.get("PARSED_FUNCTION_TYPE"),
+                    "PARSED_FUNCTION_TYPE_LABEL": first_row.get("PARSED_FUNCTION_TYPE_LABEL"),
+                    "uncovered_segments_in_run": int(len(run_group)),
+                    "uncovered_miles_in_run": float(run_group["segment_length_mi"].sum()),
+                    "gap_from_milepoint": first_row.get("FROM_MILEPOINT"),
+                    "gap_to_milepoint": last_row.get("TO_MILEPOINT"),
+                    "route_covered_segments": route_covered_segments,
+                    "route_uncovered_segments": int((~route_group["current_aadt_covered"]).sum()),
+                    "previous_segment_covered": prev_covered,
+                    "previous_segment_to_milepoint": prev_row.get("TO_MILEPOINT") if prev_row is not None else None,
+                    "previous_segment_aadt": prev_row.get("AADT") if prev_row is not None else None,
+                    "next_segment_covered": next_covered,
+                    "next_segment_from_milepoint": next_row.get("FROM_MILEPOINT") if next_row is not None else None,
+                    "next_segment_aadt": next_row.get("AADT") if next_row is not None else None,
+                    "candidate_strategy": candidate_strategy,
+                    "candidate_priority": candidate_priority,
+                }
+            )
+
+    candidates = pd.DataFrame(candidate_rows)
+    if candidates.empty:
+        return candidates
+
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    candidates["_priority_order"] = candidates["candidate_priority"].map(priority_order).fillna(9)
+    candidates = candidates.sort_values(
+        by=["_priority_order", "uncovered_segments_in_run", "uncovered_miles_in_run", "ROUTE_ID", "gap_from_milepoint"],
+        ascending=[True, False, False, True, True],
+        na_position="last",
+    ).drop(columns=["_priority_order"])
+    return candidates.replace({np.nan: None})
+
+
+def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
+    """Write current-year AADT coverage audit artifacts.
+
+    Outputs:
+    - config/current_aadt_coverage_audit_summary.json
+    - cleaned/current_aadt_uncovered_segments.csv
+    - cleaned/current_aadt_uncovered_route_summary.csv
+    - cleaned/current_aadt_state_system_gap_fill_candidates.csv
+    """
+
+    audit = df.copy()
+    audit["current_aadt_covered"] = audit.get(
+        "current_aadt_covered",
+        audit.get("AADT", pd.Series(index=audit.index, dtype="float64")).notna(),
+    )
+    audit["current_aadt_covered"] = audit["current_aadt_covered"].fillna(False).astype(bool)
+    audit["segment_length_mi"] = pd.to_numeric(
+        audit.get("segment_length_mi", pd.Series(index=audit.index, dtype="float64")),
+        errors="coerce",
+    ).fillna(0.0)
+    audit["covered_segment"] = audit["current_aadt_covered"].astype(int)
+    audit["uncovered_segment"] = (~audit["current_aadt_covered"]).astype(int)
+    audit["covered_miles"] = np.where(
+        audit["current_aadt_covered"],
+        audit["segment_length_mi"],
+        0.0,
+    )
+    audit["uncovered_miles"] = np.where(
+        ~audit["current_aadt_covered"],
+        audit["segment_length_mi"],
+        0.0,
+    )
+
+    segment_count = int(len(audit))
+    covered_segments = int(audit["covered_segment"].sum())
+    uncovered_segments = int(audit["uncovered_segment"].sum())
+    total_miles = float(audit["segment_length_mi"].sum())
+    covered_miles = float(audit["covered_miles"].sum())
+    uncovered_miles = float(audit["uncovered_miles"].sum())
+
+    state_subset = audit[audit["SYSTEM_CODE"].astype(str) == "1"].copy()
+    state_uncovered = int(state_subset["uncovered_segment"].sum())
+
+    summary = {
+        "segment_count": segment_count,
+        "current_aadt_segments": covered_segments,
+        "current_aadt_pct_segments": round((covered_segments / segment_count) * 100.0, 4)
+        if segment_count
+        else None,
+        "current_aadt_uncovered_segments": uncovered_segments,
+        "segment_miles": total_miles,
+        "current_aadt_miles": covered_miles,
+        "current_aadt_pct_miles": round((covered_miles / total_miles) * 100.0, 4)
+        if total_miles
+        else None,
+        "current_aadt_uncovered_miles": uncovered_miles,
+        "state_system_segments": int(len(state_subset)),
+        "state_system_uncovered_segments": state_uncovered,
+        "state_system_covered_pct_segments": round(
+            ((len(state_subset) - state_uncovered) / len(state_subset)) * 100.0,
+            4,
+        )
+        if len(state_subset)
+        else None,
+        "by_system_code": _group_current_aadt_coverage(audit, ["SYSTEM_CODE"]),
+        "by_route_family": _group_current_aadt_coverage(audit, ["ROUTE_FAMILY"]),
+        "by_district": _group_current_aadt_coverage(audit, ["DISTRICT"]),
+        "by_function_type": _group_current_aadt_coverage(
+            audit,
+            ["PARSED_FUNCTION_TYPE", "PARSED_FUNCTION_TYPE_LABEL"],
+        ),
+        "top_counties_by_uncovered_segments": _group_current_aadt_coverage(
+            audit,
+            ["COUNTY_CODE", "COUNTY_NAME", "DISTRICT"],
+            limit=25,
+        ),
+        "top_state_system_routes_by_uncovered_segments": _group_current_aadt_coverage(
+            state_subset,
+            ["ROUTE_ID", "COUNTY_CODE", "COUNTY_NAME", "DISTRICT", "ROUTE_FAMILY"],
+            limit=50,
+        ),
+    }
+
+    uncovered_segment_columns = [
+        "unique_id",
+        "ROUTE_ID",
+        "COUNTY_CODE",
+        "COUNTY_NAME",
+        "DISTRICT",
+        "SYSTEM_CODE",
+        "SYSTEM_CODE_LABEL",
+        "ROUTE_FAMILY",
+        "ROUTE_FAMILY_DETAIL",
+        "PARSED_FUNCTION_TYPE",
+        "PARSED_FUNCTION_TYPE_LABEL",
+        "FUNCTIONAL_CLASS",
+        "FUNCTIONAL_CLASS_LABEL",
+        "FROM_MILEPOINT",
+        "TO_MILEPOINT",
+        "segment_length_mi",
+        "current_aadt_covered",
+    ]
+    uncovered_segment_columns = [
+        column for column in uncovered_segment_columns if column in audit.columns
+    ]
+    uncovered_segments_df = audit.loc[
+        ~audit["current_aadt_covered"],
+        uncovered_segment_columns,
+    ].sort_values(
+        by=["SYSTEM_CODE", "ROUTE_FAMILY", "DISTRICT", "COUNTY_CODE", "ROUTE_ID", "FROM_MILEPOINT"],
+        na_position="last",
+    )
+
+    route_summary = pd.DataFrame(
+        _group_current_aadt_coverage(
+            audit,
+            ["ROUTE_ID", "COUNTY_CODE", "COUNTY_NAME", "DISTRICT", "SYSTEM_CODE", "ROUTE_FAMILY"],
+        )
+    )
+    if not route_summary.empty:
+        route_summary = route_summary[route_summary["uncovered_segments"] > 0].copy()
+
+    gap_fill_candidates = build_state_system_gap_fill_candidates(audit)
+    gap_fill_summary = {
+        "candidate_runs": int(len(gap_fill_candidates)),
+        "high_priority_candidate_runs": int(
+            (gap_fill_candidates.get("candidate_priority") == "high").sum()
+        )
+        if not gap_fill_candidates.empty
+        else 0,
+        "medium_priority_candidate_runs": int(
+            (gap_fill_candidates.get("candidate_priority") == "medium").sum()
+        )
+        if not gap_fill_candidates.empty
+        else 0,
+        "low_priority_candidate_runs": int(
+            (gap_fill_candidates.get("candidate_priority") == "low").sum()
+        )
+        if not gap_fill_candidates.empty
+        else 0,
+        "candidate_run_miles": float(
+            pd.to_numeric(
+                gap_fill_candidates.get(
+                    "uncovered_miles_in_run",
+                    pd.Series(dtype="float64"),
+                ),
+                errors="coerce",
+            ).fillna(0.0).sum()
+        )
+        if not gap_fill_candidates.empty
+        else 0.0,
+        "top_candidate_strategies": (
+            gap_fill_candidates["candidate_strategy"].value_counts(dropna=False).head(10).to_dict()
+            if not gap_fill_candidates.empty and "candidate_strategy" in gap_fill_candidates.columns
+            else {}
+        ),
+    }
+    summary["state_system_gap_fill_candidates"] = gap_fill_summary
+
+    summary_path = CONFIG_DIR / "current_aadt_coverage_audit_summary.json"
+    uncovered_segments_path = CLEANED_DIR / "current_aadt_uncovered_segments.csv"
+    uncovered_route_summary_path = CLEANED_DIR / "current_aadt_uncovered_route_summary.csv"
+    gap_fill_candidates_path = CLEANED_DIR / "current_aadt_state_system_gap_fill_candidates.csv"
+
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    uncovered_segments_df.to_csv(uncovered_segments_path, index=False)
+    route_summary.to_csv(uncovered_route_summary_path, index=False)
+    gap_fill_candidates.to_csv(gap_fill_candidates_path, index=False)
+
+    logger.info("Wrote current AADT coverage audit summary to %s", summary_path)
+    logger.info("Wrote uncovered current AADT segment audit to %s", uncovered_segments_path)
+    logger.info("Wrote uncovered current AADT route audit to %s", uncovered_route_summary_path)
+    logger.info("Wrote state-system AADT gap-fill candidate audit to %s", gap_fill_candidates_path)
+
+
+def load_county_boundaries_for_attribute_backfill(
+    gpkg_path: Path,
+) -> gpd.GeoDataFrame | None:
+    """Load county boundaries for spatial attribute backfill.
+
+    Prefer existing staged county boundaries so the ETL can still backfill
+    county and district values when live boundary refresh is unavailable.
+    """
+
+    existing_counties, existing_districts = load_existing_boundary_layers(gpkg_path)
+    if existing_counties is not None and not existing_counties.empty:
+        logger.info("Using existing staged county boundaries for attribute backfill")
+        return existing_counties
+
+    try:
+        district_boundaries = fetch_official_district_boundaries()
+        county_boundaries = fetch_official_county_boundaries(
+            district_boundaries=district_boundaries
+        )
+        logger.info("Using live GDOT county boundaries for attribute backfill")
+        return county_boundaries
+    except Exception as exc:
+        logger.warning("County boundary backfill source unavailable: %s", exc)
+        return None
+
+
+def backfill_county_district_from_geometry(
+    gdf: gpd.GeoDataFrame,
+    county_boundaries: gpd.GeoDataFrame | None,
+) -> gpd.GeoDataFrame:
+    """Spatially backfill missing county and district fields.
+
+    This primarily addresses statewide GDOT route IDs whose route structure
+    uses county code `000`, leaving `COUNTY_ID` / `COUNTY_CODE` / `DISTRICT`
+    null after non-spatial joins. The fill is performed from county polygons
+    using a representative point for each affected segment.
+    """
+
+    if county_boundaries is None or county_boundaries.empty:
+        logger.warning("Skipping county/district backfill because no county boundaries are available")
+        return gdf
+
+    filled = gdf.copy()
+    missing_mask = (
+        filled.get("COUNTY_ID", pd.Series(index=filled.index, dtype="float64")).isna()
+        | filled.get("COUNTY_CODE", pd.Series(index=filled.index, dtype="object")).isna()
+        | filled.get("DISTRICT", pd.Series(index=filled.index, dtype="float64")).isna()
+        | filled.get("GDOT_District", pd.Series(index=filled.index, dtype="float64")).isna()
+    )
+    missing_count = int(missing_mask.sum())
+    if missing_count == 0:
+        return filled
+
+    county_cols = [
+        column
+        for column in ["COUNTYFP", "NAME", "GDOT_DISTRICT", "geometry"]
+        if column in county_boundaries.columns
+    ]
+    if "geometry" not in county_cols:
+        logger.warning("Skipping county/district backfill because county boundaries have no geometry")
+        return filled
+
+    counties = county_boundaries[county_cols].copy()
+    if counties.crs is not None and filled.crs is not None and counties.crs != filled.crs:
+        counties = counties.to_crs(filled.crs)
+    if "COUNTYFP" in counties.columns:
+        counties["COUNTYFP"] = counties["COUNTYFP"].astype(str).str.zfill(3)
+    if "GDOT_DISTRICT" in counties.columns:
+        counties["GDOT_DISTRICT"] = pd.to_numeric(
+            counties["GDOT_DISTRICT"],
+            errors="coerce",
+        ).astype("Int64")
+
+    points = filled.loc[missing_mask, ["geometry"]].copy()
+    points = gpd.GeoDataFrame(points, geometry="geometry", crs=filled.crs)
+    points["segment_index"] = points.index
+    points["geometry"] = points.geometry.representative_point()
+
+    joined = gpd.sjoin(
+        points,
+        counties,
+        how="left",
+        predicate="intersects",
+    )
+    joined = joined.sort_values(by=["segment_index"]).drop_duplicates(subset=["segment_index"])
+
+    matched_segment_ids = joined.loc[joined.get("COUNTYFP").notna(), "segment_index"] if "COUNTYFP" in joined.columns else pd.Series(dtype="int64")
+    unmatched_points = points[~points["segment_index"].isin(matched_segment_ids)].copy()
+    nearest_match_count = 0
+    if not unmatched_points.empty:
+        try:
+            nearest_joined = gpd.sjoin_nearest(
+                unmatched_points,
+                counties,
+                how="left",
+                distance_col="_county_distance_m",
+            )
+            nearest_joined = nearest_joined.sort_values(
+                by=["segment_index", "_county_distance_m"],
+                na_position="last",
+            ).drop_duplicates(subset=["segment_index"])
+            nearest_match_count = int(nearest_joined["COUNTYFP"].notna().sum()) if "COUNTYFP" in nearest_joined.columns else 0
+            joined = pd.concat([joined, nearest_joined], ignore_index=True, sort=False)
+            joined["_has_county_match"] = (
+                joined.get("COUNTYFP", pd.Series(index=joined.index, dtype="object")).notna()
+                | joined.get("GDOT_DISTRICT", pd.Series(index=joined.index, dtype="float64")).notna()
+            ).astype(int)
+            joined = joined.sort_values(
+                by=["segment_index", "_has_county_match", "_county_distance_m"],
+                ascending=[True, False, True],
+                na_position="last",
+            ).drop_duplicates(subset=["segment_index"])
+            joined = joined.drop(columns=["_has_county_match"], errors="ignore")
+        except Exception as exc:
+            logger.warning("Nearest county/district fallback failed: %s", exc)
+
+    backfilled_count = 0
+    county_fill_count = 0
+    district_fill_count = 0
+    for joined_row in joined.itertuples(index=False):
+        segment_index = getattr(joined_row, "segment_index")
+        countyfp = getattr(joined_row, "COUNTYFP", None)
+        county_name = getattr(joined_row, "NAME", None)
+        gdot_district = getattr(joined_row, "GDOT_DISTRICT", None)
+
+        if pd.notna(countyfp):
+            county_value = int(str(countyfp))
+            if pd.isna(filled.at[segment_index, "COUNTY_ID"]):
+                filled.at[segment_index, "COUNTY_ID"] = county_value
+                county_fill_count += 1
+            if pd.isna(filled.at[segment_index, "COUNTY_CODE"]):
+                filled.at[segment_index, "COUNTY_CODE"] = str(countyfp).zfill(3)
+                county_fill_count += 1
+            if "COUNTY_NAME" in filled.columns and pd.isna(filled.at[segment_index, "COUNTY_NAME"]):
+                filled.at[segment_index, "COUNTY_NAME"] = county_name
+
+        if pd.notna(gdot_district):
+            district_value = int(gdot_district)
+            if pd.isna(filled.at[segment_index, "GDOT_District"]):
+                filled.at[segment_index, "GDOT_District"] = district_value
+                district_fill_count += 1
+            if pd.isna(filled.at[segment_index, "DISTRICT"]):
+                filled.at[segment_index, "DISTRICT"] = district_value
+                district_fill_count += 1
+
+        if pd.notna(countyfp) or pd.notna(gdot_district):
+            backfilled_count += 1
+
+    logger.info(
+        "Spatial county/district backfill matched %d of %d affected segments; county fills=%d, district fills=%d, nearest fallback matches=%d",
+        backfilled_count,
+        missing_count,
+        county_fill_count,
+        district_fill_count,
+        nearest_match_count,
+    )
+    return filled
+
+
 def fetch_official_district_boundaries() -> gpd.GeoDataFrame:
     """Load GDOT district polygons from the GDOT_Boundaries service."""
     logger.info("Loading official district boundaries from GDOT service")
@@ -1004,6 +1527,36 @@ def fetch_official_district_boundaries() -> gpd.GeoDataFrame:
     gdf = gdf.to_crs(TARGET_CRS)
     logger.info("Loaded %d district boundary features", len(gdf))
     return gdf
+
+
+def load_existing_boundary_layers(
+    gpkg_path: Path,
+) -> tuple[gpd.GeoDataFrame | None, gpd.GeoDataFrame | None]:
+    """Load existing staged boundary layers for offline fallback."""
+    if not gpkg_path.exists():
+        return None, None
+
+    county_boundaries = None
+    district_boundaries = None
+    try:
+        county_boundaries = gpd.read_file(
+            gpkg_path,
+            layer="county_boundaries",
+            engine="pyogrio",
+        )
+    except Exception as exc:
+        logger.warning("Could not load existing county boundaries from %s: %s", gpkg_path, exc)
+
+    try:
+        district_boundaries = gpd.read_file(
+            gpkg_path,
+            layer="district_boundaries",
+            engine="pyogrio",
+        )
+    except Exception as exc:
+        logger.warning("Could not load existing district boundaries from %s: %s", gpkg_path, exc)
+
+    return county_boundaries, district_boundaries
 
 
 def fetch_official_county_boundaries(district_boundaries: gpd.GeoDataFrame | None = None) -> gpd.GeoDataFrame:
@@ -1045,19 +1598,25 @@ def fetch_official_county_boundaries(district_boundaries: gpd.GeoDataFrame | Non
     return gdf
 
 
-def write_supporting_boundary_layers(gpkg_path: Path) -> None:
+def write_supporting_boundary_layers(
+    gpkg_path: Path,
+    fallback_county_boundaries: gpd.GeoDataFrame | None = None,
+    fallback_district_boundaries: gpd.GeoDataFrame | None = None,
+) -> None:
     """Append official GDOT boundary layers to the staged GeoPackage."""
-    if gpkg_path.exists():
-        with sqlite3.connect(gpkg_path) as conn:
-            for layer_name in ["county_boundaries", "district_boundaries"]:
-                conn.execute(f'DROP TABLE IF EXISTS "{layer_name}"')
-                conn.execute("DELETE FROM gpkg_contents WHERE table_name = ?", (layer_name,))
-                conn.execute("DELETE FROM gpkg_geometry_columns WHERE table_name = ?", (layer_name,))
-                conn.execute("DELETE FROM gpkg_extensions WHERE table_name = ?", (layer_name,))
-            conn.commit()
+    try:
+        district_boundaries = fetch_official_district_boundaries()
+        county_boundaries = fetch_official_county_boundaries(district_boundaries=district_boundaries)
+    except Exception as exc:
+        if fallback_county_boundaries is None or fallback_district_boundaries is None:
+            raise
+        logger.warning(
+            "Official boundary refresh unavailable; reusing existing staged boundaries: %s",
+            exc,
+        )
+        county_boundaries = fallback_county_boundaries
+        district_boundaries = fallback_district_boundaries
 
-    district_boundaries = fetch_official_district_boundaries()
-    county_boundaries = fetch_official_county_boundaries(district_boundaries=district_boundaries)
     county_boundaries.to_file(
         gpkg_path,
         layer="county_boundaries",
@@ -1110,6 +1669,14 @@ def main() -> None:
         logger.warning("No CRS set on segmented network; cannot reproject")
 
     segmented = compute_segment_length(segmented)
+    segmented = apply_signed_route_verification(segmented)
+    segmented = apply_rnhp_enrichment(segmented)
+    existing_gpkg_path = SPATIAL_DIR / "base_network.gpkg"
+    county_boundaries_for_backfill = load_county_boundaries_for_attribute_backfill(existing_gpkg_path)
+    segmented = backfill_county_district_from_geometry(
+        segmented,
+        county_boundaries_for_backfill,
+    )
     segmented = add_decoded_label_columns(segmented)
 
     logger.info("Final segment count: %d", len(segmented))
@@ -1128,11 +1695,21 @@ def main() -> None:
 
     SPATIAL_DIR.mkdir(parents=True, exist_ok=True)
     gpkg_path = SPATIAL_DIR / "base_network.gpkg"
+    fallback_county_boundaries, fallback_district_boundaries = load_existing_boundary_layers(gpkg_path)
+    if gpkg_path.exists():
+        gpkg_path.unlink()
     segmented.to_file(gpkg_path, layer="roadway_segments", driver="GPKG", engine="pyogrio")
     logger.info("Wrote GeoPackage: %s", gpkg_path)
-    write_supporting_boundary_layers(gpkg_path)
+    write_supporting_boundary_layers(
+        gpkg_path,
+        fallback_county_boundaries=fallback_county_boundaries,
+        fallback_district_boundaries=fallback_district_boundaries,
+    )
 
     write_match_summary(segmented)
+    write_current_aadt_coverage_audit(segmented)
+    write_signed_route_verification_summary(segmented)
+    write_enrichment_summary(segmented)
     logger.info("Normalization complete.")
 
 
