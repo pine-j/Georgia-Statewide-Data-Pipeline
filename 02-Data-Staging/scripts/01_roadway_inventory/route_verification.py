@@ -606,7 +606,7 @@ def write_signed_route_verification_summary(gdf: pd.DataFrame) -> None:
         },
     }
     output_path = (
-        PROJECT_ROOT / "02-Data-Staging" / "config" / "signed_route_verification_summary.json"
+        PROJECT_ROOT / "02-Data-Staging" / "reports" / "signed_route_verification_summary.json"
     )
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     LOGGER.info("Wrote signed-route verification summary to %s", output_path)

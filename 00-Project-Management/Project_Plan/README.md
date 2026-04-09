@@ -71,7 +71,7 @@ All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This
 
 ### Assessment And Options
 
-- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documetation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documentation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
 
 ---
 
@@ -208,5 +208,5 @@ The pipeline is designed to grow. Post-RAPTOR phases (Transit, Bike/Ped, EJ, Cli
 
 ### Assessment And Options
 
-- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documetation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documentation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
   - Consolidates the GDOT gap analysis, supplemental source comparison, and recommended provenance-preserving merge strategy.

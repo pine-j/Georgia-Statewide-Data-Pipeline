@@ -442,6 +442,6 @@ def write_hpms_enrichment_summary(gdf: pd.DataFrame) -> None:
         } if "AADT_2024_SOURCE" in gdf.columns else {},
     }
 
-    output_path = PROJECT_ROOT / "02-Data-Staging" / "config" / "hpms_enrichment_summary.json"
+    output_path = PROJECT_ROOT / "02-Data-Staging" / "reports" / "hpms_enrichment_summary.json"
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     LOGGER.info("Wrote HPMS enrichment summary to %s", output_path)

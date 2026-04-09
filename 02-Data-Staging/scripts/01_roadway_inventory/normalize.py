@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
+REPORTS_DIR = PROJECT_ROOT / "02-Data-Staging" / "reports"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 TABLES_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables"
 
@@ -1257,7 +1258,7 @@ def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
         if "FUTURE_AADT_2044" in gdf.columns
         else 0.0,
     }
-    output_path = CONFIG_DIR / "traffic_match_summary.json"
+    output_path = REPORTS_DIR / "traffic_match_summary.json"
     output_path.write_text(json.dumps(summary, indent=2))
     logger.info("Wrote traffic match summary to %s", output_path)
 
@@ -1426,7 +1427,7 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
     """Write current-year AADT coverage audit artifacts.
 
     Outputs:
-    - config/current_aadt_coverage_audit_summary.json
+    - reports/current_aadt_coverage_audit_summary.json
     - .tmp/roadway_inventory/current_aadt_audit/current_aadt_uncovered_segments.csv
     - .tmp/roadway_inventory/current_aadt_audit/current_aadt_uncovered_route_summary.csv
     - .tmp/roadway_inventory/current_aadt_audit/current_aadt_state_system_gap_fill_candidates.csv
@@ -1619,7 +1620,7 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
     }
     summary["state_system_gap_fill_candidates"] = gap_fill_summary
 
-    summary_path = CONFIG_DIR / "current_aadt_coverage_audit_summary.json"
+    summary_path = REPORTS_DIR / "current_aadt_coverage_audit_summary.json"
     audit_tmp_dir = PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
     audit_tmp_dir.mkdir(parents=True, exist_ok=True)
     uncovered_segments_path = audit_tmp_dir / "current_aadt_uncovered_segments.csv"
