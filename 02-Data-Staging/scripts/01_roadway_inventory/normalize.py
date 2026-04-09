@@ -1930,6 +1930,16 @@ def fetch_official_district_boundaries() -> gpd.GeoDataFrame:
         gdf["DISTRICT_LABEL"] = gdf["GDOT_DISTRICT"].map(DISTRICT_NAME_LOOKUP)
         gdf["DISTRICT_NAME"] = gdf["DISTRICT_LABEL"].fillna(gdf.get("DISTRICT_NAME"))
     gdf = gdf.to_crs(TARGET_CRS)
+    invalid_count = int((~gdf.geometry.is_valid).sum())
+    if invalid_count:
+        logger.info("Repairing %d invalid district boundary geometries", invalid_count)
+        gdf["geometry"] = gdf.geometry.map(
+            lambda geometry: (
+                force_2d(make_valid(geometry))
+                if geometry is not None and not geometry.is_empty and not geometry.is_valid
+                else (force_2d(geometry) if geometry is not None and not geometry.is_empty else geometry)
+            )
+        )
     logger.info("Loaded %d district boundary features", len(gdf))
     return gdf
 
@@ -1999,6 +2009,16 @@ def fetch_official_county_boundaries(district_boundaries: gpd.GeoDataFrame | Non
         )
         gdf["DISTRICT_NAME"] = gdf["GDOT_DISTRICT"].map(district_name_map)
     gdf = gdf.to_crs(TARGET_CRS)
+    invalid_count = int((~gdf.geometry.is_valid).sum())
+    if invalid_count:
+        logger.info("Repairing %d invalid county boundary geometries", invalid_count)
+        gdf["geometry"] = gdf.geometry.map(
+            lambda geometry: (
+                force_2d(make_valid(geometry))
+                if geometry is not None and not geometry.is_empty and not geometry.is_valid
+                else (force_2d(geometry) if geometry is not None and not geometry.is_empty else geometry)
+            )
+        )
     logger.info("Loaded %d county boundary features", len(gdf))
     return gdf
 
