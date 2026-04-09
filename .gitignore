@@ -19,6 +19,7 @@
 02-Data-Staging/databases/
 02-Data-Staging/spatial/
 02-Data-Staging/tables/
+02-Data-Staging/reports/
 
 # Python
 __pycache__/

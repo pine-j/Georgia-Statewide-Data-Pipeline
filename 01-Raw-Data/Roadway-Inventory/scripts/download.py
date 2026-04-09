@@ -1,10 +1,9 @@
-"""Download Georgia GDOT Roadway Inventory geodatabase and data dictionary.
+"""Download Georgia GDOT Roadway Inventory and Traffic geodatabases.
 
-Downloads the Road_Inventory_Geodatabase.zip from GDOT's Open Data portal,
-extracts it to 01-Raw-Data/Roadway-Inventory/, and records download metadata.
+Downloads the Road_Inventory_Geodatabase.zip and TRAFFIC_Data_Geodatabase.zip
+from GDOT's Open Data portal, extracts them to 01-Raw-Data/Roadway-Inventory/,
+and records download metadata.
 """
-
-# TODO: Automate download of TRAFFIC_Data_2024.gdb once GDOT exposes a stable source URL.
 
 import json
 import logging
@@ -18,10 +17,10 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 # GDOT Open Data portal URLs
-ROADWAY_GDB_URL = (
-    "https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/"
-    "Road_Inventory_Geodatabase.zip"
-)
+GDOT_BASE_URL = "https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/"
+
+ROADWAY_GDB_URL = GDOT_BASE_URL + "Road_Inventory_Geodatabase.zip"
+TRAFFIC_GDB_URL = GDOT_BASE_URL + "TRAFFIC_Data_Geodatabase.zip"
 DATA_DICT_URL = (
     "https://www.dot.ga.gov/DriveSmart/Data/Documents/"
     "Road_Inventory_Data_Dictionary.pdf"
@@ -65,18 +64,23 @@ def extract_gdb(zip_path: Path, extract_to: Path) -> Path:
     return gdb_dirs[0]
 
 
-def write_metadata(gdb_path: Path, zip_size: int, pdf_size: int) -> Path:
+def write_metadata(roadway_gdb_path: Path, roadway_zip_size: int,
+                    traffic_gdb_path: Path | None, traffic_zip_size: int,
+                    pdf_size: int) -> Path:
     """Write download metadata JSON."""
     metadata = {
         "download_date": datetime.now(timezone.utc).isoformat(),
         "source_urls": {
             "roadway_gdb": ROADWAY_GDB_URL,
+            "traffic_gdb": TRAFFIC_GDB_URL,
             "data_dictionary": DATA_DICT_URL,
         },
         "files": {
-            "gdb_zip_bytes": zip_size,
+            "roadway_gdb_zip_bytes": roadway_zip_size,
+            "roadway_gdb_path": str(roadway_gdb_path.relative_to(PROJECT_ROOT)),
+            "traffic_gdb_zip_bytes": traffic_zip_size,
+            "traffic_gdb_path": str(traffic_gdb_path.relative_to(PROJECT_ROOT)) if traffic_gdb_path else None,
             "data_dictionary_pdf_bytes": pdf_size,
-            "gdb_path": str(gdb_path.relative_to(PROJECT_ROOT)),
         },
     }
     meta_path = RAW_DIR / "download_metadata.json"
@@ -90,14 +94,30 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    traffic_dir = RAW_DIR / "GDOT_Traffic"
+    traffic_dir.mkdir(parents=True, exist_ok=True)
 
+    # Roadway inventory GDB
     zip_dest = RAW_DIR / "Road_Inventory_Geodatabase.zip"
     logger.info("Downloading roadway inventory GDB...")
-    zip_size = download_file(ROADWAY_GDB_URL, zip_dest, "Roadway GDB")
+    roadway_zip_size = download_file(ROADWAY_GDB_URL, zip_dest, "Roadway GDB")
 
-    logger.info("Extracting geodatabase...")
-    gdb_path = extract_gdb(zip_dest, RAW_DIR)
+    logger.info("Extracting roadway geodatabase...")
+    roadway_gdb_path = extract_gdb(zip_dest, RAW_DIR)
 
+    # Traffic GDB
+    traffic_zip_dest = RAW_DIR / "TRAFFIC_Data_Geodatabase.zip"
+    logger.info("Downloading traffic GDB...")
+    traffic_gdb_path = None
+    traffic_zip_size = 0
+    try:
+        traffic_zip_size = download_file(TRAFFIC_GDB_URL, traffic_zip_dest, "Traffic GDB")
+        logger.info("Extracting traffic geodatabase...")
+        traffic_gdb_path = extract_gdb(traffic_zip_dest, traffic_dir)
+    except requests.RequestException:
+        logger.warning("Could not download traffic GDB — download manually from %s", TRAFFIC_GDB_URL)
+
+    # Data dictionary PDF
     pdf_dest = RAW_DIR / "DataDictionary.pdf"
     logger.info("Downloading data dictionary PDF...")
     try:
@@ -106,9 +126,15 @@ def main() -> None:
         logger.warning("Could not download data dictionary PDF, continuing...")
         pdf_size = 0
 
-    write_metadata(gdb_path, zip_size, pdf_size)
+    write_metadata(roadway_gdb_path, roadway_zip_size,
+                   traffic_gdb_path, traffic_zip_size, pdf_size)
 
-    logger.info("Download complete. GDB at: %s", gdb_path)
+    logger.info("Download complete.")
+    logger.info("  Roadway GDB: %s", roadway_gdb_path)
+    if traffic_gdb_path:
+        logger.info("  Traffic GDB: %s", traffic_gdb_path)
+    else:
+        logger.warning("  Traffic GDB: not downloaded — fetch manually")
 
 
 if __name__ == "__main__":

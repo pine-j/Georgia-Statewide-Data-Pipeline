@@ -259,7 +259,7 @@ def write_enrichment_summary(gdf: pd.DataFrame) -> None:
     }
 
     output_path = (
-        PROJECT_ROOT / "02-Data-Staging" / "config" / "rnhp_enrichment_summary.json"
+        PROJECT_ROOT / "02-Data-Staging" / "reports" / "rnhp_enrichment_summary.json"
     )
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     LOGGER.info("Wrote RNHP enrichment summary to %s", output_path)

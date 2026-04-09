@@ -28,8 +28,8 @@ Current traffic coverage in the staged roadway network:
 
 Related roadway strategy note:
 
-- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documetation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
-- [Georgia Route Type Classification](../Pipeline-Documetation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documentation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
+- [Georgia Route Type Classification](../Pipeline-Documentation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
 
 Official Georgia sources used for the roadway base layer and route-family crosswalk:
 
@@ -321,7 +321,7 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `State Route`
   - `Local/Other`
 - Detailed rules and source notes are documented in:
-  - [Georgia Route Type Classification](../Pipeline-Documetation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
+  - [Georgia Route Type Classification](../Pipeline-Documentation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
 
 **Current closeout position on classification**:
 - Phase 1 now has:

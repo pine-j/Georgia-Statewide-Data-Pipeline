@@ -2,7 +2,12 @@
   {
     "name": "Row count",
     "status": "PASS",
-    "detail": "245,863 rows loaded"
+    "detail": "245,863 rows loaded; threshold >= 200,000"
+  },
+  {
+    "name": "Column count",
+    "status": "PASS",
+    "detail": "133 columns; threshold >= 100"
   },
   {
     "name": "unique_id exists",
@@ -47,7 +52,7 @@
   {
     "name": "Current AADT coverage",
     "status": "PASS",
-    "detail": "245,778 segments with canonical current AADT; official=45,938"
+    "detail": "245,778/245,863 segments with canonical current AADT (99.97%); threshold >= 95%; official=45,938"
   },
   {
     "name": "Future AADT 2044 coverage",
@@ -582,7 +587,12 @@
   {
     "name": "Database row count",
     "status": "PASS",
-    "detail": "245,863 rows"
+    "detail": "245,863 rows; threshold >= 200,000"
+  },
+  {
+    "name": "Database column count",
+    "status": "PASS",
+    "detail": "133 columns; threshold >= 100"
   },
   {
     "name": "Database signed-route slot columns",

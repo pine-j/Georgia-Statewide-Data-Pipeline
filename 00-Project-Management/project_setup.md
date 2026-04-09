@@ -203,4 +203,4 @@ Notes:
 
 Open these from the VS Code editor or Markdown preview:
 
-- [Roadway Gap-Fill and Supplement Strategy](./Pipeline-Documetation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
+- [Roadway Gap-Fill and Supplement Strategy](./Pipeline-Documentation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)

@@ -154,7 +154,7 @@ EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
 ]
 
 CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT = (
-    PROJECT_ROOT / "02-Data-Staging" / "config" / "current_aadt_coverage_audit_summary.json"
+    PROJECT_ROOT / "02-Data-Staging" / "reports" / "current_aadt_coverage_audit_summary.json"
 )
 CURRENT_AADT_AUDIT_TMP_DIR = (
     PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
@@ -1027,7 +1027,7 @@ def main() -> None:
         )
 
         # Write results to JSON
-        output_path = PROJECT_ROOT / "02-Data-Staging" / "config" / "validation_results.json"
+        output_path = PROJECT_ROOT / "02-Data-Staging" / "reports" / "validation_results.json"
         output_path.write_text(json.dumps(result.checks, indent=2))
         logger.info("Results written to %s", output_path)
 
