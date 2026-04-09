@@ -71,6 +71,7 @@ VERIFICATION_COLUMNS = [
     "SIGNED_ROUTE_VERIFY_SCORE",
     "SIGNED_ROUTE_VERIFY_NOTES",
 ]
+GPAS_OVERRIDE_MARKER = "_GPAS_VERIFIED_THIS_PASS"
 
 
 def _clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -408,22 +409,32 @@ def initialize_signed_route_fields(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         "ROUTE_FAMILY_CONFIDENCE", pd.Series(index=verified.index, dtype="object")
     )
 
-    verified["SIGNED_INTERSTATE_FLAG"] = baseline_family.eq("Interstate")
-    verified["SIGNED_US_ROUTE_FLAG"] = baseline_family.eq("U.S. Route")
-    verified["SIGNED_STATE_ROUTE_FLAG"] = baseline_family.eq("State Route")
-    verified["SIGNED_ROUTE_FAMILY_PRIMARY"] = baseline_family
-    verified["SECONDARY_SIGNED_ROUTE_FAMILY"] = None
-    verified["TERTIARY_SIGNED_ROUTE_FAMILY"] = None
-    verified["SIGNED_ROUTE_FAMILY_ALL"] = baseline_family.fillna("").map(
-        lambda value: json.dumps([value]) if value in SIGNED_ROUTE_FAMILIES else json.dumps([])
-    )
-    verified["SIGNED_ROUTE_VERIFY_SOURCE"] = "route_id_crosswalk"
-    verified["SIGNED_ROUTE_VERIFY_METHOD"] = "route_id_crosswalk"
-    verified["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = baseline_confidence
-    verified["SIGNED_ROUTE_VERIFY_SCORE"] = baseline_confidence.map(VERIFY_SCORES).fillna(
-        VERIFY_SCORES["low"]
-    )
-    verified["SIGNED_ROUTE_VERIFY_NOTES"] = None
+    signed_route_defaults = {
+        "SIGNED_INTERSTATE_FLAG": baseline_family.eq("Interstate"),
+        "SIGNED_US_ROUTE_FLAG": baseline_family.eq("U.S. Route"),
+        "SIGNED_STATE_ROUTE_FLAG": baseline_family.eq("State Route"),
+        "SIGNED_ROUTE_FAMILY_PRIMARY": baseline_family,
+        "SECONDARY_SIGNED_ROUTE_FAMILY": None,
+        "TERTIARY_SIGNED_ROUTE_FAMILY": None,
+        "SIGNED_ROUTE_FAMILY_ALL": baseline_family.fillna("").map(
+            lambda value: json.dumps([value]) if value in SIGNED_ROUTE_FAMILIES else json.dumps([])
+        ),
+        "SIGNED_ROUTE_VERIFY_SOURCE": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_METHOD": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_CONFIDENCE": baseline_confidence,
+        "SIGNED_ROUTE_VERIFY_SCORE": baseline_confidence.map(VERIFY_SCORES).fillna(
+            VERIFY_SCORES["low"]
+        ),
+        "SIGNED_ROUTE_VERIFY_NOTES": None,
+    }
+    for column_name, default_value in signed_route_defaults.items():
+        if column_name not in verified.columns:
+            verified[column_name] = default_value
+        else:
+            verified[column_name] = verified[column_name].where(
+                verified[column_name].notna(),
+                default_value,
+            )
     return verified
 
 
@@ -432,11 +443,63 @@ def _sorted_route_families(families: set[str]) -> list[str]:
     return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
 
 
+def _is_gpas_source(source: Any) -> bool:
+    return isinstance(source, str) and source.startswith("gdot_")
+
+
+def _should_promote_reference_family_to_primary(
+    reference_family: str | None,
+    current_primary_family: Any,
+    current_primary_source: Any,
+) -> bool:
+    """Decide whether a GPAS match should become the new primary family.
+
+    Rules:
+    - GPAS can UPGRADE: promote to a higher-priority family than current primary
+    - GPAS can CONFIRM: same family, switch source to gdot_*
+    - GPAS cannot DOWNGRADE: never demote a higher-priority family, even if
+      the current primary came from HPMS. Partial GPAS coverage (e.g., only
+      state_routes matched on an Interstate corridor) is not evidence that the
+      segment is not an Interstate.
+    """
+    if reference_family not in SIGNED_ROUTE_FAMILIES:
+        return False
+    if current_primary_family not in SIGNED_ROUTE_FAMILIES:
+        return True
+    # Only promote if the GPAS family is equal or higher priority
+    return (
+        SIGNED_ROUTE_PRIORITY[reference_family]
+        <= SIGNED_ROUTE_PRIORITY[current_primary_family]
+    )
+
+
 def _signed_route_family_slots(ordered_families: list[str]) -> tuple[str | None, str | None, str | None]:
     primary = ordered_families[0] if len(ordered_families) > 0 else None
     secondary = ordered_families[1] if len(ordered_families) > 1 else None
     tertiary = ordered_families[2] if len(ordered_families) > 2 else None
     return primary, secondary, tertiary
+
+
+def _parse_signed_route_family_list(value: Any) -> set[str]:
+    if not isinstance(value, str) or not value.strip():
+        return set()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    return {str(item).strip() for item in parsed if str(item).strip()}
+
+
+def _reset_signed_route_fields_for_gpas(row: pd.Series) -> pd.Series:
+    row["SIGNED_ROUTE_FAMILY_PRIMARY"] = None
+    row["SIGNED_ROUTE_VERIFY_SOURCE"] = None
+    row["SIGNED_ROUTE_VERIFY_METHOD"] = None
+    row["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = None
+    row["SIGNED_ROUTE_VERIFY_SCORE"] = None
+    row["SIGNED_ROUTE_VERIFY_NOTES"] = None
+    return row
 
 
 def _verification_method_for_record(match_record: dict[str, Any]) -> str:
@@ -453,12 +516,39 @@ def _update_row_with_reference_match(
     reference_key: str,
     match_record: dict[str, Any],
 ) -> pd.Series:
+    prior_primary_family = row.get("SIGNED_ROUTE_FAMILY_PRIMARY")
+    prior_primary_source = row.get("SIGNED_ROUTE_VERIFY_SOURCE")
+
+    # Save existing provenance so we can restore it if GPAS doesn't take primary
+    saved_provenance = {
+        "source": row.get("SIGNED_ROUTE_VERIFY_SOURCE"),
+        "method": row.get("SIGNED_ROUTE_VERIFY_METHOD"),
+        "confidence": row.get("SIGNED_ROUTE_VERIFY_CONFIDENCE"),
+        "score": row.get("SIGNED_ROUTE_VERIFY_SCORE"),
+    }
+
+    row[GPAS_OVERRIDE_MARKER] = True
+
     reference_family = REFERENCE_CONFIG[reference_key]["reference_family"]
-    families = set(json.loads(row["SIGNED_ROUTE_FAMILY_ALL"]))
+    families = _parse_signed_route_family_list(row.get("SIGNED_ROUTE_FAMILY_ALL"))
+    if prior_primary_family in SIGNED_ROUTE_FAMILIES:
+        families.add(prior_primary_family)
     if reference_family:
         families.add(reference_family)
 
+    promotes = _should_promote_reference_family_to_primary(
+        reference_family,
+        prior_primary_family,
+        prior_primary_source,
+    )
+    new_primary_family = reference_family if promotes else prior_primary_family
+
+    # Build ordered list with primary first, remainder sorted by priority
     ordered_families = _sorted_route_families(families)
+    if new_primary_family in SIGNED_ROUTE_FAMILIES:
+        ordered_families = [new_primary_family] + [
+            family for family in ordered_families if family != new_primary_family
+        ]
     new_primary_family, secondary_family, tertiary_family = _signed_route_family_slots(
         ordered_families
     )
@@ -466,12 +556,20 @@ def _update_row_with_reference_match(
     row["SIGNED_ROUTE_FAMILY_PRIMARY"] = new_primary_family
     row["SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
     row["TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
+
     source_token = f"gdot_{reference_key}"
-    if reference_family == new_primary_family:
+    if promotes:
+        # GPAS took primary — stamp GPAS provenance
         row["SIGNED_ROUTE_VERIFY_SOURCE"] = source_token
         row["SIGNED_ROUTE_VERIFY_METHOD"] = _verification_method_for_record(match_record)
         row["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = "high"
         row["SIGNED_ROUTE_VERIFY_SCORE"] = VERIFY_SCORES["high"]
+    else:
+        # GPAS did not take primary — restore prior provenance
+        row["SIGNED_ROUTE_VERIFY_SOURCE"] = saved_provenance["source"]
+        row["SIGNED_ROUTE_VERIFY_METHOD"] = saved_provenance["method"]
+        row["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = saved_provenance["confidence"]
+        row["SIGNED_ROUTE_VERIFY_SCORE"] = saved_provenance["score"]
 
     note_parts = [f"official_{reference_key}_match"]
     if _clean_text(match_record.get("PRIMARY_LABEL")):
@@ -482,12 +580,9 @@ def _update_row_with_reference_match(
     combined_notes = "; ".join(part for part in [existing_notes, *note_parts] if part)
     row["SIGNED_ROUTE_VERIFY_NOTES"] = combined_notes or None
 
-    if reference_family == "Interstate":
-        row["SIGNED_INTERSTATE_FLAG"] = True
-    if reference_family == "U.S. Route":
-        row["SIGNED_US_ROUTE_FLAG"] = True
-    if reference_family == "State Route":
-        row["SIGNED_STATE_ROUTE_FLAG"] = True
+    row["SIGNED_INTERSTATE_FLAG"] = "Interstate" in ordered_families
+    row["SIGNED_US_ROUTE_FLAG"] = "U.S. Route" in ordered_families
+    row["SIGNED_STATE_ROUTE_FLAG"] = "State Route" in ordered_families
 
     return row
 
@@ -498,13 +593,15 @@ def apply_signed_route_verification(
 ) -> gpd.GeoDataFrame:
     """Apply official signed-route verification to staged segments.
 
-    The current scaffold officially upgrades Interstate, `U.S. Route`, and
-    `State Route` confidence via GDOT ArcWeb references. If any reference
-    cannot be loaded, the ETL keeps the baseline route-family fields and
-    continues with whichever official references are available.
+    HPMS may seed signed-route families earlier in the pipeline, but GPAS
+    reference layers are the authoritative GDOT source for Interstate,
+    `U.S. Route`, and `State Route` verification. If any reference cannot be
+    loaded, the ETL keeps the existing signed-route fields and continues with
+    whichever official references are available.
     """
 
     verified = initialize_signed_route_fields(gdf)
+    verified[GPAS_OVERRIDE_MARKER] = False
 
     reference_lookups: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for reference_key in REFERENCE_MATCH_ORDER:
@@ -528,7 +625,7 @@ def apply_signed_route_verification(
         reference_lookups[reference_key] = reference_lookup
 
     if not reference_lookups:
-        return verified
+        return verified.drop(columns=[GPAS_OVERRIDE_MARKER], errors="ignore")
 
     baseline_family = verified.get(
         "ROUTE_FAMILY",
@@ -555,6 +652,7 @@ def apply_signed_route_verification(
             )
             for column in VERIFICATION_COLUMNS:
                 verified.at[index, column] = updated_row[column]
+            verified.at[index, GPAS_OVERRIDE_MARKER] = updated_row[GPAS_OVERRIDE_MARKER]
             match_count += 1
 
         LOGGER.info(
@@ -579,7 +677,7 @@ def apply_signed_route_verification(
                     COVERAGE_WARNING_THRESHOLD * 100.0,
                 )
 
-    return verified
+    return verified.drop(columns=[GPAS_OVERRIDE_MARKER], errors="ignore")
 
 
 def write_signed_route_verification_summary(gdf: pd.DataFrame) -> None:

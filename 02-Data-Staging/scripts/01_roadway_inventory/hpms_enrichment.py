@@ -6,7 +6,7 @@ interval-overlap matching without spatial joins.
 Current enrichment:
 - AADT gap-fill for segments missing GDOT official/analytical AADT
 - Future AADT gap-fill
-- Signed-route classification from routesigning (supplements baseline verification)
+- Initial signed-route classification from routesigning
 - Pavement condition: IRI, PSR, rutting, cracking_percent
 - Safety geometry: access_control, terrain_type, speed_limit
 - Roadway attribute gap-fill: through_lanes, lane_width, median, shoulder,
@@ -305,7 +305,6 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             hpms_family = ROUTE_SIGNING_MAP.get(signing_int)
             if hpms_family:
                 current_primary = enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"]
-                current_source = enriched.at[idx, "SIGNED_ROUTE_VERIFY_SOURCE"]
                 current_method = enriched.at[idx, "SIGNED_ROUTE_VERIFY_METHOD"]
                 existing_all = _parse_signed_route_family_list(
                     enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]
@@ -334,8 +333,7 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_CONFIDENCE"] = "high"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_SCORE"] = 0.95
                     if (
-                        current_source != "hpms_2024"
-                        or current_method != "hpms_routesigning"
+                        current_method != "hpms_routesigning"
                         or current_primary != primary_family
                     ):
                         signing_upgrade_count += 1
