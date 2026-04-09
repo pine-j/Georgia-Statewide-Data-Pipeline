@@ -942,7 +942,7 @@ Current enrichment coverage:
 
 Detailed design note:
 
-- [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
+- Signed-route verification in the current build is driven by HPMS `routesigning` enrichment rather than the older GDOT live-layer verification design.
 
 ---
 

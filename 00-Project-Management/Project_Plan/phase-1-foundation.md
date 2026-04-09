@@ -31,7 +31,6 @@ Related exploratory note:
 Related exploratory memo:
 - [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
 - [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
-- [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
 
 Official Georgia sources used for the roadway base layer and route-family crosswalk:
 
@@ -374,8 +373,8 @@ The staged roadway network currently supports multiple kinds of classification, 
     - `U.S. Route`: `10,169`
     - `State Route`: `4,671`
     - `Local/Other`: `226,405`
-- Detailed design:
-  - [Georgia Signed-Route Verification Strategy](../Assessment_and_Options/2026-04-07-georgia-signed-route-verification-strategy.md)
+- Current implementation note:
+  - signed-route verification is currently driven by HPMS `routesigning` enrichment rather than the older GDOT live-layer verification design
 
 ### 1.5 Build config JSON files
 

@@ -1,7 +1,7 @@
 {
   "segment_count": 244904,
   "hpms_aadt_filled": 196247,
-  "hpms_signing_upgrades": 223136,
+  "hpms_signing_upgrades": 15014,
   "hpms_iri_coverage": 10410,
   "hpms_psr_coverage": 56,
   "hpms_rutting_coverage": 9591,
@@ -10,8 +10,8 @@
   "hpms_terrain_coverage": 891,
   "hpms_route_signing_coverage": 223136,
   "signed_route_source_counts": {
-    "hpms_2024": 223136,
-    "route_id_crosswalk": 21768
+    "route_id_crosswalk": 229890,
+    "hpms_2024": 15014
   },
   "gap_fill_coverage": {
     "hpms_gap_fill_through_lanes": 241728,

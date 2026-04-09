@@ -42,6 +42,7 @@ from shapely.ops import substring
 from hpms_enrichment import apply_hpms_enrichment, write_hpms_enrichment_summary
 from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
 from route_family import classify_route_families
+from route_type_gdot import apply_gdot_route_type_classification
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +294,9 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
     gdf["ROUTE_TYPE_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
+    )
+    gdf["ROUTE_TYPE_GDOT_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE_GDOT").map(
+        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_type_gdot"])
     )
 
     return gdf
@@ -2171,6 +2175,8 @@ def main() -> None:
         county_boundaries_for_backfill,
     )
     segmented = apply_hpms_enrichment(segmented)
+    route_type_fields = apply_gdot_route_type_classification(segmented)
+    segmented = pd.concat([segmented, route_type_fields], axis=1)
     segmented = apply_direction_mirror_aadt(segmented)
     segmented = apply_state_system_current_aadt_gap_fill(segmented)
     segmented = apply_nearest_neighbor_aadt(segmented)

@@ -55,6 +55,7 @@ DECODED_LABEL_COLUMNS = {
     "ROUTE_DIRECTION_LABEL": "ROUTE_DIRECTION",
     "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
     "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
+    "ROUTE_TYPE_GDOT_LABEL": "ROUTE_TYPE_GDOT",
 }
 
 EXPECTED_PHASE1_ATTRIBUTE_COLUMNS = [
@@ -73,6 +74,12 @@ EXPECTED_ROUTE_FAMILY_COLUMNS = [
     "ROUTE_FAMILY_DETAIL",
     "ROUTE_FAMILY_CONFIDENCE",
     "ROUTE_FAMILY_SOURCE",
+]
+
+EXPECTED_GDOT_ROUTE_TYPE_COLUMNS = [
+    "ROUTE_TYPE_GDOT",
+    "ROUTE_TYPE_GDOT_LABEL",
+    "HWY_NAME",
 ]
 
 EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
@@ -339,6 +346,32 @@ def validate_route_family_columns(result: ValidationResult, df: pd.DataFrame) ->
         )
 
 
+def validate_gdot_route_type_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that the granular Georgia route-type fields are staged and populated."""
+    for column in EXPECTED_GDOT_ROUTE_TYPE_COLUMNS:
+        result.add(
+            f"GDOT route-type field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+    if "ROUTE_TYPE_GDOT" in df.columns:
+        null_count = int(df["ROUTE_TYPE_GDOT"].isna().sum())
+        result.add(
+            "GDOT route-type coverage",
+            null_count == 0,
+            f"{len(df) - null_count:,}/{len(df):,} rows classified",
+        )
+
+    if "HWY_NAME" in df.columns:
+        null_count = int(df["HWY_NAME"].isna().sum())
+        result.add(
+            "HWY_NAME coverage",
+            null_count == 0,
+            f"{len(df) - null_count:,}/{len(df):,} rows named",
+        )
+
+
 def validate_signed_route_verification_columns(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that signed-route verification fields are staged."""
     for column in EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS:
@@ -568,6 +601,7 @@ def main() -> None:
         validate_state_system_location_fields(result, df)
         validate_phase1_attribute_columns(result, df)
         validate_route_family_columns(result, df)
+        validate_gdot_route_type_columns(result, df)
         validate_signed_route_verification_columns(result, df)
         validate_current_aadt_provenance_columns(result, df)
         validate_provenance_consistency(result, df)

@@ -1,3 +1,12 @@
+# Deprecated
+
+This historical exploratory note is no longer a maintained current-source document.
+
+Use these files instead:
+
+- `00-Project-Management/Assessment_and_Options/roadway-gap-fill-options.md`
+- `00-Project-Management/Assessment_and_Options/roadway-supplement-options.md`
+
 # Roadway Gap-Fill Exploratory Report
 
 Date: 2026-04-03

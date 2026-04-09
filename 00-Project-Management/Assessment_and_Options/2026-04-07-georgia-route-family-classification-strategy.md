@@ -216,17 +216,11 @@ To raise `U.S. Route` versus `State Route` from medium to high confidence, use a
 - `State Routes`
 - `Statewide Roads`
 
-That verification design is documented separately in:
-
-- [Georgia Signed-Route Verification Strategy](./2026-04-07-georgia-signed-route-verification-strategy.md)
-
 Current implementation note:
 
-- an initial ETL scaffold is now wired for the next staged rebuild
-- live reference matchers now cover GDOT `Interstates`, `US Highway`, and `State Routes`
-- matching currently uses derived `RCLINK` candidates and then prefers milepoint overlap where the official layer exposes interval fields
-- if one official reference is unavailable at runtime, the ETL continues with the others
-- if all official references are unavailable at runtime, the ETL falls back to the baseline crosswalk result and logs warnings
+- the baseline route-family crosswalk remains the starting point
+- the current staged build upgrades signed-route classification through HPMS `routesigning` where coverage exists
+- no separate GDOT live-layer verification note is maintained as a current-source document
 
 ### Pipeline changes
 

@@ -120,6 +120,31 @@
     "detail": "Column present"
   },
   {
+    "name": "GDOT route-type field: ROUTE_TYPE_GDOT",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type field: ROUTE_TYPE_GDOT_LABEL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type field: HWY_NAME",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type coverage",
+    "status": "PASS",
+    "detail": "244,904/244,904 rows classified"
+  },
+  {
+    "name": "HWY_NAME coverage",
+    "status": "PASS",
+    "detail": "244,904/244,904 rows named"
+  },
+  {
     "name": "Signed-route field: SIGNED_INTERSTATE_FLAG",
     "status": "PASS",
     "detail": "Column present"
@@ -321,6 +346,11 @@
   },
   {
     "name": "Decoded label: ROUTE_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "244,904/244,904 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: ROUTE_TYPE_GDOT_LABEL",
     "status": "PASS",
     "detail": "244,904/244,904 source-coded rows decoded"
   },

@@ -34,18 +34,15 @@ HPMS_PATH = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "FHWA_HPMS" / "
 
 MILEPOINT_TOLERANCE = 1e-4
 
-# HPMS routesigning codes -> route family
+# HPMS RouteSigning codes are defined in the FHWA HPMS Field Manual.
+# Only codes that explicitly distinguish Interstate / U.S. / State families
+# should upgrade the signed-family fields. Code 1 is "Not Signed" and should
+# not overwrite a baseline GDOT family.
 ROUTE_SIGNING_MAP = {
-    1: "Interstate",
-    2: "U.S. Route",
-    3: "State Route",
-    4: "Local/Other",
-    5: "Local/Other",
-    6: "Local/Other",
-    7: "Local/Other",
-    8: "Local/Other",
-    9: "Local/Other",
-    10: "Local/Other",
+    2: "Interstate",
+    3: "U.S. Route",
+    4: "State Route",
+    5: "Interstate",
 }
 
 # GDOT attribute columns that HPMS can gap-fill (only fill where GDOT is null)

@@ -1,3 +1,14 @@
+# Deprecated
+
+This note described the older GDOT live-layer signed-route verification approach.
+
+The current staged build uses HPMS `routesigning` as the active signed-route verification path.
+
+Use these files instead:
+
+- `00-Project-Management/Project_Plan/phase-1-foundation.md`
+- `00-Project-Management/Pipeline-Documetation/phase-1-roadway-data-pipeline.md`
+
 # Georgia Signed-Route Verification Strategy
 
 ## Purpose
