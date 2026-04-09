@@ -17,13 +17,10 @@ import geopandas as gpd
 import pandas as pd
 
 from route_verification import (
-    _clean_text,
-    _feature_collection_to_gdf,
     _fetch_arcgis_features,
     _fetch_arcgis_object_ids,
-    _intervals_overlap,
-    _round_milepoint,
 )
+from utils import _clean_text, _round_milepoint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -164,7 +161,7 @@ def _match_speed_zone(
             continue
 
         overlap = min(float(seg_to), float(ref_to)) - max(float(seg_from), float(ref_from))
-        if overlap > -MILEPOINT_TOLERANCE and overlap > best_overlap:
+        if overlap > MILEPOINT_TOLERANCE and overlap > best_overlap:
             best_overlap = overlap
             best_match = record
 

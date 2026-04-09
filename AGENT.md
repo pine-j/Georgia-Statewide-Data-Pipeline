@@ -99,6 +99,10 @@ The data inventory CSV is at `01-Raw-Data/Georgia_Data_Inventory.csv`. Add new d
 
 Keep dataset-specific download scripts with the raw dataset they fetch. Place those entrypoints under the relevant `01-Raw-Data/<dataset>/` folder, preferably `01-Raw-Data/<dataset>/scripts/`. Reserve `02-Data-Staging/` for post-download ETL work such as normalization, enrichment, validation, database loading, and staged artifact generation.
 
+## Segment Slicing Guardrail
+
+Do NOT slice, split, or re-segment roadway geometries at new milepoint boundaries without explicit user approval. The base network segments from the GDOT geodatabase should be preserved as-is unless there is a confirmed, empirically verified reason that the source data intervals do not align. Before proposing any geometry slicing logic, present the evidence (mismatched interval counts, examples) and get confirmation.
+
 ## Data Source Preference
 
 Wherever possible, prefer official GDOT data as the first-choice source for Georgia datasets, boundaries, and attributes. Only use derived, federal, third-party, or fallback sources when an official GDOT source is unavailable, inaccessible, or materially incomplete, and document that choice clearly.

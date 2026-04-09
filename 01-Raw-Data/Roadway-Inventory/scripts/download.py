@@ -4,6 +4,8 @@ Downloads the Road_Inventory_Geodatabase.zip from GDOT's Open Data portal,
 extracts it to 01-Raw-Data/Roadway-Inventory/, and records download metadata.
 """
 
+# TODO: Automate download of TRAFFIC_Data_2024.gdb once GDOT exposes a stable source URL.
+
 import json
 import logging
 import zipfile

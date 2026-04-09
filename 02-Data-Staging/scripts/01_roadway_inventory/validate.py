@@ -13,6 +13,8 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
+from utils import decode_lookup_value
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -22,7 +24,10 @@ SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 RAPTOR_DIR = PROJECT_ROOT / "05-RAPTOR-Integration"
 
-TARGET_CRS = "EPSG:32617"
+TARGET_CRS = "EPSG:32617"  # NOTE: crs_config.json exists, but this script does not currently read it.
+MIN_ROW_COUNT = 200000
+MIN_CURRENT_AADT_COVERAGE = 0.95
+MIN_COLUMN_COUNT = 100
 
 COUNTY_CODE_LOOKUP = json.loads((CONFIG_DIR / "county_codes.json").read_text(encoding="utf-8"))
 DISTRICT_SHORT_NAME_LOOKUP = {
@@ -183,42 +188,6 @@ class ValidationResult:
         return f"{passed}/{total} checks passed"
 
 
-def decode_lookup_value(value, lookup: dict, zero_pad: int | None = None) -> str | None:
-    if pd.isna(value):
-        return None
-
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if text in lookup:
-            return lookup[text]
-        upper_text = text.upper()
-        if upper_text in lookup:
-            return lookup[upper_text]
-        try:
-            numeric_text = int(float(text))
-        except ValueError:
-            return None
-        if zero_pad is not None:
-            padded = f"{numeric_text:0{zero_pad}d}"
-            if padded in lookup:
-                return lookup[padded]
-        return lookup.get(numeric_text) or lookup.get(str(numeric_text))
-
-    try:
-        numeric_value = int(float(value))
-    except (TypeError, ValueError):
-        return None
-
-    if zero_pad is not None:
-        padded = f"{numeric_value:0{zero_pad}d}"
-        if padded in lookup:
-            return lookup[padded]
-
-    return lookup.get(numeric_value) or lookup.get(str(numeric_value))
-
-
 def clean_optional_text(value) -> str | None:
     if pd.isna(value):
         return None
@@ -252,14 +221,23 @@ def validate_row_count(result: ValidationResult) -> pd.DataFrame | None:
 
     df = pd.read_csv(csv_path, low_memory=False)
     row_count = len(df)
-
-    # Georgia roadway inventory typically has tens of thousands of segments
     result.add(
         "Row count",
-        row_count > 0,
-        f"{row_count:,} rows loaded",
+        row_count >= MIN_ROW_COUNT,
+        f"{row_count:,} rows loaded; threshold >= {MIN_ROW_COUNT:,}",
     )
     return df
+
+
+def validate_column_count(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that the staged CSV exposes the expected column breadth."""
+
+    column_count = len(df.columns)
+    result.add(
+        "Column count",
+        column_count >= MIN_COLUMN_COUNT,
+        f"{column_count:,} columns; threshold >= {MIN_COLUMN_COUNT}",
+    )
 
 
 def validate_unique_id(result: ValidationResult, df: pd.DataFrame) -> None:
@@ -380,10 +358,15 @@ def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
         if "AADT_2024_OFFICIAL" in df.columns
         else current_count
     )
+    coverage_ratio = (current_count / len(df)) if len(df) else 0.0
     result.add(
         "Current AADT coverage",
-        current_count > 0,
-        f"{current_count:,} segments with canonical current AADT; official={official_count:,}",
+        coverage_ratio >= MIN_CURRENT_AADT_COVERAGE,
+        (
+            f"{current_count:,}/{len(df):,} segments with canonical current AADT "
+            f"({coverage_ratio:.2%}); threshold >= {MIN_CURRENT_AADT_COVERAGE:.0%}; "
+            f"official={official_count:,}"
+        ),
     )
 
     if "FUTURE_AADT_2044" in df.columns:
@@ -908,12 +891,21 @@ def validate_database(result: ValidationResult) -> None:
         # Check row count matches CSV and GeoPackage
         if "segments" in tables:
             db_count = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
-            result.add("Database row count", db_count > 0, f"{db_count:,} rows")
+            result.add(
+                "Database row count",
+                db_count >= MIN_ROW_COUNT,
+                f"{db_count:,} rows; threshold >= {MIN_ROW_COUNT:,}",
+            )
 
             segment_columns = {
                 row[1]
                 for row in conn.execute("PRAGMA table_info(segments)").fetchall()
             }
+            result.add(
+                "Database column count",
+                len(segment_columns) >= MIN_COLUMN_COUNT,
+                f"{len(segment_columns):,} columns; threshold >= {MIN_COLUMN_COUNT}",
+            )
             slot_columns_present = {
                 "SECONDARY_SIGNED_ROUTE_FAMILY",
                 "TERTIARY_SIGNED_ROUTE_FAMILY",
@@ -1002,6 +994,7 @@ def main() -> None:
         df = validate_row_count(result)
 
         if df is not None:
+            validate_column_count(result, df)
             validate_unique_id(result, df)
             validate_null_checks(result, df)
             validate_district_range(result, df)

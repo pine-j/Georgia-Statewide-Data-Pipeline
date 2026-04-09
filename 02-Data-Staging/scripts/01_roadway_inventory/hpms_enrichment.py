@@ -23,7 +23,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import geopandas as gpd
 
@@ -74,6 +73,32 @@ def _parse_signed_route_family_list(value: Any) -> set[str]:
     if not isinstance(parsed, list):
         return set()
     return {str(item).strip() for item in parsed if str(item).strip()}
+
+
+def _signed_route_priority_value(family: str | None) -> int | None:
+    if family not in SIGNED_ROUTE_PRIORITY:
+        return None
+    return SIGNED_ROUTE_PRIORITY[family]
+
+
+def _ordered_signed_route_families_for_hpms(
+    hpms_family: str,
+    current_primary: str | None,
+    existing_families: set[str],
+) -> list[str]:
+    families = {family for family in existing_families if family in SIGNED_ROUTE_FAMILIES}
+    if current_primary in SIGNED_ROUTE_FAMILIES:
+        families.add(current_primary)
+    families.add(hpms_family)
+
+    current_rank = _signed_route_priority_value(current_primary)
+    hpms_rank = _signed_route_priority_value(hpms_family)
+    remaining = [family for family in _sorted_signed_route_families(families) if family != hpms_family]
+
+    if current_rank is not None and hpms_rank is not None and current_rank < hpms_rank:
+        return [current_primary] + [family for family in remaining if family != current_primary] + [hpms_family]
+
+    return [hpms_family] + remaining
 
 # GDOT attribute columns that HPMS can gap-fill (only fill where GDOT is null)
 HPMS_GAP_FILL_FIELDS = {
@@ -158,7 +183,7 @@ def _find_best_hpms_match(
             best_overlap = overlap
             best = record
 
-    return best if best_overlap > -MILEPOINT_TOLERANCE else None
+    return best if best_overlap > MILEPOINT_TOLERANCE else None
 
 
 def _safe_cast(value: Any, cast_type: str) -> Any:
@@ -279,31 +304,41 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             enriched.at[idx, "HPMS_ROUTE_SIGNING"] = signing_int
             hpms_family = ROUTE_SIGNING_MAP.get(signing_int)
             if hpms_family:
+                current_primary = enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"]
                 current_source = enriched.at[idx, "SIGNED_ROUTE_VERIFY_SOURCE"]
-                # Upgrade from baseline crosswalk to HPMS
-                if current_source == "route_id_crosswalk":
-                    existing_all = _parse_signed_route_family_list(
-                        enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]
-                    )
-                    existing_all.add(hpms_family)
-                    ordered_families = _sorted_signed_route_families(existing_all)
-                    (
-                        primary_family,
-                        secondary_family,
-                        tertiary_family,
-                    ) = _signed_route_family_slots(ordered_families)
-                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"] = primary_family
-                    enriched.at[idx, "SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
-                    enriched.at[idx, "TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
-                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(ordered_families)
-                    enriched.at[idx, "SIGNED_INTERSTATE_FLAG"] = "Interstate" in ordered_families
-                    enriched.at[idx, "SIGNED_US_ROUTE_FLAG"] = "U.S. Route" in ordered_families
-                    enriched.at[idx, "SIGNED_STATE_ROUTE_FLAG"] = "State Route" in ordered_families
+                current_method = enriched.at[idx, "SIGNED_ROUTE_VERIFY_METHOD"]
+                existing_all = _parse_signed_route_family_list(
+                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]
+                )
+                ordered_families = _ordered_signed_route_families_for_hpms(
+                    hpms_family,
+                    current_primary,
+                    existing_all,
+                )
+                (
+                    primary_family,
+                    secondary_family,
+                    tertiary_family,
+                ) = _signed_route_family_slots(ordered_families)
+                enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"] = primary_family
+                enriched.at[idx, "SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
+                enriched.at[idx, "TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
+                enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(ordered_families)
+                enriched.at[idx, "SIGNED_INTERSTATE_FLAG"] = "Interstate" in ordered_families
+                enriched.at[idx, "SIGNED_US_ROUTE_FLAG"] = "U.S. Route" in ordered_families
+                enriched.at[idx, "SIGNED_STATE_ROUTE_FLAG"] = "State Route" in ordered_families
+
+                if primary_family == hpms_family:
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_SOURCE"] = "hpms_2024"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_METHOD"] = "hpms_routesigning"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_CONFIDENCE"] = "high"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_SCORE"] = 0.95
-                    signing_upgrade_count += 1
+                    if (
+                        current_source != "hpms_2024"
+                        or current_method != "hpms_routesigning"
+                        or current_primary != primary_family
+                    ):
+                        signing_upgrade_count += 1
 
         routenum = match.get("routenumber")
         if routenum is not None and not pd.isna(routenum):

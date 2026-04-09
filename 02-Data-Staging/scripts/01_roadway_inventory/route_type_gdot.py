@@ -17,6 +17,8 @@ from collections import Counter
 
 import pandas as pd
 
+from utils import _clean_text
+
 INTERSTATE_ROUTE_NUMBER_TO_SIGNED = {
     401: 75,
     402: 20,
@@ -57,14 +59,6 @@ ROUTE_NAME_NUMBER_PATTERNS = (
     re.compile(r"(?i)(?:^|\b)SR[- ]?(\d{1,4})(?:\b|;)"),
     re.compile(r"(?i)(?:^|\b)STATE\s+ROUTE\s+(\d{1,4})(?:\b|;)"),
 )
-
-
-def _clean_text(value) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    return str(value).strip().upper()
-
-
 def _clean_int(value) -> int | None:
     if value is None or pd.isna(value):
         return None
@@ -287,7 +281,10 @@ def apply_gdot_route_type_classification(df: pd.DataFrame) -> pd.DataFrame:
     working["BASE_ROUTE_NUMBER"] = df.get("BASE_ROUTE_NUMBER", pd.Series(index=df.index, dtype="object"))
     working["FUNCTION_TYPE"] = df.get("FUNCTION_TYPE", pd.Series(index=df.index, dtype="object"))
     working["SYSTEM_CODE"] = df.get("SYSTEM_CODE", pd.Series(index=df.index, dtype="object"))
-    working["ROUTE_SUFFIX"] = df.get("ROUTE_SUFFIX", pd.Series(index=df.index, dtype="object")).map(_clean_text)
+    working["ROUTE_SUFFIX"] = df.get(
+        "ROUTE_SUFFIX",
+        pd.Series(index=df.index, dtype="object"),
+    ).map(lambda value: _clean_text(value).upper())
     working["ROUTE_FAMILY"] = df.get("ROUTE_FAMILY", pd.Series(index=df.index, dtype="object")).fillna("").astype(str)
     working["SIGNED_ROUTE_FAMILY_PRIMARY"] = df.get(
         "SIGNED_ROUTE_FAMILY_PRIMARY",
