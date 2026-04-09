@@ -20,6 +20,7 @@
 02-Data-Staging/spatial/
 02-Data-Staging/tables/
 02-Data-Staging/reports/
+!02-Data-Staging/reports/.gitkeep
 
 # Python
 __pycache__/
