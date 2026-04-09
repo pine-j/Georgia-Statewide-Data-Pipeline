@@ -22,7 +22,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics"
 OZ_DIR = RAW_DIR / "opportunity_zones"
 LODES_DIR = RAW_DIR / "lehd_lodes"

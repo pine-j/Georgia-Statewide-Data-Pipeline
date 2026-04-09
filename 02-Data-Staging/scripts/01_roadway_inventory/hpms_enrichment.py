@@ -6,7 +6,7 @@ interval-overlap matching without spatial joins.
 Current enrichment:
 - AADT gap-fill for segments missing GDOT official/analytical AADT
 - Future AADT gap-fill
-- Signed-route classification from routesigning (replaces GPAS verification)
+- Signed-route classification from routesigning (supplements baseline verification)
 - Pavement condition: IRI, PSR, rutting, cracking_percent
 - Safety geometry: access_control, terrain_type, speed_limit
 - Roadway attribute gap-fill: through_lanes, lane_width, median, shoulder,
@@ -44,6 +44,36 @@ ROUTE_SIGNING_MAP = {
     4: "State Route",
     5: "Interstate",
 }
+SIGNED_ROUTE_PRIORITY = {
+    "Interstate": 0,
+    "U.S. Route": 1,
+    "State Route": 2,
+}
+SIGNED_ROUTE_FAMILIES = frozenset(SIGNED_ROUTE_PRIORITY)
+
+
+def _sorted_signed_route_families(families: set[str]) -> list[str]:
+    cleaned = [family for family in families if family in SIGNED_ROUTE_FAMILIES]
+    return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
+
+
+def _signed_route_family_slots(ordered_families: list[str]) -> tuple[str | None, str | None, str | None]:
+    primary = ordered_families[0] if len(ordered_families) > 0 else None
+    secondary = ordered_families[1] if len(ordered_families) > 1 else None
+    tertiary = ordered_families[2] if len(ordered_families) > 2 else None
+    return primary, secondary, tertiary
+
+
+def _parse_signed_route_family_list(value: Any) -> set[str]:
+    if not isinstance(value, str) or not value.strip():
+        return set()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    return {str(item).strip() for item in parsed if str(item).strip()}
 
 # GDOT attribute columns that HPMS can gap-fill (only fill where GDOT is null)
 HPMS_GAP_FILL_FIELDS = {
@@ -168,25 +198,32 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if col not in enriched.columns:
             enriched[col] = None
 
-    # Initialize signed-route verification columns from baseline route-family
+    # Preserve any existing signed-route verification and backfill only missing fields.
     baseline_family = enriched.get("ROUTE_FAMILY", pd.Series(index=enriched.index, dtype="object"))
     baseline_confidence = enriched.get(
         "ROUTE_FAMILY_CONFIDENCE", pd.Series(index=enriched.index, dtype="object")
     )
-    enriched["SIGNED_INTERSTATE_FLAG"] = baseline_family.eq("Interstate")
-    enriched["SIGNED_US_ROUTE_FLAG"] = baseline_family.eq("U.S. Route")
-    enriched["SIGNED_STATE_ROUTE_FLAG"] = baseline_family.eq("State Route")
-    enriched["SIGNED_ROUTE_FAMILY_PRIMARY"] = baseline_family
-    enriched["SIGNED_ROUTE_FAMILY_ALL"] = baseline_family.fillna("").map(
-        lambda v: json.dumps([v]) if v else json.dumps([])
-    )
-    enriched["SIGNED_ROUTE_VERIFY_SOURCE"] = "route_id_crosswalk"
-    enriched["SIGNED_ROUTE_VERIFY_METHOD"] = "route_id_crosswalk"
-    enriched["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = baseline_confidence
-    enriched["SIGNED_ROUTE_VERIFY_SCORE"] = baseline_confidence.map(
-        {"high": 0.95, "medium": 0.6, "low": 0.3}
-    ).fillna(0.3)
-    enriched["SIGNED_ROUTE_VERIFY_NOTES"] = None
+    signed_route_defaults = {
+        "SIGNED_INTERSTATE_FLAG": baseline_family.eq("Interstate"),
+        "SIGNED_US_ROUTE_FLAG": baseline_family.eq("U.S. Route"),
+        "SIGNED_STATE_ROUTE_FLAG": baseline_family.eq("State Route"),
+        "SIGNED_ROUTE_FAMILY_PRIMARY": baseline_family,
+        "SECONDARY_SIGNED_ROUTE_FAMILY": None,
+        "TERTIARY_SIGNED_ROUTE_FAMILY": None,
+        "SIGNED_ROUTE_FAMILY_ALL": baseline_family.fillna("").map(
+            lambda v: json.dumps([v]) if v in SIGNED_ROUTE_FAMILIES else json.dumps([])
+        ),
+        "SIGNED_ROUTE_VERIFY_SOURCE": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_METHOD": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_CONFIDENCE": baseline_confidence,
+        "SIGNED_ROUTE_VERIFY_SCORE": baseline_confidence.map(
+            {"high": 0.95, "medium": 0.6, "low": 0.3}
+        ).fillna(0.3),
+        "SIGNED_ROUTE_VERIFY_NOTES": None,
+    }
+    for column_name, default_value in signed_route_defaults.items():
+        if column_name not in enriched.columns:
+            enriched[column_name] = default_value
 
     aadt_fill_count = 0
     pavement_fill_count = 0
@@ -245,14 +282,23 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 current_source = enriched.at[idx, "SIGNED_ROUTE_VERIFY_SOURCE"]
                 # Upgrade from baseline crosswalk to HPMS
                 if current_source == "route_id_crosswalk":
-                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"] = hpms_family
-                    enriched.at[idx, "SIGNED_INTERSTATE_FLAG"] = (hpms_family == "Interstate")
-                    enriched.at[idx, "SIGNED_US_ROUTE_FLAG"] = (hpms_family == "U.S. Route")
-                    enriched.at[idx, "SIGNED_STATE_ROUTE_FLAG"] = (hpms_family == "State Route")
-                    # Update the ALL list
-                    existing_all = set(json.loads(enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]))
+                    existing_all = _parse_signed_route_family_list(
+                        enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]
+                    )
                     existing_all.add(hpms_family)
-                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(sorted(existing_all))
+                    ordered_families = _sorted_signed_route_families(existing_all)
+                    (
+                        primary_family,
+                        secondary_family,
+                        tertiary_family,
+                    ) = _signed_route_family_slots(ordered_families)
+                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"] = primary_family
+                    enriched.at[idx, "SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
+                    enriched.at[idx, "TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
+                    enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(ordered_families)
+                    enriched.at[idx, "SIGNED_INTERSTATE_FLAG"] = "Interstate" in ordered_families
+                    enriched.at[idx, "SIGNED_US_ROUTE_FLAG"] = "U.S. Route" in ordered_families
+                    enriched.at[idx, "SIGNED_STATE_ROUTE_FLAG"] = "State Route" in ordered_families
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_SOURCE"] = "hpms_2024"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_METHOD"] = "hpms_routesigning"
                     enriched.at[idx, "SIGNED_ROUTE_VERIFY_CONFIDENCE"] = "high"

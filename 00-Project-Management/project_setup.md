@@ -203,6 +203,4 @@ Notes:
 
 Open these from the VS Code editor or Markdown preview:
 
-- [Roadway Gap-Fill Options](./Assessment_and_Options/roadway-gap-fill-options.md)
-- [Roadway Supplement Options](./Assessment_and_Options/roadway-supplement-options.md)
-- [Roadway Gap-Fill Options CSV](./Assessment_and_Options/roadway-gap-fill-options.csv)
+- [Roadway Gap-Fill and Supplement Strategy](./Assessment_and_Options/roadway-gap-fill-consolidated.md)

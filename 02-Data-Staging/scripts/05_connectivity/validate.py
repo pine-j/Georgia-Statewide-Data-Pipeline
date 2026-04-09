@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GPKG_PATH = PROJECT_ROOT / "02-Data-Staging" / "spatial" / "connectivity.gpkg"
-CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "connectivity"
+CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables" / "connectivity"
 
 EXPECTED_LAYERS = [
     "priority_routes",
@@ -54,7 +54,7 @@ def _check_layer(layer_name: str, errors: list[str]) -> None:
     """Validate a single GeoPackage layer."""
     src = CLEAN_DIR / f"{layer_name}.geojson"
     if not src.exists():
-        log.warning("  [SKIP] %s – cleaned file not found.", layer_name)
+        log.warning("  [SKIP] %s - staged source file not found.", layer_name)
         return
 
     gdf = gpd.read_file(src)
@@ -126,7 +126,7 @@ def main() -> int:
     errors: list[str] = []
 
     log.info("=== Connectivity Validation ===")
-    log.info("Checking cleaned datasets ...")
+    log.info("Checking staged connectivity sources ...")
     for layer in EXPECTED_LAYERS:
         _check_layer(layer, errors)
 

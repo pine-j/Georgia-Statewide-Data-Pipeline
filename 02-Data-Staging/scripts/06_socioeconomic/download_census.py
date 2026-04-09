@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Paths (relative to repo root)
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics"
 DECENNIAL_DIR = RAW_DIR / "census_decennial"
 ACS_DIR = RAW_DIR / "acs_5year"

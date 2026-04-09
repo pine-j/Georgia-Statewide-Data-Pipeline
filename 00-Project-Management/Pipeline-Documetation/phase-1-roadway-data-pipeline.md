@@ -63,10 +63,11 @@ For Phase 1 specifically:
 
 ```text
 01-Raw-Data/Roadway-Inventory/
+01-Raw-Data/Roadway-Inventory/scripts/
 02-Data-Staging/scripts/01_roadway_inventory/
 02-Data-Staging/databases/roadway_inventory.db
 02-Data-Staging/spatial/base_network.gpkg
-02-Data-Staging/cleaned/roadway_inventory_cleaned.csv
+02-Data-Staging/tables/roadway_inventory_cleaned.csv
 02-Data-Staging/config/
 ```
 
@@ -133,7 +134,8 @@ The speed zone enrichment downloads from GDOT GPAS to:
 
 - `01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson`
 
-This snapshot is cached locally and only re-downloaded when `download_rnhp_enrichment.py` is run with `refresh=True`.
+This snapshot is cached locally and only re-downloaded when
+`01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py` is run.
 
 ### FHWA HPMS 2024 data
 
@@ -265,14 +267,12 @@ The roadway pipeline consists of four main steps:
 
 The key scripts are:
 
-- `02-Data-Staging/scripts/01_roadway_inventory/download.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/catalog_columns.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/download_rnhp_enrichment.py`
+- `01-Raw-Data/Roadway-Inventory/scripts/download.py`
+- `01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/normalize.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/route_family.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/hpms_enrichment.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/audit_current_aadt_coverage.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/create_db.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/validate.py`
 
@@ -413,6 +413,8 @@ Current signed-route verification fields:
 - `SIGNED_US_ROUTE_FLAG`
 - `SIGNED_STATE_ROUTE_FLAG`
 - `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SECONDARY_SIGNED_ROUTE_FAMILY`
+- `TERTIARY_SIGNED_ROUTE_FAMILY`
 - `SIGNED_ROUTE_FAMILY_ALL`
 - `SIGNED_ROUTE_VERIFY_SOURCE`
 - `SIGNED_ROUTE_VERIFY_METHOD`
@@ -523,12 +525,13 @@ The ETL then computes:
 
 - `segment_length_m`
 - `segment_length_mi`
+- `county_all`
 
 ### 10. Write staged outputs
 
 The ETL writes:
 
-- `02-Data-Staging/cleaned/roadway_inventory_cleaned.csv`
+- `02-Data-Staging/tables/roadway_inventory_cleaned.csv`
 - `02-Data-Staging/spatial/base_network.gpkg`
 
 The roadway GeoPackage currently contains:
@@ -617,6 +620,8 @@ with:
 - `SIGNED_US_ROUTE_FLAG`
 - `SIGNED_STATE_ROUTE_FLAG`
 - `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SECONDARY_SIGNED_ROUTE_FAMILY`
+- `TERTIARY_SIGNED_ROUTE_FAMILY`
 - `SIGNED_ROUTE_FAMILY_ALL`
 - `SIGNED_ROUTE_VERIFY_SOURCE`
 - `SIGNED_ROUTE_VERIFY_METHOD`
@@ -641,6 +646,10 @@ with:
 - `HPMS_ROUTE_SIGNING`
 - `HPMS_ROUTE_NUMBER`
 - `HPMS_ROUTE_NAME`
+
+### From spatial county overlap
+
+- `county_all` - comma-separated county names crossed by the segment, keeping counties that cover at least 1% of segment length, starting with `COUNTY_NAME`, then listing any additional counties by descending overlap share
 
 ### AADT provenance fields
 
@@ -679,6 +688,7 @@ with:
 - `current_aadt_covered`
 - `segment_length_m`
 - `segment_length_mi`
+- `county_all`
 
 ---
 
@@ -911,7 +921,7 @@ Important limitation:
 
 Reference note:
 
-- [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+- [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
 
 ### 6. Signed-route verification (operational)
 
@@ -1104,7 +1114,7 @@ Closed with Phase 1:
 - official signed-route verification for Interstates, US Routes, and State Routes via HPMS (223,136 segments, 91%)
 - HPMS gap-fill for 13 GDOT roadway attributes
 - posted speed limit enrichment from GDOT SpeedZone OnSystem
-- staged SQLite database, GeoPackage, and cleaned CSV outputs
+- staged SQLite database, GeoPackage, and table CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
 - `82/82` validation checks passing

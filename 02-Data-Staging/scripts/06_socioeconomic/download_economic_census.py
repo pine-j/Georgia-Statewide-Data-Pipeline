@@ -21,7 +21,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics" / "economic_census"
 
 CENSUS_BASE = "https://api.census.gov/data"

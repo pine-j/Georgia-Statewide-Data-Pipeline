@@ -1,7 +1,7 @@
 """Create a GeoPackage (demographics.gpkg) with spatial layers.
 
 Layers written (all EPSG:32617 — UTM Zone 17N):
-- census_blocks    — Decennial 2020 block boundaries with population/housing
+- tract_aggregated_blocks - Tract geometry with aggregated 2020 block totals
 - block_groups     — ACS 5-Year block groups with socioeconomic attributes
 - tracts           — Tract boundaries
 - opportunity_zones — QOZ tracts with designation attributes
@@ -17,9 +17,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics"
-CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "cleaned" / "demographics"
+CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "tables" / "demographics"
 OUT_DIR = REPO_ROOT / "03-Processed-Data" / "demographics"
 
 TARGET_CRS = "EPSG:32617"
@@ -80,7 +80,7 @@ def create_gpkg() -> Path:
         logger.info("Wrote tracts layer: %d features", len(tracts))
         layers_written += 1
 
-    # --- Census Blocks ---
+    # --- Tract-Aggregated Block Totals ---
     # Blocks don't have a separate TIGER download in our pipeline (too large),
     # so we create a lightweight centroid layer from decennial data if available
     decennial_csv = CLEAN_DIR / "decennial_blocks.csv"
@@ -100,8 +100,8 @@ def create_gpkg() -> Path:
             how="inner",
         )
         dec_gdf = gpd.GeoDataFrame(dec_merged, crs=TARGET_CRS)
-        dec_gdf.to_file(gpkg_path, layer="census_blocks", driver="GPKG", mode="a")
-        logger.info("Wrote census_blocks layer (tract-aggregated): %d features", len(dec_gdf))
+        dec_gdf.to_file(gpkg_path, layer="tract_aggregated_blocks", driver="GPKG", mode="a")
+        logger.info("Wrote tract_aggregated_blocks layer: %d features", len(dec_gdf))
         layers_written += 1
 
     # --- Opportunity Zones ---

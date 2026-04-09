@@ -241,6 +241,7 @@ export function FiltersPanel({
               {...params}
               label="County"
               placeholder="Search counties"
+              helperText="Matches segments crossing the selected county, including segments continuing beyond it."
             />
           )}
         />

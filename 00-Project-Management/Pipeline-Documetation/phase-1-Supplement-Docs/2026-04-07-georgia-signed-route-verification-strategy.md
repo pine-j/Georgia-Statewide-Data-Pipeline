@@ -200,6 +200,8 @@ Add these fields to the staged roadway outputs after the current `ROUTE_ID` cros
 - `SIGNED_US_ROUTE_FLAG`
 - `SIGNED_STATE_ROUTE_FLAG`
 - `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SECONDARY_SIGNED_ROUTE_FAMILY`
+- `TERTIARY_SIGNED_ROUTE_FAMILY`
 - `SIGNED_ROUTE_FAMILY_ALL`
 - `SIGNED_ROUTE_VERIFY_SOURCE`
 - `SIGNED_ROUTE_VERIFY_METHOD`
@@ -211,6 +213,8 @@ Recommended meanings:
 
 - `SIGNED_*_FLAG`: boolean evidence that the segment matches that signed family
 - `SIGNED_ROUTE_FAMILY_PRIMARY`: single prioritized family for reporting
+- `SECONDARY_SIGNED_ROUTE_FAMILY`: second prioritized signed family for filtering and export
+- `TERTIARY_SIGNED_ROUTE_FAMILY`: third prioritized signed family for filtering and export
 - `SIGNED_ROUTE_FAMILY_ALL`: pipe- or JSON-list of all matched signed families so concurrency is preserved
 - `SIGNED_ROUTE_VERIFY_SOURCE`: highest-priority source that drove the primary label
 - `SIGNED_ROUTE_VERIFY_METHOD`: `exact_rclink`, `rclink_milepoint_overlap`, `geometry_overlap`, `tiger_support`, `osm_support`, etc.

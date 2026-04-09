@@ -41,6 +41,11 @@ Each dataset follows the same pipeline:
 - **02-Data-Staging/**: ETL scripts, JSON config lookups, **per-dataset SQLite databases** (tabular), and **themed GeoPackage files** (spatial). Each DB/GPKG is a complete source of truth.
 - **03-Processed-Data/**: Analysis-ready outputs that RAPTOR category classes consume.
 
+Download-script convention:
+
+- Keep dataset-specific download scripts under `01-Raw-Data/<dataset>/`, preferably `01-Raw-Data/<dataset>/scripts/`.
+- Keep `02-Data-Staging/` limited to post-download ETL steps such as normalization, enrichment, validation, SQLite loading, and GeoPackage generation.
+
 **Tabular** → SQLite in `02-Data-Staging/databases/`
 **Spatial** → GeoPackage in `02-Data-Staging/spatial/` (EPSG:32617), split by theme:
 
@@ -48,7 +53,7 @@ Each dataset follows the same pipeline:
 |-----------|--------|-------|
 | `base_network.gpkg` | roadway_segments, district_boundaries, county_boundaries | 1 |
 | `connectivity.gpkg` | priority_routes, nevi_corridors, alt_fuel_stations, airports, seaports, universities, military_bases, national_parks, rail_facilities, freight_generators | 2 |
-| `demographics.gpkg` | census_blocks, block_groups, tracts, opportunity_zones | 3 |
+| `demographics.gpkg` | tract_aggregated_blocks, block_groups, tracts, opportunity_zones | 3 |
 | `safety.gpkg` | crash_points | 4 |
 | `assets.gpkg` | bridges, pavement_sections | 5 |
 | `mobility.gpkg` | railroad_crossings, hpms_segments | 6 |
@@ -66,7 +71,7 @@ All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This
 
 ### Assessment And Options
 
-- [Roadway Supplement Options](../Assessment_and_Options/roadway-supplement-options.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
 
 ---
 
@@ -203,5 +208,5 @@ The pipeline is designed to grow. Post-RAPTOR phases (Transit, Bike/Ped, EJ, Cli
 
 ### Assessment And Options
 
-- [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
-  - Compares GDOT live services, TIGER/Line, OpenStreetMap, USGS NTD, and Georgia GIS clearinghouse options for filling local-road gaps in the staged GPKG while preserving source provenance.
+- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
+  - Consolidates the GDOT gap analysis, supplemental source comparison, and recommended provenance-preserving merge strategy.

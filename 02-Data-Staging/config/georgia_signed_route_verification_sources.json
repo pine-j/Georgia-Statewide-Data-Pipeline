@@ -13,9 +13,17 @@
       "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/6",
       "local_geojson": "01-Raw-Data/Roadway-Inventory/GDOT_GPAS/signed_route_references/us_highway.geojson",
       "match_key": "route_id_base"
+    },
+    "state_routes": {
+      "layer_name": "Roads and Highways Routes",
+      "reference_family": "State Route",
+      "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/5",
+      "local_geojson": "01-Raw-Data/Roadway-Inventory/GDOT_GPAS/signed_route_references/state_routes.geojson",
+      "match_key": "route_id_base"
     }
   },
   "query_batch_size": 500,
+  "coverage_warning_threshold": 0.8,
   "default_verify_scores": {
     "high": 0.95,
     "medium": 0.6,

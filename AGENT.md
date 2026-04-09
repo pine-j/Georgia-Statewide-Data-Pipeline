@@ -97,6 +97,8 @@ Assessment documents under `00-Project-Management/Assessment_and_Options/` are d
 
 The data inventory CSV is at `01-Raw-Data/Georgia_Data_Inventory.csv`. Add new datasets there as they are discovered. Treat it as the living inventory of known Georgia pipeline data sources.
 
+Keep dataset-specific download scripts with the raw dataset they fetch. Place those entrypoints under the relevant `01-Raw-Data/<dataset>/` folder, preferably `01-Raw-Data/<dataset>/scripts/`. Reserve `02-Data-Staging/` for post-download ETL work such as normalization, enrichment, validation, database loading, and staged artifact generation.
+
 ## Data Source Preference
 
 Wherever possible, prefer official GDOT data as the first-choice source for Georgia datasets, boundaries, and attributes. Only use derived, federal, third-party, or fallback sources when an official GDOT source is unavailable, inaccessible, or materially incomplete, and document that choice clearly.

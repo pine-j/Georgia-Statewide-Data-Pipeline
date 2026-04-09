@@ -2,7 +2,7 @@
   {
     "name": "Row count",
     "status": "PASS",
-    "detail": "244,904 rows loaded"
+    "detail": "245,863 rows loaded"
   },
   {
     "name": "unique_id exists",
@@ -47,17 +47,17 @@
   {
     "name": "Current AADT coverage",
     "status": "PASS",
-    "detail": "244,819 segments with canonical current AADT; official=44,983"
+    "detail": "245,778 segments with canonical current AADT; official=45,938"
   },
   {
     "name": "Future AADT 2044 coverage",
     "status": "PASS",
-    "detail": "52,236 segments with future AADT (2044 projection)"
+    "detail": "53,215 segments with future AADT (2044 projection)"
   },
   {
     "name": "State-system county/district coverage",
     "status": "PASS",
-    "detail": "18,499/18,499 rows have county and district"
+    "detail": "19,458/19,458 rows have county and district"
   },
   {
     "name": "Phase 1 attribute: LANE_WIDTH",
@@ -137,12 +137,12 @@
   {
     "name": "GDOT route-type coverage",
     "status": "PASS",
-    "detail": "244,904/244,904 rows classified"
+    "detail": "245,863/245,863 rows classified"
   },
   {
     "name": "HWY_NAME coverage",
     "status": "PASS",
-    "detail": "244,904/244,904 rows named"
+    "detail": "245,863/245,863 rows named"
   },
   {
     "name": "Signed-route field: SIGNED_INTERSTATE_FLAG",
@@ -161,6 +161,16 @@
   },
   {
     "name": "Signed-route field: SIGNED_ROUTE_FAMILY_PRIMARY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: SECONDARY_SIGNED_ROUTE_FAMILY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: TERTIARY_SIGNED_ROUTE_FAMILY",
     "status": "PASS",
     "detail": "Column present"
   },
@@ -193,6 +203,16 @@
     "name": "Signed-route field: SIGNED_ROUTE_VERIFY_NOTES",
     "status": "PASS",
     "detail": "Column present"
+  },
+  {
+    "name": "Signed-route family list semantics",
+    "status": "PASS",
+    "detail": "All SIGNED_ROUTE_FAMILY_ALL entries contain only signed-route families"
+  },
+  {
+    "name": "Signed-route family slot alignment",
+    "status": "PASS",
+    "detail": "PRIMARY/SECONDARY/TERTIARY align with SIGNED_ROUTE_FAMILY_ALL"
   },
   {
     "name": "Current AADT provenance field: AADT_2024",
@@ -232,62 +252,62 @@
   {
     "name": "Speed limit provenance",
     "status": "PASS",
-    "detail": "20,343 with speed limit, all have source"
+    "detail": "21,295 with speed limit, all have source"
   },
   {
     "name": "Future AADT provenance",
     "status": "PASS",
-    "detail": "52,236 with future AADT, all have source"
+    "detail": "53,215 with future AADT, all have source"
   },
   {
     "name": "Decoded label: COUNTY_NAME",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_NAME",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SYSTEM_CODE_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FUNCTION_TYPE_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_FUNCTION_TYPE_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: F_SYSTEM_LABEL",
     "status": "PASS",
-    "detail": "241,744/241,744 source-coded rows decoded"
+    "detail": "242,703/242,703 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FUNCTIONAL_CLASS_LABEL",
     "status": "PASS",
-    "detail": "215,416/215,416 source-coded rows decoded"
+    "detail": "215,430/215,430 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FACILITY_TYPE_LABEL",
     "status": "PASS",
-    "detail": "241,744/241,744 source-coded rows decoded"
+    "detail": "242,703/242,703 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_LABEL",
     "status": "PASS",
-    "detail": "7,830/7,830 source-coded rows decoded"
+    "detail": "8,342/8,342 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_IND_LABEL",
@@ -297,7 +317,7 @@
   {
     "name": "Decoded label: OWNERSHIP_LABEL",
     "status": "PASS",
-    "detail": "241,744/241,744 source-coded rows decoded"
+    "detail": "242,703/242,703 source-coded rows decoded"
   },
   {
     "name": "Decoded label: STRAHNET_LABEL",
@@ -307,52 +327,192 @@
   {
     "name": "Decoded label: MEDIAN_TYPE_LABEL",
     "status": "PASS",
-    "detail": "3,980/3,980 source-coded rows decoded"
+    "detail": "4,096/4,096 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SHOULDER_TYPE_LABEL",
     "status": "PASS",
-    "detail": "3,980/3,980 source-coded rows decoded"
+    "detail": "4,096/4,096 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SURFACE_TYPE_LABEL",
     "status": "PASS",
-    "detail": "10,466/10,466 source-coded rows decoded"
+    "detail": "11,014/11,014 source-coded rows decoded"
   },
   {
     "name": "Decoded label: URBAN_CODE_LABEL",
     "status": "PASS",
-    "detail": "219,811/219,811 source-coded rows decoded"
+    "detail": "219,825/219,825 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: ROUTE_DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_SYSTEM_CODE_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: ROUTE_TYPE_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
   },
   {
     "name": "Decoded label: ROUTE_TYPE_GDOT_LABEL",
     "status": "PASS",
-    "detail": "244,904/244,904 source-coded rows decoded"
+    "detail": "245,863/245,863 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label correctness: COUNTY_NAME",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: DISTRICT_NAME",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: DISTRICT_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: SYSTEM_CODE_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: FUNCTION_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: PARSED_FUNCTION_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: F_SYSTEM_LABEL",
+    "status": "PASS",
+    "detail": "242,703/242,703 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: FUNCTIONAL_CLASS_LABEL",
+    "status": "PASS",
+    "detail": "215,430/215,430 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: FACILITY_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "242,703/242,703 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: NHS_LABEL",
+    "status": "PASS",
+    "detail": "8,342/8,342 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: NHS_IND_LABEL",
+    "status": "PASS",
+    "detail": "1,150/1,150 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: OWNERSHIP_LABEL",
+    "status": "PASS",
+    "detail": "242,703/242,703 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: STRAHNET_LABEL",
+    "status": "PASS",
+    "detail": "322/322 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: MEDIAN_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "4,096/4,096 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: SHOULDER_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "4,096/4,096 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: SURFACE_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "11,014/11,014 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: URBAN_CODE_LABEL",
+    "status": "PASS",
+    "detail": "219,825/219,825 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: PARSED_DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: ROUTE_DIRECTION_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: PARSED_SYSTEM_CODE_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: ROUTE_TYPE_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "Decoded label correctness: ROUTE_TYPE_GDOT_LABEL",
+    "status": "PASS",
+    "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
+  },
+  {
+    "name": "county_all column",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "county_all token structure",
+    "status": "PASS",
+    "detail": "No blank, duplicate, or unknown county tokens"
+  },
+  {
+    "name": "county_all contains COUNTY_NAME",
+    "status": "PASS",
+    "detail": "COUNTY_NAME is present in county_all for all populated rows"
+  },
+  {
+    "name": "county_all leading COUNTY_NAME alignment",
+    "status": "PASS",
+    "detail": "county_all starts with COUNTY_NAME for all populated rows"
+  },
+  {
+    "name": "county_all single-name alignment",
+    "status": "PASS",
+    "detail": "Single-name county_all rows align with COUNTY_NAME"
   },
   {
     "name": "CRS verification",
@@ -362,7 +522,17 @@
   {
     "name": "Geometry validity",
     "status": "PASS",
-    "detail": "0 invalid, 0 empty out of 244,904"
+    "detail": "0 invalid, 0 empty out of 245,863"
+  },
+  {
+    "name": "GeoPackage county_all column",
+    "status": "PASS",
+    "detail": "county_all present"
+  },
+  {
+    "name": "GeoPackage signed-route slot columns",
+    "status": "PASS",
+    "detail": "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
   },
   {
     "name": "Boundary layers exist",
@@ -380,6 +550,16 @@
     "detail": "7 features"
   },
   {
+    "name": "County boundary geometry validity",
+    "status": "PASS",
+    "detail": "0 invalid of 159"
+  },
+  {
+    "name": "District boundary geometry validity",
+    "status": "PASS",
+    "detail": "0 invalid of 7"
+  },
+  {
     "name": "County district labels",
     "status": "PASS",
     "detail": "DISTRICT_NAME populated"
@@ -390,6 +570,11 @@
     "detail": "DISTRICT_NAME populated"
   },
   {
+    "name": "County boundary lookup correctness",
+    "status": "PASS",
+    "detail": "159/159 county FIPS-name pairs match county_codes.json"
+  },
+  {
     "name": "Database tables",
     "status": "PASS",
     "detail": "Tables: ['segments', 'load_summary']"
@@ -397,12 +582,22 @@
   {
     "name": "Database row count",
     "status": "PASS",
-    "detail": "244,904 rows"
+    "detail": "245,863 rows"
+  },
+  {
+    "name": "Database signed-route slot columns",
+    "status": "PASS",
+    "detail": "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
+  },
+  {
+    "name": "Database county_all column",
+    "status": "PASS",
+    "detail": "county_all present"
   },
   {
     "name": "DB/CSV row count match",
     "status": "PASS",
-    "detail": "DB=244,904, CSV=244,904"
+    "detail": "DB=245,863, CSV=245,863"
   },
   {
     "name": "Load summary table",
@@ -415,28 +610,13 @@
     "detail": "current_aadt_coverage_audit_summary.json present"
   },
   {
-    "name": "Current AADT audit artifact: current_aadt_uncovered_segments.csv",
-    "status": "PASS",
-    "detail": "current_aadt_uncovered_segments.csv present"
-  },
-  {
-    "name": "Current AADT audit artifact: current_aadt_uncovered_route_summary.csv",
-    "status": "PASS",
-    "detail": "current_aadt_uncovered_route_summary.csv present"
-  },
-  {
-    "name": "Current AADT audit artifact: current_aadt_state_system_gap_fill_candidates.csv",
-    "status": "PASS",
-    "detail": "current_aadt_state_system_gap_fill_candidates.csv present"
-  },
-  {
     "name": "RoadwayData statewide load",
     "status": "PASS",
-    "detail": "18,499 rows loaded"
+    "detail": "19,458 rows loaded"
   },
   {
     "name": "RoadwayData district load",
     "status": "PASS",
-    "detail": "2,895 rows; districts=[np.int64(7)]"
+    "detail": "2,992 rows; districts=[np.int64(7)]"
   }
 ]

@@ -43,6 +43,7 @@ CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 REFERENCE_CONFIG = CONFIG["references"]
 VERIFY_SCORES = CONFIG["default_verify_scores"]
 QUERY_BATCH_SIZE = int(CONFIG.get("query_batch_size", 500))
+COVERAGE_WARNING_THRESHOLD = float(CONFIG.get("coverage_warning_threshold", 0.8))
 USER_AGENT = "Georgia-Statewide-Data-Pipeline signed-route verification"
 MILEPOINT_TOLERANCE = 1e-4
 
@@ -50,15 +51,17 @@ SIGNED_ROUTE_PRIORITY = {
     "Interstate": 0,
     "U.S. Route": 1,
     "State Route": 2,
-    "Local/Other": 3,
 }
-REFERENCE_MATCH_ORDER = ["interstates", "us_highway"]
+SIGNED_ROUTE_FAMILIES = frozenset(SIGNED_ROUTE_PRIORITY)
+REFERENCE_MATCH_ORDER = ["interstates", "us_highway", "state_routes"]
 
 VERIFICATION_COLUMNS = [
     "SIGNED_INTERSTATE_FLAG",
     "SIGNED_US_ROUTE_FLAG",
     "SIGNED_STATE_ROUTE_FLAG",
     "SIGNED_ROUTE_FAMILY_PRIMARY",
+    "SECONDARY_SIGNED_ROUTE_FAMILY",
+    "TERTIARY_SIGNED_ROUTE_FAMILY",
     "SIGNED_ROUTE_FAMILY_ALL",
     "SIGNED_ROUTE_VERIFY_SOURCE",
     "SIGNED_ROUTE_VERIFY_METHOD",
@@ -422,8 +425,10 @@ def initialize_signed_route_fields(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     verified["SIGNED_US_ROUTE_FLAG"] = baseline_family.eq("U.S. Route")
     verified["SIGNED_STATE_ROUTE_FLAG"] = baseline_family.eq("State Route")
     verified["SIGNED_ROUTE_FAMILY_PRIMARY"] = baseline_family
+    verified["SECONDARY_SIGNED_ROUTE_FAMILY"] = None
+    verified["TERTIARY_SIGNED_ROUTE_FAMILY"] = None
     verified["SIGNED_ROUTE_FAMILY_ALL"] = baseline_family.fillna("").map(
-        lambda value: json.dumps([value]) if value else json.dumps([])
+        lambda value: json.dumps([value]) if value in SIGNED_ROUTE_FAMILIES else json.dumps([])
     )
     verified["SIGNED_ROUTE_VERIFY_SOURCE"] = "route_id_crosswalk"
     verified["SIGNED_ROUTE_VERIFY_METHOD"] = "route_id_crosswalk"
@@ -436,7 +441,15 @@ def initialize_signed_route_fields(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def _sorted_route_families(families: set[str]) -> list[str]:
-    return sorted(families, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
+    cleaned = [family for family in families if family in SIGNED_ROUTE_FAMILIES]
+    return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
+
+
+def _signed_route_family_slots(ordered_families: list[str]) -> tuple[str | None, str | None, str | None]:
+    primary = ordered_families[0] if len(ordered_families) > 0 else None
+    secondary = ordered_families[1] if len(ordered_families) > 1 else None
+    tertiary = ordered_families[2] if len(ordered_families) > 2 else None
+    return primary, secondary, tertiary
 
 
 def _verification_method_for_record(match_record: dict[str, Any]) -> str:
@@ -459,11 +472,13 @@ def _update_row_with_reference_match(
         families.add(reference_family)
 
     ordered_families = _sorted_route_families(families)
-    new_primary_family = (
-        ordered_families[0] if ordered_families else row["SIGNED_ROUTE_FAMILY_PRIMARY"]
+    new_primary_family, secondary_family, tertiary_family = _signed_route_family_slots(
+        ordered_families
     )
     row["SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(ordered_families)
     row["SIGNED_ROUTE_FAMILY_PRIMARY"] = new_primary_family
+    row["SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
+    row["TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
     source_token = f"gdot_{reference_key}"
     if reference_family == new_primary_family:
         row["SIGNED_ROUTE_VERIFY_SOURCE"] = source_token
@@ -528,6 +543,10 @@ def apply_signed_route_verification(
     if not reference_lookups:
         return verified
 
+    baseline_family = verified.get(
+        "ROUTE_FAMILY",
+        pd.Series(index=verified.index, dtype="object"),
+    )
     for reference_key in REFERENCE_MATCH_ORDER:
         reference_lookup = reference_lookups.get(reference_key)
         if reference_lookup is None:
@@ -556,6 +575,22 @@ def apply_signed_route_verification(
             reference_key,
             match_count,
         )
+        reference_family = REFERENCE_CONFIG[reference_key]["reference_family"]
+        expected_candidates = int(baseline_family.eq(reference_family).sum())
+        if expected_candidates > 0:
+            coverage = match_count / expected_candidates
+            if coverage < COVERAGE_WARNING_THRESHOLD:
+                LOGGER.warning(
+                    (
+                        "Signed-route verification coverage below threshold for %s: "
+                        "%d / %d segments matched (%.1f%% < %.1f%%)"
+                    ),
+                    reference_key,
+                    match_count,
+                    expected_candidates,
+                    coverage * 100.0,
+                    COVERAGE_WARNING_THRESHOLD * 100.0,
+                )
 
     return verified
 

@@ -1,6 +1,6 @@
-"""Create SQLite database and GeoPackage from cleaned roadway inventory data.
+"""Create SQLite database and GeoPackage from normalized roadway inventory data.
 
-Reads the cleaned CSV, creates roadway_inventory.db with a `segments` table
+Reads the normalized CSV, creates roadway_inventory.db with a `segments` table
 (tabular only), builds indexes for fast lookups, writes a load_summary
 metadata table, and exports geometry to base_network.gpkg.
 """
@@ -18,7 +18,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"
+TABLES_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables"
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
@@ -43,12 +43,12 @@ def configure_local_sqlite_temp() -> None:
     os.environ["TMPDIR"] = sqlite_temp
 
 
-def find_cleaned_csv() -> Path:
-    """Locate the cleaned roadway inventory CSV."""
-    csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+def find_staged_table_csv() -> Path:
+    """Locate the normalized roadway inventory CSV."""
+    csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
     if not csv_path.exists():
         raise FileNotFoundError(
-            f"Cleaned CSV not found at {csv_path}. Run normalize.py first."
+            f"Normalized CSV not found at {csv_path}. Run normalize.py first."
         )
     return csv_path
 
@@ -138,8 +138,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     configure_local_sqlite_temp()
 
-    csv_path = find_cleaned_csv()
-    logger.info("Reading cleaned CSV: %s", csv_path)
+    csv_path = find_staged_table_csv()
+    logger.info("Reading normalized CSV: %s", csv_path)
     try:
         df = pd.read_csv(csv_path, low_memory=False)
     except Exception:

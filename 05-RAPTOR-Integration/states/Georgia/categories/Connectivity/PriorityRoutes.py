@@ -1,6 +1,6 @@
 """SRP Priority Route matching for Georgia road segments.
 
-Loads the cleaned SRP (Statewide Strategic Route Plan) priority route data
+Loads the normalized SRP (Statewide Strategic Route Plan) priority route data
 and determines whether each road segment lies on a Critical or High priority
 route via spatial overlay.
 """
@@ -19,7 +19,7 @@ class PriorityRoutes:
 
     IS_SRP_CRITICAL_OR_HIGH = "Is_Seg_On_SRP_Critical_or_High"
 
-    _CLEAN_DIR = Path("02-Data-Staging") / "cleaned" / "connectivity"
+    _CLEAN_DIR = Path("02-Data-Staging") / "tables" / "connectivity"
 
     def __init__(self, project_root: Path | None = None):
         self._root = project_root or Path(__file__).resolve().parents[5]
@@ -33,7 +33,7 @@ class PriorityRoutes:
     # ------------------------------------------------------------------
 
     def load_data(self) -> None:
-        """Load cleaned SRP priority route data."""
+        """Load normalized SRP priority route data."""
         print("Loading SRP priority routes ...")
         if not self._clean_path.exists():
             print(f"  WARNING: {self._clean_path} not found.")

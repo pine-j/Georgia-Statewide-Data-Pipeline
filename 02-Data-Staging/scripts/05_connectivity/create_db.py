@@ -1,6 +1,6 @@
-"""Create a SQLite database from cleaned connectivity datasets.
+"""Create a SQLite database from normalized connectivity datasets.
 
-Reads cleaned GeoJSON files from 02-Data-Staging/cleaned/connectivity/ and
+Reads normalized GeoJSON files from 02-Data-Staging/tables/connectivity/ and
 writes them into 02-Data-Staging/databases/connectivity.db with appropriate
 indexes for each table.
 """
@@ -22,11 +22,11 @@ log = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "connectivity"
+CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables" / "connectivity"
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 DB_PATH = DB_DIR / "connectivity.db"
 
-# Mapping from cleaned file stem to database table name
+# Mapping from normalized file stem to database table name
 TABLE_MAP = {
     "priority_routes": "priority_routes",
     "nevi_corridors": "nevi_corridors",
@@ -51,7 +51,7 @@ INDEXES = [
 
 
 def _load_cleaned(name: str) -> pd.DataFrame | None:
-    """Load a cleaned GeoJSON, drop geometry, and return a DataFrame."""
+    """Load a normalized GeoJSON, drop geometry, and return a DataFrame."""
     path = CLEAN_DIR / f"{name}.geojson"
     if not path.exists():
         log.warning("  %s not found – skipping.", path.name)

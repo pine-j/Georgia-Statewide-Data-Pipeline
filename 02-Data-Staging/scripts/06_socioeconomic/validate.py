@@ -18,8 +18,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "cleaned" / "demographics"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "tables" / "demographics"
 DB_PATH = REPO_ROOT / "03-Processed-Data" / "demographics" / "socioeconomic.db"
 
 # Georgia validation constants
@@ -34,7 +34,7 @@ class ValidationError(Exception):
 
 
 def _load_csv(name: str) -> pd.DataFrame:
-    """Load a cleaned CSV if it exists."""
+    """Load a normalized CSV if it exists."""
     path = CLEAN_DIR / name
     if not path.exists():
         return pd.DataFrame()
