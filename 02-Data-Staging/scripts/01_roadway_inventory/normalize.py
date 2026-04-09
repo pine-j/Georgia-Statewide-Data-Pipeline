@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from pathlib import Path
 
 import geopandas as gpd
@@ -40,6 +39,7 @@ from route_verification import (
     write_signed_route_verification_summary,
 )
 from route_type_gdot import apply_gdot_route_type_classification
+from utils import decode_lookup_value
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 TABLES_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables"
 
-TARGET_CRS = "EPSG:32617"
+TARGET_CRS = "EPSG:32617"  # NOTE: crs_config.json exists, but this script does not currently read it.
 
 GDOT_BOUNDARIES_SERVICE = "https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer"
 COUNTY_BOUNDARIES_URL = (
@@ -133,9 +133,17 @@ CURRENT_TRAFFIC_FIELDS = {
 
 
 def find_path(raw_dir: Path, pattern: str) -> Path:
-    matches = list(raw_dir.rglob(pattern))
+    matches = sorted(raw_dir.rglob(pattern), key=lambda path: str(path).casefold())
     if not matches:
         raise FileNotFoundError(f"Could not find {pattern} under {raw_dir}")
+    if len(matches) > 1:
+        logger.warning(
+            "Multiple matches found for %s under %s; using %s. Matches: %s",
+            pattern,
+            raw_dir,
+            matches[0],
+            ", ".join(str(match) for match in matches),
+        )
     return matches[0]
 
 
@@ -154,42 +162,6 @@ def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns
     ]
     return df
-
-
-def decode_lookup_value(value, lookup: dict, zero_pad: int | None = None) -> str | None:
-    if pd.isna(value):
-        return None
-
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if text in lookup:
-            return lookup[text]
-        upper_text = text.upper()
-        if upper_text in lookup:
-            return lookup[upper_text]
-        try:
-            numeric_text = int(float(text))
-        except ValueError:
-            return None
-        if zero_pad is not None:
-            padded = f"{numeric_text:0{zero_pad}d}"
-            if padded in lookup:
-                return lookup[padded]
-        return lookup.get(numeric_text) or lookup.get(str(numeric_text))
-
-    try:
-        numeric_value = int(float(value))
-    except (TypeError, ValueError):
-        return None
-
-    if zero_pad is not None:
-        padded = f"{numeric_value:0{zero_pad}d}"
-        if padded in lookup:
-            return lookup[padded]
-
-    return lookup.get(numeric_value) or lookup.get(str(numeric_value))
 
 
 def get_or_empty_series(df: pd.DataFrame, column_name: str) -> pd.Series:
@@ -493,10 +465,7 @@ def prepare_route_attributes(routes: gpd.GeoDataFrame, current_traffic: pd.DataF
     )
     routes["DISTRICT"] = routes["GDOT_District"]
 
-    routes["FUNCTIONAL_CLASS"] = routes.get("F_SYSTEM")
-    routes["NUM_LANES"] = routes.get("THROUGH_LANES")
-    routes["URBAN_CODE"] = routes.get("URBAN_ID")
-    routes["NHS_IND"] = routes.get("NHS")
+    routes = sync_derived_alias_fields(routes)
     routes["ROUTE_TYPE"] = routes["PARSED_SYSTEM_CODE"]
     routes["ROUTE_NUMBER"] = routes["PARSED_ROUTE_NUMBER"]
     routes["ROUTE_SUFFIX"] = routes["PARSED_SUFFIX"]
@@ -504,6 +473,26 @@ def prepare_route_attributes(routes: gpd.GeoDataFrame, current_traffic: pd.DataF
     route_families = classify_route_families(routes)
     routes = pd.concat([routes, route_families], axis=1)
     return routes
+
+
+DERIVED_ALIAS_SYNC_FIELDS = (
+    ("F_SYSTEM", "FUNCTIONAL_CLASS"),
+    ("THROUGH_LANES", "NUM_LANES"),
+    ("NHS", "NHS_IND"),
+    ("URBAN_ID", "URBAN_CODE"),
+)
+
+
+def sync_derived_alias_fields(df: pd.DataFrame) -> pd.DataFrame:
+    synced = df.copy()
+    for source_col, target_col in DERIVED_ALIAS_SYNC_FIELDS:
+        if source_col not in synced.columns:
+            continue
+        if target_col not in synced.columns:
+            synced[target_col] = pd.NA
+        mask = synced[target_col].isna() & synced[source_col].notna()
+        synced.loc[mask, target_col] = synced.loc[mask, source_col]
+    return synced
 
 
 def clamp_interval(
@@ -784,6 +773,15 @@ def segment_routes(
                     segment_end,
                 )
                 if piece is None:
+                    split_failures += 1
+                    logger.debug(
+                        "Route split produced no geometry for %s %.4f-%.4f within component %.4f-%.4f",
+                        route_id,
+                        segment_start,
+                        segment_end,
+                        component_start,
+                        component_end,
+                    )
                     continue
                 current_record = find_covering_record(current_records, segment_start, segment_end)
                 row = build_segment_row(
@@ -2342,7 +2340,10 @@ def main() -> None:
         county_boundaries_for_backfill,
     )
     segmented = apply_signed_route_verification(segmented)
+    # Signed-route verification runs before HPMS, but HPMS routesigning is
+    # allowed to override earlier GPAS/GDOT-family results when the sources disagree.
     segmented = apply_hpms_enrichment(segmented)
+    segmented = sync_derived_alias_fields(segmented)
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
     segmented = apply_direction_mirror_aadt(segmented)

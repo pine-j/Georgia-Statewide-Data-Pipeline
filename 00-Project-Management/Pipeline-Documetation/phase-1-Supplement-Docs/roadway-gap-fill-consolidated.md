@@ -62,6 +62,8 @@ Relevant implementation notes:
 
 ### What the current staged network contains
 
+Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
+
 Observed from `roadway_inventory.db` and `base_network.gpkg`:
 
 - Raw GDOT route count: `206,994`

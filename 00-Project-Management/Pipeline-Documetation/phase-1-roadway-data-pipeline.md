@@ -694,6 +694,8 @@ with:
 
 ## Current Staged Outputs
 
+Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
+
 ### SQLite database
 
 File:
@@ -921,7 +923,7 @@ Important limitation:
 
 Reference note:
 
-- [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
+- [Georgia Route Type Classification](./phase-1-Supplement-Docs/georgia-route-type-classification.md)
 
 ### 6. Signed-route verification (operational)
 

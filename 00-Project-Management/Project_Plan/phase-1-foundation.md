@@ -9,6 +9,8 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 
 ## Current Implementation Snapshot
 
+Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
+
 Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, HPMS-based signed-route verification, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. `82/82` validation checks pass. Remaining questions about supplemental roadway sources and optional GDOT live-layer corroboration are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
@@ -26,8 +28,8 @@ Current traffic coverage in the staged roadway network:
 
 Related roadway strategy note:
 
-- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
-- [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Pipeline-Documetation/phase-1-Supplement-Docs/roadway-gap-fill-consolidated.md)
+- [Georgia Route Type Classification](../Pipeline-Documetation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
 
 Official Georgia sources used for the roadway base layer and route-family crosswalk:
 
@@ -319,7 +321,7 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `State Route`
   - `Local/Other`
 - Detailed rules and source notes are documented in:
-  - [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
+  - [Georgia Route Type Classification](../Pipeline-Documetation/phase-1-Supplement-Docs/georgia-route-type-classification.md)
 
 **Current closeout position on classification**:
 - Phase 1 now has:

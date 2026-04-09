@@ -28,6 +28,8 @@ from urllib.request import Request, urlopen
 import geopandas as gpd
 import pandas as pd
 
+from utils import _clean_text, _round_milepoint
+
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -77,21 +79,6 @@ def _clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns
     ]
     return df
-
-
-def _clean_text(value: Any) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    return str(value).strip()
-
-
-def _round_milepoint(value: Any) -> float | None:
-    if value is None or pd.isna(value):
-        return None
-    rounded = round(float(value), 4)
-    return 0.0 if abs(rounded) < MILEPOINT_TOLERANCE else rounded
-
-
 def _strip_extra_dims(coords: Any) -> Any:
     """Strip M/Z dimensions beyond XY from GeoJSON coordinates."""
     if not coords:
@@ -381,7 +368,7 @@ def _intervals_overlap(
         return True
     return (
         min(float(segment_to), float(ref_to)) - max(float(segment_from), float(ref_from))
-    ) > -MILEPOINT_TOLERANCE
+    ) > MILEPOINT_TOLERANCE
 
 
 def _match_reference_record(

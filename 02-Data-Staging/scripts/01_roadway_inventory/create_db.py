@@ -1,8 +1,8 @@
-"""Create SQLite database and GeoPackage from normalized roadway inventory data.
+"""Create the SQLite database and verify the GeoPackage exists.
 
 Reads the normalized CSV, creates roadway_inventory.db with a `segments` table
 (tabular only), builds indexes for fast lookups, writes a load_summary
-metadata table, and exports geometry to base_network.gpkg.
+metadata table, and verifies geometry is already available in base_network.gpkg.
 """
 
 import json
@@ -12,7 +12,6 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-import geopandas as gpd
 import pandas as pd
 
 logger = logging.getLogger(__name__)
