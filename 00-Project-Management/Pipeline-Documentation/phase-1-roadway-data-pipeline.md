@@ -163,7 +163,7 @@ Historical route-segment traffic files are available at:
 
 - `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`
 
-These files are retained for future use but are no longer loaded into the pipeline output. Removing historic traffic breakpoints reduced the segment count from 622,255 to 244,904, producing a cleaner network that segments only on current-year traffic intervals.
+These files are retained for future use but are no longer loaded into the pipeline output. Removing historic traffic breakpoints reduced the segment count from 622,255 to 245,863, producing a cleaner network that segments only on current-year traffic intervals.
 
 ### Signed-route verification (HPMS first, GPAS authoritative)
 
@@ -188,7 +188,7 @@ Downloaded snapshot:
 
 - `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
 
-Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. In the current simplified build, direct official current-year coverage is `44,983` of `244,904` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `244,819` segments.
+Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. Direct official current-year coverage is `45,938` of `245,863` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `245,778` segments.
 
 HPMS contributes:
 
@@ -502,12 +502,12 @@ direct `ROUTE_ID` + milepoint interval overlap — no spatial matching needed.
 
 AADT gap-fill priority chain (each step only fills segments not yet covered):
 
-1. **GDOT official exact** (44,983 segments) — direct traffic GDB match, confidence `high`
-2. **HPMS 2024** (196,247 segments) — FHWA HPMS route_id + milepoint match, confidence `medium`
+1. **GDOT official exact** (45,938 segments) — direct traffic GDB match, confidence `high`
+2. **HPMS 2024** (196,238 segments) — FHWA HPMS route_id + milepoint match, confidence `medium`
 3. **Direction mirror** (3,091 segments) — INC→DEC copy for all routes, confidence `high`
-4. **Analytical gap-fill** (498 segments) — interpolation + nearest-neighbor on state highways, confidence `medium`
+4. **Analytical gap-fill** (511 segments) — interpolation + nearest-neighbor on state highways, confidence `medium`
 
-Final 2024 AADT coverage: 244,819 / 244,904 segments (99.97%).
+Final 2024 AADT coverage: 245,778 / 245,863 segments (99.97%).
 
 Future AADT 2044 fill chain uses the same multi-source pattern:
 
@@ -517,7 +517,7 @@ Future AADT 2044 fill chain uses the same multi-source pattern:
 4. **Interpolation** — linear interpolation on state highways
 5. **Nearest-neighbor** — nearest covered segment on same route (20-mile cap)
 
-Current Future AADT 2044 coverage: 52,236 / 244,904 segments (21.3%).
+Current Future AADT 2044 coverage: 53,215 / 245,863 segments (21.64%).
 
 HPMS signed-route enrichment:
 
@@ -728,8 +728,6 @@ with:
 
 ## Current Staged Outputs
 
-Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
-
 ### SQLite database
 
 File:
@@ -743,8 +741,8 @@ Tables:
 
 Current contents:
 
-- `244,904` roadway segment rows
-- `128` columns in `segments`
+- `245,863` roadway segment rows
+- `133` columns in `segments`
 
 The SQLite database is the staged tabular source of truth. It contains roadway and traffic attributes but no geometry.
 
@@ -756,7 +754,7 @@ File:
 
 Current layers:
 
-- `roadway_segments` (`244,904` features)
+- `roadway_segments` (`245,863` features)
 - `county_boundaries` (`159` features)
 - `district_boundaries` (`7` features)
 
@@ -803,23 +801,23 @@ The staged network now treats `AADT_2024` as the single canonical 2024 traffic v
 
 Current 2024 AADT coverage in the staged roadway network:
 
-- **Final canonical coverage: `244,819` of `244,904` segments (`99.97%`)**
+- **Final canonical coverage: `245,778` of `245,863` segments (`99.97%`)**
 - Only `85` segments remain uncovered (unmaintained local roads with no traffic data in any source)
 
 Coverage by source (priority order):
 
 | Source | Segments | Confidence | Method |
 |--------|----------|-----------|--------|
-| GDOT official exact | 44,983 | high | Direct GDOT traffic GDB match |
-| FHWA HPMS 2024 | 196,247 | medium | Route_id + milepoint match |
+| GDOT official exact | 45,938 | high | Direct GDOT traffic GDB match |
+| FHWA HPMS 2024 | 196,238 | medium | Route_id + milepoint match |
 | Direction mirror | 3,091 | high | INC→DEC copy for all routes |
-| Analytical gap-fill | 498 | medium | Interpolation + nearest-neighbor on same route (20-mile cap) |
+| Analytical gap-fill | 511 | medium | Interpolation + nearest-neighbor on same route (20-mile cap) |
 
 Key validation: HPMS AADT values are 99.7% identical to GDOT official values where both sources overlap, confirming HPMS is the same GDOT data submitted to FHWA.
 
 ### Future AADT 2044 coverage
 
-- **Current coverage: `52,236` of `244,904` segments (`21.3%`)**
+- **Current coverage: `53,215` of `245,863` segments (`21.64%`)**
 - Future AADT is only available where GDOT or HPMS report a future projection value
 - The same fill chain (direction mirror, interpolation, nearest-neighbor) extends coverage beyond official sources
 
@@ -841,7 +839,7 @@ This fixes the null district/county issue at the roadway-segment level without c
 
 ### Historical AADT
 
-Historical AADT columns (2010-2020) have been removed from the pipeline output to produce a cleaner network. This eliminated historic traffic breakpoints as segmentation drivers, reducing the segment count from 622,255 to 244,904.
+Historical AADT columns (2010-2020) have been removed from the pipeline output to produce a cleaner network. This eliminated historic traffic breakpoints as segmentation drivers, reducing the segment count from 622,255 to 245,863.
 
 Raw historical source files remain available in `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip` for future use.
 
@@ -1076,18 +1074,18 @@ Archived but retained for future use:
 
 ### 1. Traffic coverage is near-complete
 
-Current 2024 AADT coverage is `244,819` of `244,904` segments (`99.97%`). Only `85` segments remain uncovered — these are unmaintained local roads with no traffic data in any source (GDOT, HPMS, or adjacent segments).
+Current 2024 AADT coverage is `245,778` of `245,863` segments (`99.97%`). Only `85` segments remain uncovered — these are unmaintained local roads with no traffic data in any source (GDOT, HPMS, or adjacent segments).
 
 AADT source distribution:
 
-- `official_exact`: `44,983` (GDOT traffic GDB, high confidence)
-- `hpms_2024`: `196,247` (FHWA HPMS, medium confidence — same GDOT data via federal reporting)
+- `official_exact`: `45,938` (GDOT traffic GDB, high confidence)
+- `hpms_2024`: `196,238` (FHWA HPMS, medium confidence — same GDOT data via federal reporting)
 - `direction_mirror`: `3,091` (INC→DEC copy for all routes, high confidence)
-- `analytical_gap_fill`: `498` (interpolation + nearest-neighbor, medium confidence)
+- `analytical_gap_fill`: `511` (interpolation + nearest-neighbor, medium confidence)
 
 The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
 
-Future AADT 2044 coverage is `52,236` of `244,904` segments (`21.3%`). Future projections are only available where GDOT or HPMS report them; the fill chain extends coverage via direction mirror, interpolation, and nearest-neighbor.
+Future AADT 2044 coverage is `53,215` of `245,863` segments (`21.64%`). Future projections are only available where GDOT or HPMS report them; the fill chain extends coverage via direction mirror, interpolation, and nearest-neighbor.
 
 ### 2. Historical AADT removed from output
 
@@ -1145,9 +1143,9 @@ Phase 1 is complete and usable as the foundation for downstream work.
 
 Closed with Phase 1:
 
-- statewide staged roadway ETL with 244,904 segments and 128 columns
-- 2024 AADT coverage at 99.97% (`244,819` segments) via five-tier fill chain
-- Future AADT 2044 coverage at 21.3% (`52,236` segments) via same fill chain
+- statewide staged roadway ETL with 245,863 segments and 133 columns
+- 2024 AADT coverage at 99.97% (`245,778` segments) via five-tier fill chain
+- Future AADT 2044 coverage at 21.64% (`53,215` segments) via same fill chain
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
 - HPMS gap-fill for 13 GDOT roadway attributes
@@ -1155,7 +1153,7 @@ Closed with Phase 1:
 - staged SQLite database, GeoPackage, and table CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
-- `82/82` validation checks passing
+- `126/126` validation checks passing
 
 Deferred beyond Phase 1:
 

@@ -2,16 +2,14 @@
 
 ## Scope
 
-Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
-
 This note defines a granular Georgia roadway route-type taxonomy for the GDOT roadway pipeline and maps every current segment in `02-Data-Staging/databases/roadway_inventory.db` to one code.
 
 It consolidates the earlier route-family strategy and is the canonical reference for both the coarse `ROUTE_FAMILY` layer and the final `ROUTE_TYPE_GDOT` layer.
 
-Snapshot used for this assessment:
+Current staged database used for this assessment:
 
 - Database: `02-Data-Staging/databases/roadway_inventory.db`
-- Segment count: `244,904`
+- Segment count: `245,863`
 - Assessment date: `2026-04-08`
 
 Important implementation note:
@@ -361,7 +359,7 @@ US | 4758
 
 Coverage notes:
 
-- All `244,904` rows classified.
+- All `245,863` rows classified.
 - `ROUTE_TYPE_GDOT` nulls: `0`
 - `HWY_NAME` nulls: `0`
 - `HWY_NAME = OTHER ROUTE`: `0`
