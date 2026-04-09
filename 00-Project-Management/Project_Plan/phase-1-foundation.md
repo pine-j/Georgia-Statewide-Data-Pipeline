@@ -24,13 +24,10 @@ Current traffic coverage in the staged roadway network:
 - Future AADT 2044 is available on `52,236` of `244,904` segments (`21.3%`)
 - Historical AADT columns (2010-2020) have been removed from pipeline output; raw source files retained in `01-Raw-Data/`
 
-Related exploratory note:
+Related roadway strategy note:
 
-- [Roadway Supplement Options](../Assessment_and_Options/roadway-supplement-options.md)
-
-Related exploratory memo:
-- [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
-- [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
+- [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
 
 Official Georgia sources used for the roadway base layer and route-family crosswalk:
 
@@ -322,7 +319,7 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `State Route`
   - `Local/Other`
 - Detailed rules and source notes are documented in:
-  - [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+  - [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
 
 **Current closeout position on classification**:
 - Phase 1 now has:
@@ -343,6 +340,8 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `SIGNED_US_ROUTE_FLAG`
   - `SIGNED_STATE_ROUTE_FLAG`
   - `SIGNED_ROUTE_FAMILY_PRIMARY`
+  - `SECONDARY_SIGNED_ROUTE_FAMILY`
+  - `TERTIARY_SIGNED_ROUTE_FAMILY`
   - `SIGNED_ROUTE_FAMILY_ALL`
   - `SIGNED_ROUTE_VERIFY_SOURCE`
   - `SIGNED_ROUTE_VERIFY_METHOD`

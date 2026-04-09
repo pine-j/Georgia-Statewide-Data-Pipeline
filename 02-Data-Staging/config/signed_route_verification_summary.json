@@ -2,7 +2,7 @@
   "segment_count": 245863,
   "signed_interstate_segments": 3667,
   "signed_us_route_segments": 11163,
-  "signed_state_route_segments": 4984,
+  "signed_state_route_segments": 9156,
   "primary_family_counts": {
     "Local/Other": 226398,
     "U.S. Route": 11051,
@@ -10,18 +10,18 @@
     "Interstate": 3667
   },
   "verification_confidence_counts": {
-    "high": 240824,
-    "medium": 5039
+    "high": 244995,
+    "medium": 868
   },
   "verification_source_counts": {
-    "route_id_crosswalk": 234030,
+    "route_id_crosswalk": 229802,
+    "hpms_2024": 8841,
     "gdot_us_highway": 6146,
-    "hpms_2024": 4613,
     "gdot_interstates": 1074
   },
   "verification_method_counts": {
-    "route_id_crosswalk": 234030,
-    "derived_rclink_interval": 7220,
-    "hpms_routesigning": 4613
+    "route_id_crosswalk": 229802,
+    "hpms_routesigning": 8841,
+    "derived_rclink_interval": 7220
   }
 }

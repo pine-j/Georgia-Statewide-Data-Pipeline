@@ -127,6 +127,8 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_US_ROUTE_FLAG",
     "SIGNED_STATE_ROUTE_FLAG",
     "SIGNED_ROUTE_FAMILY_PRIMARY",
+    "SECONDARY_SIGNED_ROUTE_FAMILY",
+    "TERTIARY_SIGNED_ROUTE_FAMILY",
     "SIGNED_ROUTE_FAMILY_ALL",
     "SIGNED_ROUTE_VERIFY_SOURCE",
     "SIGNED_ROUTE_VERIFY_METHOD",
@@ -134,6 +136,7 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_ROUTE_VERIFY_SCORE",
     "SIGNED_ROUTE_VERIFY_NOTES",
 ]
+SIGNED_ROUTE_FAMILIES = frozenset({"Interstate", "U.S. Route", "State Route"})
 
 EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
     "AADT_2024",
@@ -492,6 +495,85 @@ def validate_signed_route_verification_columns(result: ValidationResult, df: pd.
         )
 
 
+def validate_signed_route_family_slots(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check signed-route family list/slot semantics for filtering and export."""
+    required_columns = [
+        "SIGNED_ROUTE_FAMILY_PRIMARY",
+        "SECONDARY_SIGNED_ROUTE_FAMILY",
+        "TERTIARY_SIGNED_ROUTE_FAMILY",
+        "SIGNED_ROUTE_FAMILY_ALL",
+    ]
+    missing_columns = [column for column in required_columns if column not in df.columns]
+    if missing_columns:
+        result.add(
+            "Signed-route family slot semantics",
+            False,
+            f"Missing columns: {', '.join(missing_columns)}",
+        )
+        return
+
+    invalid_family_rows = 0
+    slot_mismatch_rows = 0
+
+    for row in df[required_columns].itertuples(index=False):
+        primary, secondary, tertiary, all_value = row
+        try:
+            families = json.loads(all_value) if isinstance(all_value, str) and all_value.strip() else []
+        except json.JSONDecodeError:
+            slot_mismatch_rows += 1
+            continue
+
+        if not isinstance(families, list):
+            slot_mismatch_rows += 1
+            continue
+
+        cleaned_families = [str(family).strip() for family in families if str(family).strip()]
+        if any(family not in SIGNED_ROUTE_FAMILIES for family in cleaned_families):
+            invalid_family_rows += 1
+
+        expected_families = [
+            family for family in cleaned_families if family in SIGNED_ROUTE_FAMILIES
+        ]
+        expected_primary = expected_families[0] if len(expected_families) > 0 else None
+        expected_secondary = expected_families[1] if len(expected_families) > 1 else None
+        expected_tertiary = expected_families[2] if len(expected_families) > 2 else None
+
+        actual_primary = primary.strip() if isinstance(primary, str) else None
+        actual_secondary = secondary.strip() if isinstance(secondary, str) else None
+        actual_tertiary = tertiary.strip() if isinstance(tertiary, str) else None
+
+        if expected_primary is not None:
+            primary_ok = actual_primary == expected_primary
+        else:
+            primary_ok = actual_primary not in SIGNED_ROUTE_FAMILIES
+
+        if not (
+            primary_ok
+            and actual_secondary == expected_secondary
+            and actual_tertiary == expected_tertiary
+        ):
+            slot_mismatch_rows += 1
+
+    result.add(
+        "Signed-route family list semantics",
+        invalid_family_rows == 0,
+        (
+            "All SIGNED_ROUTE_FAMILY_ALL entries contain only signed-route families"
+            if invalid_family_rows == 0
+            else f"{invalid_family_rows:,} rows contain non-signed families in SIGNED_ROUTE_FAMILY_ALL"
+        ),
+    )
+    result.add(
+        "Signed-route family slot alignment",
+        slot_mismatch_rows == 0,
+        (
+            "PRIMARY/SECONDARY/TERTIARY align with SIGNED_ROUTE_FAMILY_ALL"
+            if slot_mismatch_rows == 0
+            else f"{slot_mismatch_rows:,} rows have misaligned signed-route family slots"
+        ),
+    )
+
+
 def validate_current_aadt_provenance_columns(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that canonical 2024 AADT provenance fields are staged."""
     for column in EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS:
@@ -573,6 +655,19 @@ def validate_geometry(result: ValidationResult) -> None:
         "Geometry validity",
         invalid_count == 0,
         f"{invalid_count:,} invalid, {empty_count:,} empty out of {len(gdf):,}",
+    )
+    slot_columns_present = {
+        "SECONDARY_SIGNED_ROUTE_FAMILY",
+        "TERTIARY_SIGNED_ROUTE_FAMILY",
+    }.issubset(gdf.columns)
+    result.add(
+        "GeoPackage signed-route slot columns",
+        slot_columns_present,
+        (
+            "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
+            if slot_columns_present
+            else "Missing signed-route slot columns in roadway_segments"
+        ),
     )
 
 
@@ -682,6 +777,24 @@ def validate_database(result: ValidationResult) -> None:
             db_count = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
             result.add("Database row count", db_count > 0, f"{db_count:,} rows")
 
+            segment_columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(segments)").fetchall()
+            }
+            slot_columns_present = {
+                "SECONDARY_SIGNED_ROUTE_FAMILY",
+                "TERTIARY_SIGNED_ROUTE_FAMILY",
+            }.issubset(segment_columns)
+            result.add(
+                "Database signed-route slot columns",
+                slot_columns_present,
+                (
+                    "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
+                    if slot_columns_present
+                    else "Missing signed-route slot columns in segments table"
+                ),
+            )
+
             csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
             if csv_path.exists():
                 csv_count = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
@@ -760,6 +873,7 @@ def main() -> None:
             validate_route_family_columns(result, df)
             validate_gdot_route_type_columns(result, df)
             validate_signed_route_verification_columns(result, df)
+            validate_signed_route_family_slots(result, df)
             validate_current_aadt_provenance_columns(result, df)
             validate_provenance_consistency(result, df)
             validate_decoded_labels(result, df)

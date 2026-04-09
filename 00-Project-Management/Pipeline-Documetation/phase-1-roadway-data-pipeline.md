@@ -413,6 +413,8 @@ Current signed-route verification fields:
 - `SIGNED_US_ROUTE_FLAG`
 - `SIGNED_STATE_ROUTE_FLAG`
 - `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SECONDARY_SIGNED_ROUTE_FAMILY`
+- `TERTIARY_SIGNED_ROUTE_FAMILY`
 - `SIGNED_ROUTE_FAMILY_ALL`
 - `SIGNED_ROUTE_VERIFY_SOURCE`
 - `SIGNED_ROUTE_VERIFY_METHOD`
@@ -617,6 +619,8 @@ with:
 - `SIGNED_US_ROUTE_FLAG`
 - `SIGNED_STATE_ROUTE_FLAG`
 - `SIGNED_ROUTE_FAMILY_PRIMARY`
+- `SECONDARY_SIGNED_ROUTE_FAMILY`
+- `TERTIARY_SIGNED_ROUTE_FAMILY`
 - `SIGNED_ROUTE_FAMILY_ALL`
 - `SIGNED_ROUTE_VERIFY_SOURCE`
 - `SIGNED_ROUTE_VERIFY_METHOD`
@@ -911,7 +915,7 @@ Important limitation:
 
 Reference note:
 
-- [Georgia Route-Family Classification Strategy](../Assessment_and_Options/2026-04-07-georgia-route-family-classification-strategy.md)
+- [Georgia Route Type Classification](../Assessment_and_Options/georgia-route-type-classification.md)
 
 ### 6. Signed-route verification (operational)
 

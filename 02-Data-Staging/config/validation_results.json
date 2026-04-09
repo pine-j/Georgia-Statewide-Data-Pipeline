@@ -165,6 +165,16 @@
     "detail": "Column present"
   },
   {
+    "name": "Signed-route field: SECONDARY_SIGNED_ROUTE_FAMILY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Signed-route field: TERTIARY_SIGNED_ROUTE_FAMILY",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
     "name": "Signed-route field: SIGNED_ROUTE_FAMILY_ALL",
     "status": "PASS",
     "detail": "Column present"
@@ -193,6 +203,16 @@
     "name": "Signed-route field: SIGNED_ROUTE_VERIFY_NOTES",
     "status": "PASS",
     "detail": "Column present"
+  },
+  {
+    "name": "Signed-route family list semantics",
+    "status": "PASS",
+    "detail": "All SIGNED_ROUTE_FAMILY_ALL entries contain only signed-route families"
+  },
+  {
+    "name": "Signed-route family slot alignment",
+    "status": "PASS",
+    "detail": "PRIMARY/SECONDARY/TERTIARY align with SIGNED_ROUTE_FAMILY_ALL"
   },
   {
     "name": "Current AADT provenance field: AADT_2024",
@@ -277,7 +297,7 @@
   {
     "name": "Decoded label: FUNCTIONAL_CLASS_LABEL",
     "status": "PASS",
-    "detail": "242,703/242,703 source-coded rows decoded"
+    "detail": "215,430/215,430 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FACILITY_TYPE_LABEL",
@@ -292,7 +312,7 @@
   {
     "name": "Decoded label: NHS_IND_LABEL",
     "status": "PASS",
-    "detail": "8,342/8,342 source-coded rows decoded"
+    "detail": "1,150/1,150 source-coded rows decoded"
   },
   {
     "name": "Decoded label: OWNERSHIP_LABEL",
@@ -322,7 +342,7 @@
   {
     "name": "Decoded label: URBAN_CODE_LABEL",
     "status": "PASS",
-    "detail": "242,687/242,687 source-coded rows decoded"
+    "detail": "219,825/219,825 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DIRECTION_LABEL",
@@ -392,7 +412,7 @@
   {
     "name": "Decoded label correctness: FUNCTIONAL_CLASS_LABEL",
     "status": "PASS",
-    "detail": "242,703/242,703 authoritative matches; lookup_missing=0, mismatches=0"
+    "detail": "215,430/215,430 authoritative matches; lookup_missing=0, mismatches=0"
   },
   {
     "name": "Decoded label correctness: FACILITY_TYPE_LABEL",
@@ -407,7 +427,7 @@
   {
     "name": "Decoded label correctness: NHS_IND_LABEL",
     "status": "PASS",
-    "detail": "8,342/8,342 authoritative matches; lookup_missing=0, mismatches=0"
+    "detail": "1,150/1,150 authoritative matches; lookup_missing=0, mismatches=0"
   },
   {
     "name": "Decoded label correctness: OWNERSHIP_LABEL",
@@ -437,7 +457,7 @@
   {
     "name": "Decoded label correctness: URBAN_CODE_LABEL",
     "status": "PASS",
-    "detail": "242,687/242,687 authoritative matches; lookup_missing=0, mismatches=0"
+    "detail": "219,825/219,825 authoritative matches; lookup_missing=0, mismatches=0"
   },
   {
     "name": "Decoded label correctness: DIRECTION_LABEL",
@@ -480,6 +500,11 @@
     "detail": "0 invalid, 0 empty out of 245,863"
   },
   {
+    "name": "GeoPackage signed-route slot columns",
+    "status": "PASS",
+    "detail": "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
+  },
+  {
     "name": "Boundary layers exist",
     "status": "PASS",
     "detail": "county_boundaries, district_boundaries"
@@ -496,8 +521,8 @@
   },
   {
     "name": "County boundary geometry validity",
-    "status": "FAIL",
-    "detail": "3 invalid of 159"
+    "status": "PASS",
+    "detail": "0 invalid of 159"
   },
   {
     "name": "District boundary geometry validity",
@@ -528,6 +553,11 @@
     "name": "Database row count",
     "status": "PASS",
     "detail": "245,863 rows"
+  },
+  {
+    "name": "Database signed-route slot columns",
+    "status": "PASS",
+    "detail": "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
   },
   {
     "name": "DB/CSV row count match",
