@@ -95,7 +95,7 @@ The Asset Preservation category scores pavement condition and bridge sufficiency
 
 ## Phase 6 — Mobility: Historic AADT + NPMRDS
 
-Phase 4 has **two sub-blockers**, neither as severe as Phases 2-3.
+Phase 6 has **two sub-blockers**, neither as severe as Phases 4-5.
 
 ### 4A: Historic AADT Data (for 2050 Growth Projection)
 

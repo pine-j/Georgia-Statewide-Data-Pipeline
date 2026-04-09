@@ -6,6 +6,8 @@ Identify candidate road geometry datasets that can fill local-street gaps in the
 
 This is an exploratory document. It does not change the production network yet.
 
+Current note: the `2026-04-04` full-load visual re-check lowered the urgency of statewide supplementation for immediate planning use, but source-completeness questions remain relevant for follow-on QA.
+
 ## Why This Analysis Was Needed
 
 The current staged roadway layer in `02-Data-Staging/spatial/base_network.gpkg` shows visible local-road gaps in some urban neighborhoods in the web app. Two representative checks were used to determine whether this was a rendering issue or a source-coverage issue.
@@ -23,12 +25,12 @@ The current staged roadway layer in `02-Data-Staging/spatial/base_network.gpkg` 
   - CRS: `EPSG:4326`
   - Feature count: `206,994`
 - Staged roadway outputs:
-  - `roadway_inventory.db -> segments`: `622,255` segmented rows
+  - `roadway_inventory.db -> segments`: `244,904` segmented rows
   - Distinct `ROUTE_ID`: `206,994`
-  - `current_aadt_covered = 1`: `185,748`
+  - `current_aadt_covered = 1`: `244,819`
   - `SYSTEM_CODE` distribution in staged data:
-    - `1`: `109,314`
-    - `2`: `512,941`
+    - `1`: `18,499`
+    - `2`: `226,405`
 - Columbus / Dinglewood spot check:
   - Raw `GA_2024_Routes` in the test bbox returned `6` route records.
   - The staged outputs preserved those same route IDs.
@@ -40,8 +42,8 @@ The current staged roadway layer in `02-Data-Staging/spatial/base_network.gpkg` 
 
 - Source: GDOT road inventory geodatabase plus GDOT traffic products
 - Local files:
-  - `01-Raw-Data/GA_RDWY_INV/Road_Inventory_2024.gdb`
-  - `01-Raw-Data/GA_RDWY_INV/Traffic_2024_Geodatabase/TRAFFIC_Data_2024.gdb`
+  - `01-Raw-Data/Roadway-Inventory/Road_Inventory_2024.gdb`
+  - `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/TRAFFIC_Data_2024.gdb`
   - `02-Data-Staging/databases/roadway_inventory.db`
   - `02-Data-Staging/spatial/base_network.gpkg`
 - Strengths:

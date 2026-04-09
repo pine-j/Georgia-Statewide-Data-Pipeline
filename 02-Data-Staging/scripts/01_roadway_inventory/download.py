@@ -1,7 +1,7 @@
 """Download Georgia GDOT Roadway Inventory geodatabase and data dictionary.
 
 Downloads the Road_Inventory_Geodatabase.zip from GDOT's Open Data portal,
-extracts it to 01-Raw-Data/GA_RDWY_INV/, and records download metadata.
+extracts it to 01-Raw-Data/Roadway-Inventory/, and records download metadata.
 """
 
 import json
@@ -26,7 +26,7 @@ DATA_DICT_URL = (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV"
+RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 
 
 def download_file(url: str, dest: Path, description: str = "Downloading") -> int:

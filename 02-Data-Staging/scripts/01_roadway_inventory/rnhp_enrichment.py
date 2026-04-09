@@ -3,7 +3,7 @@
 Current enrichment layers:
 - SpeedZone OnSystem: posted speed limits for state highway routes
 
-Downloads are cached under 01-Raw-Data/GA_RDWY_INV/rnhp_enrichment/.
+Downloads are cached under 01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from route_verification import (
 
 LOGGER = logging.getLogger(__name__)
 
+MILEPOINT_TOLERANCE = 1e-4
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = PROJECT_ROOT / "02-Data-Staging" / "config" / "rnhp_enrichment_sources.json"
 
@@ -156,14 +157,14 @@ def _match_speed_zone(
         ref_from = record.get("FROM_MP")
         ref_to = record.get("TO_MP")
 
-        if not _intervals_overlap(seg_from, seg_to, ref_from, ref_to):
+        # Skip records with missing milepoints — can't verify overlap
+        if ref_from is None or ref_to is None:
+            continue
+        if seg_from is None or seg_to is None:
             continue
 
-        if None in (seg_from, seg_to, ref_from, ref_to):
-            return record
-
         overlap = min(float(seg_to), float(ref_to)) - max(float(seg_from), float(ref_from))
-        if overlap > best_overlap:
+        if overlap > -MILEPOINT_TOLERANCE and overlap > best_overlap:
             best_overlap = overlap
             best_match = record
 

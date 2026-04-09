@@ -189,14 +189,14 @@ class SocioEconomic:
         Parameters
         ----------
         roadways : RoadwayData
-            Loaded Georgia roadway inventory (must have GA_RDWY_INV).
+            Loaded Georgia roadway inventory (must have Roadway_Inventory).
         buffer_radius_miles : float
             Buffer radius in miles (default 1.0).
         """
         if self.block_groups is None:
             raise RuntimeError("Call load_data() before computing metrics.")
 
-        rdwy = roadways.GA_RDWY_INV
+        rdwy = roadways.Roadway_Inventory
         if rdwy is None or rdwy.empty:
             raise RuntimeError("Roadway data is empty.")
 
@@ -299,13 +299,13 @@ class SocioEconomic:
             self.POPULATION_DENSITY_2050,
             self.EMPLOYMENT_DENSITY_2050,
         ]
-        roadways.GA_RDWY_INV = rdwy.merge(agg[metric_cols], on="unique_id", how="left")
+        roadways.Roadway_Inventory = rdwy.merge(agg[metric_cols], on="unique_id", how="left")
 
         # Fill segments with no overlap
         for col in metric_cols[1:]:
-            roadways.GA_RDWY_INV[col] = roadways.GA_RDWY_INV[col].fillna(0)
+            roadways.Roadway_Inventory[col] = roadways.Roadway_Inventory[col].fillna(0)
 
-        logger.info("Socioeconomic metrics computed for %d segments", len(roadways.GA_RDWY_INV))
+        logger.info("Socioeconomic metrics computed for %d segments", len(roadways.Roadway_Inventory))
 
     def _get_segment_growth_factors(
         self,

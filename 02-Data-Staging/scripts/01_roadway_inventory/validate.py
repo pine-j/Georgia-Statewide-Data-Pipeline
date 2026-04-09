@@ -55,6 +55,7 @@ DECODED_LABEL_COLUMNS = {
     "ROUTE_DIRECTION_LABEL": "ROUTE_DIRECTION",
     "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
     "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
+    "ROUTE_TYPE_GDOT_LABEL": "ROUTE_TYPE_GDOT",
 }
 
 EXPECTED_PHASE1_ATTRIBUTE_COLUMNS = [
@@ -75,6 +76,12 @@ EXPECTED_ROUTE_FAMILY_COLUMNS = [
     "ROUTE_FAMILY_SOURCE",
 ]
 
+EXPECTED_GDOT_ROUTE_TYPE_COLUMNS = [
+    "ROUTE_TYPE_GDOT",
+    "ROUTE_TYPE_GDOT_LABEL",
+    "HWY_NAME",
+]
+
 EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_INTERSTATE_FLAG",
     "SIGNED_US_ROUTE_FLAG",
@@ -86,6 +93,16 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_ROUTE_VERIFY_CONFIDENCE",
     "SIGNED_ROUTE_VERIFY_SCORE",
     "SIGNED_ROUTE_VERIFY_NOTES",
+]
+
+EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
+    "AADT_2024",
+    "AADT_2024_OFFICIAL",
+    "AADT_2024_SOURCE",
+    "AADT_2024_CONFIDENCE",
+    "AADT_2024_FILL_METHOD",
+    "current_aadt_official_covered",
+    "current_aadt_covered",
 ]
 
 CURRENT_AADT_AUDIT_ARTIFACTS = [
@@ -244,34 +261,45 @@ def validate_state_system_location_fields(result: ValidationResult, df: pd.DataF
 
 def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
     """Report current and historic AADT coverage."""
-    if "AADT" not in df.columns:
-        result.add("Current AADT coverage", False, "AADT column not found")
+    if "AADT_2024" not in df.columns and "AADT" not in df.columns:
+        result.add("Current AADT coverage", False, "AADT_2024/AADT column not found")
         return
 
-    current_count = int(df["AADT"].notna().sum())
+    canonical_current_col = "AADT_2024" if "AADT_2024" in df.columns else "AADT"
+    current_count = int(df[canonical_current_col].notna().sum())
+    official_count = (
+        int(df["AADT_2024_OFFICIAL"].notna().sum())
+        if "AADT_2024_OFFICIAL" in df.columns
+        else current_count
+    )
     result.add(
         "Current AADT coverage",
         current_count > 0,
-        f"{current_count:,} segments with current AADT",
+        f"{current_count:,} segments with canonical current AADT; official={official_count:,}",
     )
 
     historical_cols = sorted(
         col for col in df.columns if col.startswith("AADT_") and col[5:].isdigit() and col != "AADT_2024"
     )
-    if not historical_cols:
-        result.add("Historic AADT columns", False, "No historic AADT_* columns found")
-        return
+    if historical_cols:
+        covered_years = {
+            col: int(df[col].notna().sum())
+            for col in historical_cols
+        }
+        years_with_data = {col: count for col, count in covered_years.items() if count > 0}
+        result.add(
+            "Historic AADT coverage",
+            len(years_with_data) > 0,
+            ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
+        )
 
-    covered_years = {
-        col: int(df[col].notna().sum())
-        for col in historical_cols
-    }
-    years_with_data = {col: count for col, count in covered_years.items() if count > 0}
-    result.add(
-        "Historic AADT coverage",
-        len(years_with_data) > 0,
-        ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
-    )
+    if "FUTURE_AADT_2044" in df.columns:
+        future_count = int(df["FUTURE_AADT_2044"].notna().sum())
+        result.add(
+            "Future AADT 2044 coverage",
+            future_count > 0,
+            f"{future_count:,} segments with future AADT (2044 projection)",
+        )
 
 
 def validate_decoded_labels(result: ValidationResult, df: pd.DataFrame) -> None:
@@ -318,6 +346,32 @@ def validate_route_family_columns(result: ValidationResult, df: pd.DataFrame) ->
         )
 
 
+def validate_gdot_route_type_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that the granular Georgia route-type fields are staged and populated."""
+    for column in EXPECTED_GDOT_ROUTE_TYPE_COLUMNS:
+        result.add(
+            f"GDOT route-type field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+    if "ROUTE_TYPE_GDOT" in df.columns:
+        null_count = int(df["ROUTE_TYPE_GDOT"].isna().sum())
+        result.add(
+            "GDOT route-type coverage",
+            null_count == 0,
+            f"{len(df) - null_count:,}/{len(df):,} rows classified",
+        )
+
+    if "HWY_NAME" in df.columns:
+        null_count = int(df["HWY_NAME"].isna().sum())
+        result.add(
+            "HWY_NAME coverage",
+            null_count == 0,
+            f"{len(df) - null_count:,}/{len(df):,} rows named",
+        )
+
+
 def validate_signed_route_verification_columns(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that signed-route verification fields are staged."""
     for column in EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS:
@@ -325,6 +379,46 @@ def validate_signed_route_verification_columns(result: ValidationResult, df: pd.
             f"Signed-route field: {column}",
             column in df.columns,
             "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_current_aadt_provenance_columns(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that canonical 2024 AADT provenance fields are staged."""
+    for column in EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS:
+        result.add(
+            f"Current AADT provenance field: {column}",
+            column in df.columns,
+            "Column present" if column in df.columns else "Column not found",
+        )
+
+
+def validate_provenance_consistency(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check that populated values have matching provenance fields."""
+
+    # Speed limit: every populated SPEED_LIMIT should have a source
+    if "SPEED_LIMIT" in df.columns and "SPEED_LIMIT_SOURCE" in df.columns:
+        has_speed = df["SPEED_LIMIT"].notna()
+        has_source = df["SPEED_LIMIT_SOURCE"].notna()
+        orphaned = int((has_speed & ~has_source).sum())
+        result.add(
+            "Speed limit provenance",
+            orphaned == 0,
+            f"{int(has_speed.sum()):,} with speed limit, {orphaned} missing source"
+            if orphaned > 0
+            else f"{int(has_speed.sum()):,} with speed limit, all have source",
+        )
+
+    # Future AADT: every populated FUTURE_AADT_2044 should have a source
+    if "FUTURE_AADT_2044" in df.columns and "FUTURE_AADT_2044_SOURCE" in df.columns:
+        has_val = df["FUTURE_AADT_2044"].notna()
+        has_source = df["FUTURE_AADT_2044_SOURCE"].notna() & (df["FUTURE_AADT_2044_SOURCE"] != "missing")
+        orphaned = int((has_val & ~has_source).sum())
+        result.add(
+            "Future AADT provenance",
+            orphaned == 0,
+            f"{int(has_val.sum()):,} with future AADT, {orphaned} missing source"
+            if orphaned > 0
+            else f"{int(has_val.sum()):,} with future AADT, all have source",
         )
 
 
@@ -426,10 +520,20 @@ def validate_database(result: ValidationResult) -> None:
         ]
         result.add("Database tables", "segments" in tables, f"Tables: {tables}")
 
-        # Check row count matches CSV
+        # Check row count matches CSV and GeoPackage
         if "segments" in tables:
             db_count = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
             result.add("Database row count", db_count > 0, f"{db_count:,} rows")
+
+            csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+            if csv_path.exists():
+                csv_count = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
+                match = db_count == csv_count
+                result.add(
+                    "DB/CSV row count match",
+                    match,
+                    f"DB={db_count:,}, CSV={csv_count:,}" + ("" if match else " — MISMATCH"),
+                )
 
         # Check load_summary exists
         result.add("Load summary table", "load_summary" in tables)
@@ -449,14 +553,14 @@ def validate_raptor_loader(result: ValidationResult) -> None:
 
         statewide = RoadwayData()
         statewide.load_data()
-        statewide_count = len(statewide.GA_RDWY_INV) if statewide.GA_RDWY_INV is not None else 0
+        statewide_count = len(statewide.Roadway_Inventory) if statewide.Roadway_Inventory is not None else 0
 
         district = RoadwayData(district_id=7)
         district.load_data()
-        district_count = len(district.GA_RDWY_INV) if district.GA_RDWY_INV is not None else 0
+        district_count = len(district.Roadway_Inventory) if district.Roadway_Inventory is not None else 0
         district_values = (
-            set(pd.to_numeric(district.GA_RDWY_INV["DISTRICT"], errors="coerce").dropna().astype(int).unique())
-            if district.GA_RDWY_INV is not None and "DISTRICT" in district.GA_RDWY_INV.columns
+            set(pd.to_numeric(district.Roadway_Inventory["DISTRICT"], errors="coerce").dropna().astype(int).unique())
+            if district.Roadway_Inventory is not None and "DISTRICT" in district.Roadway_Inventory.columns
             else set()
         )
 
@@ -497,7 +601,10 @@ def main() -> None:
         validate_state_system_location_fields(result, df)
         validate_phase1_attribute_columns(result, df)
         validate_route_family_columns(result, df)
+        validate_gdot_route_type_columns(result, df)
         validate_signed_route_verification_columns(result, df)
+        validate_current_aadt_provenance_columns(result, df)
+        validate_provenance_consistency(result, df)
         validate_decoded_labels(result, df)
 
     validate_crs(result)

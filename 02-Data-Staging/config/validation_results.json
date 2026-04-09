@@ -2,7 +2,7 @@
   {
     "name": "Row count",
     "status": "PASS",
-    "detail": "622,255 rows loaded"
+    "detail": "244,904 rows loaded"
   },
   {
     "name": "unique_id exists",
@@ -47,17 +47,17 @@
   {
     "name": "Current AADT coverage",
     "status": "PASS",
-    "detail": "185,748 segments with current AADT"
+    "detail": "244,819 segments with canonical current AADT; official=44,983"
   },
   {
-    "name": "Historic AADT coverage",
+    "name": "Future AADT 2044 coverage",
     "status": "PASS",
-    "detail": "AADT_2010=82,786, AADT_2011=83,319, AADT_2012=83,775, AADT_2013=90,082, AADT_2014=104,022, AADT_2015=312,416, AADT_2016=207,449, AADT_2017=166,834, AADT_2018=166,311, AADT_2019=535,080, AADT_2020=548,343"
+    "detail": "52,236 segments with future AADT (2044 projection)"
   },
   {
     "name": "State-system county/district coverage",
     "status": "PASS",
-    "detail": "109,314/109,314 rows have county and district"
+    "detail": "18,499/18,499 rows have county and district"
   },
   {
     "name": "Phase 1 attribute: LANE_WIDTH",
@@ -120,6 +120,31 @@
     "detail": "Column present"
   },
   {
+    "name": "GDOT route-type field: ROUTE_TYPE_GDOT",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type field: ROUTE_TYPE_GDOT_LABEL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type field: HWY_NAME",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "GDOT route-type coverage",
+    "status": "PASS",
+    "detail": "244,904/244,904 rows classified"
+  },
+  {
+    "name": "HWY_NAME coverage",
+    "status": "PASS",
+    "detail": "244,904/244,904 rows named"
+  },
+  {
     "name": "Signed-route field: SIGNED_INTERSTATE_FLAG",
     "status": "PASS",
     "detail": "Column present"
@@ -170,114 +195,164 @@
     "detail": "Column present"
   },
   {
+    "name": "Current AADT provenance field: AADT_2024",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_OFFICIAL",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_SOURCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_CONFIDENCE",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: AADT_2024_FILL_METHOD",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: current_aadt_official_covered",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Current AADT provenance field: current_aadt_covered",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "Speed limit provenance",
+    "status": "PASS",
+    "detail": "20,343 with speed limit, all have source"
+  },
+  {
+    "name": "Future AADT provenance",
+    "status": "PASS",
+    "detail": "52,236 with future AADT, all have source"
+  },
+  {
     "name": "Decoded label: COUNTY_NAME",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_NAME",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DISTRICT_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SYSTEM_CODE_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FUNCTION_TYPE_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_FUNCTION_TYPE_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: F_SYSTEM_LABEL",
     "status": "PASS",
-    "detail": "475,960/475,960 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FUNCTIONAL_CLASS_LABEL",
     "status": "PASS",
-    "detail": "475,960/475,960 source-coded rows decoded"
+    "detail": "215,416/215,416 source-coded rows decoded"
   },
   {
     "name": "Decoded label: FACILITY_TYPE_LABEL",
     "status": "PASS",
-    "detail": "502,901/502,901 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_LABEL",
     "status": "PASS",
-    "detail": "7,662/7,662 source-coded rows decoded"
+    "detail": "7,830/7,830 source-coded rows decoded"
   },
   {
     "name": "Decoded label: NHS_IND_LABEL",
     "status": "PASS",
-    "detail": "7,662/7,662 source-coded rows decoded"
+    "detail": "1,150/1,150 source-coded rows decoded"
   },
   {
     "name": "Decoded label: OWNERSHIP_LABEL",
     "status": "PASS",
-    "detail": "452,912/452,912 source-coded rows decoded"
+    "detail": "241,744/241,744 source-coded rows decoded"
   },
   {
     "name": "Decoded label: STRAHNET_LABEL",
     "status": "PASS",
-    "detail": "2,228/2,228 source-coded rows decoded"
+    "detail": "322/322 source-coded rows decoded"
   },
   {
     "name": "Decoded label: MEDIAN_TYPE_LABEL",
     "status": "PASS",
-    "detail": "390/390 source-coded rows decoded"
+    "detail": "3,980/3,980 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SHOULDER_TYPE_LABEL",
     "status": "PASS",
-    "detail": "390/390 source-coded rows decoded"
+    "detail": "3,980/3,980 source-coded rows decoded"
   },
   {
     "name": "Decoded label: SURFACE_TYPE_LABEL",
     "status": "PASS",
-    "detail": "7/7 source-coded rows decoded"
+    "detail": "10,466/10,466 source-coded rows decoded"
   },
   {
     "name": "Decoded label: URBAN_CODE_LABEL",
     "status": "PASS",
-    "detail": "492,871/492,871 source-coded rows decoded"
+    "detail": "219,811/219,811 source-coded rows decoded"
   },
   {
     "name": "Decoded label: DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: ROUTE_DIRECTION_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: PARSED_SYSTEM_CODE_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "Decoded label: ROUTE_TYPE_LABEL",
     "status": "PASS",
-    "detail": "622,255/622,255 source-coded rows decoded"
+    "detail": "244,904/244,904 source-coded rows decoded"
+  },
+  {
+    "name": "Decoded label: ROUTE_TYPE_GDOT_LABEL",
+    "status": "PASS",
+    "detail": "244,904/244,904 source-coded rows decoded"
   },
   {
     "name": "CRS verification",
@@ -287,7 +362,7 @@
   {
     "name": "Geometry validity",
     "status": "PASS",
-    "detail": "0 invalid, 0 empty out of 622,255"
+    "detail": "0 invalid, 0 empty out of 244,904"
   },
   {
     "name": "Boundary layers exist",
@@ -322,7 +397,12 @@
   {
     "name": "Database row count",
     "status": "PASS",
-    "detail": "622,255 rows"
+    "detail": "244,904 rows"
+  },
+  {
+    "name": "DB/CSV row count match",
+    "status": "PASS",
+    "detail": "DB=244,904, CSV=244,904"
   },
   {
     "name": "Load summary table",
@@ -352,11 +432,11 @@
   {
     "name": "RoadwayData statewide load",
     "status": "PASS",
-    "detail": "109,314 rows loaded"
+    "detail": "18,499 rows loaded"
   },
   {
     "name": "RoadwayData district load",
     "status": "PASS",
-    "detail": "10,845 rows; districts=[np.int64(7)]"
+    "detail": "2,895 rows; districts=[np.int64(7)]"
   }
 ]

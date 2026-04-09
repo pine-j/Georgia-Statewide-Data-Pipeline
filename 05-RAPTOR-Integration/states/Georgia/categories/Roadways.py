@@ -18,11 +18,10 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
-RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "GA_RDWY_INV"
+RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 
 TARGET_CRS = "EPSG:32617"
-HISTORICAL_AADT_YEARS = list(range(2010, 2021))
 
 
 class RoadwayData:
@@ -34,12 +33,12 @@ class RoadwayData:
     by GDOT district.
 
     Attributes:
-        GA_RDWY_INV: GeoDataFrame of filtered roadway segments.
+        Roadway_Inventory: GeoDataFrame of filtered roadway segments.
         district_id: Optional district filter (1-7).
     """
 
     def __init__(self, district_id: int | None = None):
-        self.GA_RDWY_INV: gpd.GeoDataFrame | None = None
+        self.Roadway_Inventory: gpd.GeoDataFrame | None = None
         self.district_id = district_id
 
         # RAPTOR-relevant columns to retain
@@ -61,10 +60,30 @@ class RoadwayData:
             "ROUTE_TYPE",
             "ROUTE_TYPE_LABEL",
             "ROUTE_NUMBER",
+            "BASE_ROUTE_NUMBER",
             "ROUTE_SUFFIX",
+            "ROUTE_SUFFIX_LABEL",
             "ROUTE_DIRECTION",
             "ROUTE_DIRECTION_LABEL",
+            "ROUTE_FAMILY",
+            "ROUTE_FAMILY_DETAIL",
+            "ROUTE_FAMILY_CONFIDENCE",
+            "ROUTE_FAMILY_SOURCE",
+            "ROUTE_TYPE_GDOT",
+            "ROUTE_TYPE_GDOT_LABEL",
+            "HWY_NAME",
+            "SIGNED_INTERSTATE_FLAG",
+            "SIGNED_US_ROUTE_FLAG",
+            "SIGNED_STATE_ROUTE_FLAG",
+            "SIGNED_ROUTE_FAMILY_PRIMARY",
+            "SIGNED_ROUTE_FAMILY_ALL",
+            "SIGNED_ROUTE_VERIFY_SOURCE",
+            "SIGNED_ROUTE_VERIFY_METHOD",
+            "SIGNED_ROUTE_VERIFY_CONFIDENCE",
+            "SIGNED_ROUTE_VERIFY_SCORE",
+            "SIGNED_ROUTE_VERIFY_NOTES",
             "NUM_LANES",
+            "LANE_WIDTH",
             "SURFACE_WIDTH",
             "SURFACE_TYPE",
             "SURFACE_TYPE_LABEL",
@@ -73,12 +92,20 @@ class RoadwayData:
             "MEDIAN_WIDTH",
             "SHOULDER_TYPE",
             "SHOULDER_TYPE_LABEL",
+            "SHOULDER_WIDTH_L",
+            "SHOULDER_WIDTH_R",
             "SHOULDER_WIDTH",
+            "OWNERSHIP",
+            "OWNERSHIP_LABEL",
             "FACILITY_TYPE",
             "FACILITY_TYPE_LABEL",
             "SPEED_LIMIT",
             "AADT",
             "AADT_2024",
+            "AADT_2024_OFFICIAL",
+            "AADT_2024_SOURCE",
+            "AADT_2024_CONFIDENCE",
+            "AADT_2024_FILL_METHOD",
             "AADT_YEAR",
             "TRUCK_AADT",
             "TRUCK_PCT",
@@ -90,15 +117,32 @@ class RoadwayData:
             "NHS_IND",
             "NHS_IND_LABEL",
             "STRAHNET",
+            "STRAHNET_LABEL",
             "ACCESS_CONTROL",
+            "current_aadt_official_covered",
             "current_aadt_covered",
-            "historical_aadt_years_available",
+            "HPMS_ROUTE_NAME",
+            "HPMS_ROUTE_NUMBER",
+            "HPMS_IRI",
+            "HPMS_PSR",
+            "HPMS_RUTTING",
+            "HPMS_CRACKING_PCT",
+            "HPMS_ACCESS_CONTROL",
+            "HPMS_TERRAIN_TYPE",
+            "VMT",
+            "TruckVMT",
+            "FUTURE_AADT",
+            "FUTURE_AADT_2044",
+            "FUTURE_AADT_2044_SOURCE",
+            "FUTURE_AADT_2044_CONFIDENCE",
+            "FROM_MILEPOINT",
+            "TO_MILEPOINT",
             "segment_length_m",
+            "segment_length_mi",
             "geometry",
         ]
-        self.COLUMNS_TO_KEEP.extend([f"AADT_{year}" for year in HISTORICAL_AADT_YEARS])
-        self.COLUMNS_TO_KEEP.extend([f"TRUCK_AADT_{year}" for year in HISTORICAL_AADT_YEARS])
-        self.COLUMNS_TO_KEEP.extend([f"TRUCK_PCT_{year}" for year in HISTORICAL_AADT_YEARS])
+        # Historical AADT columns (2010-2020) have been removed from the pipeline output.
+        # Raw source files are retained in 01-Raw-Data/ for future use if needed.
 
     @staticmethod
     def _normalize_numeric_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -203,10 +247,10 @@ class RoadwayData:
             gdf = gdf.to_crs(TARGET_CRS)
             logger.info("Reprojected to %s", TARGET_CRS)
 
-        self.GA_RDWY_INV = gdf
+        self.Roadway_Inventory = gdf
         logger.info("Loaded %d roadway segments for RAPTOR analysis", len(gdf))
 
     def clear_data(self) -> None:
         """Release roadway data from memory."""
-        self.GA_RDWY_INV = None
+        self.Roadway_Inventory = None
         logger.info("Cleared roadway data")

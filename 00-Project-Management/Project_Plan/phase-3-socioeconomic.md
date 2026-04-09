@@ -201,7 +201,7 @@ Additional (weight=0, for future categories or reference):
 - `02-Data-Staging/databases/socioeconomic.db` (nationwide)
 - `02-Data-Staging/spatial/demographics.gpkg` (GA layers initially)
 - `05-RAPTOR-Integration/states/Georgia/categories/SocioEconomic.py`
-- Updated `Georgia_Data_Inventory_GDOT.csv`
+- Updated `Georgia_Data_Inventory.csv`
 
 ## Verification
 - [ ] Georgia total population matches published Census figure

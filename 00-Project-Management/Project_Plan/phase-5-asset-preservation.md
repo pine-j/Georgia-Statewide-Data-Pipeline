@@ -89,7 +89,7 @@ Download, clean, and load bridge and pavement data into the Georgia database. Bu
 - `02-Data-Staging/databases/asset_preservation.db`
 - `02-Data-Staging/spatial/assets.gpkg` (layer: `bridges`)
 - `05-RAPTOR-Integration/states/Georgia/categories/AssetPreservation.py`
-- Updated `Georgia_Data_Inventory_GDOT.csv`
+- Updated `Georgia_Data_Inventory.csv`
 
 ## Verification
 - [ ] NBI bridge count ~15,090 for Georgia

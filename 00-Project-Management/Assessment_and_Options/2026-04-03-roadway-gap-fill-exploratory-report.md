@@ -1,3 +1,12 @@
+# Deprecated
+
+This historical exploratory note is no longer a maintained current-source document.
+
+Use these files instead:
+
+- `00-Project-Management/Assessment_and_Options/roadway-gap-fill-options.md`
+- `00-Project-Management/Assessment_and_Options/roadway-supplement-options.md`
+
 # Roadway Gap-Fill Exploratory Report
 
 Date: 2026-04-03
@@ -12,7 +21,7 @@ This is exploratory analysis only. It does not change the staged roadway pipelin
 
 ## 2026-04-04 Follow-Up Note
 
-After the initial exploratory write-up, the current local web app at `http://127.0.0.1:5173/` was re-checked in Playwright after allowing the staged roadway layer to finish loading completely (`622,255 segments loaded`).
+After the initial exploratory write-up, the current local web app at `http://127.0.0.1:5173/` was re-checked in Playwright after allowing the staged roadway layer to finish loading completely (`244,904 segments loaded` in the current simplified build).
 
 Three sample areas were reviewed visually against the basemap using stabilized map views and delayed screenshots:
 
@@ -58,7 +67,7 @@ Playwright screenshots captured for this follow-up:
 
 The staged roadway network is built from:
 
-- `01-Raw-Data/GA_RDWY_INV/Road_Inventory_2024.gdb`, layer `GA_2024_Routes`
+- `01-Raw-Data/Roadway-Inventory/Road_Inventory_2024.gdb`, layer `GA_2024_Routes`
 - normalized by [normalize.py](../../02-Data-Staging/scripts/01_roadway_inventory/normalize.py)
 - written to [create_db.py](../../02-Data-Staging/scripts/01_roadway_inventory/create_db.py) outputs:
   - `02-Data-Staging/databases/roadway_inventory.db`
@@ -67,7 +76,7 @@ The staged roadway network is built from:
 Supporting evidence:
 
 - `GA_2024_Routes` raw feature count: `206,994`
-- staged `segments` row count: `622,255`
+- staged `segments` row count: `244,904`
 - staged distinct `ROUTE_ID` count: `206,994`
 
 Interpretation:

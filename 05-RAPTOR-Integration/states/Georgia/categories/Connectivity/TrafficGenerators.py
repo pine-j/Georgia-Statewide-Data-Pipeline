@@ -89,12 +89,12 @@ class TrafficGenerators:
         Parameters
         ----------
         roadways:
-            Object with a ``GA_RDWY_INV`` GeoDataFrame attribute (the Georgia
+            Object with a ``Roadway_Inventory`` GeoDataFrame attribute (the Georgia
             roadway inventory), which is updated in-place with new columns.
         """
         print("Calculating traffic generator counts ...")
 
-        gdf = roadways.GA_RDWY_INV
+        gdf = roadways.Roadway_Inventory
 
         # Build buffers
         buffers = gpd.GeoDataFrame(
@@ -157,11 +157,11 @@ class TrafficGenerators:
             self.TOTAL_TRAFFIC_GENERATORS,
             self.GENERATORS_DENSITY,
         ]
-        existing = [c for c in merge_cols if c in roadways.GA_RDWY_INV.columns]
+        existing = [c for c in merge_cols if c in roadways.Roadway_Inventory.columns]
         if existing:
-            roadways.GA_RDWY_INV.drop(columns=existing, inplace=True)
+            roadways.Roadway_Inventory.drop(columns=existing, inplace=True)
 
-        roadways.GA_RDWY_INV = roadways.GA_RDWY_INV.merge(
+        roadways.Roadway_Inventory = roadways.Roadway_Inventory.merge(
             result[["unique_id"] + merge_cols],
             on="unique_id",
             how="left",

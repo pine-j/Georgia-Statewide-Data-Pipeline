@@ -57,11 +57,11 @@ class Connectivity:
         Parameters
         ----------
         roadways:
-            Object with a ``GA_RDWY_INV`` GeoDataFrame attribute that must
+            Object with a ``Roadway_Inventory`` GeoDataFrame attribute that must
             contain ``unique_id``, ``geometry``, and ``hwy_name`` columns.
         """
         print("Calculating degrees of connection (1-mile buffer) ...")
-        gdf = roadways.GA_RDWY_INV
+        gdf = roadways.Roadway_Inventory
 
         if "hwy_name" not in gdf.columns:
             print("  WARNING: 'hwy_name' column not found – skipping.")
@@ -104,7 +104,7 @@ class Connectivity:
             gdf[self.DEGREES_OF_CONNECTION_COUNT].fillna(0).astype(int)
         )
 
-        roadways.GA_RDWY_INV = gdf
+        roadways.Roadway_Inventory = gdf
         print(
             f"  Degrees of connection calculated. (Rows: {len(gdf)})"
         )
@@ -121,7 +121,7 @@ class Connectivity:
         False).
         """
         print("Computing Connectivity Needs Score ...")
-        gdf = roadways.GA_RDWY_INV
+        gdf = roadways.Roadway_Inventory
         score = np.zeros(len(gdf), dtype=float)
 
         for col, weight in self.weights.items():
@@ -142,7 +142,7 @@ class Connectivity:
                 score += normalised * weight
 
         gdf[self.CONNECTIVITY_SCORE] = score.round(4)
-        roadways.GA_RDWY_INV = gdf
+        roadways.Roadway_Inventory = gdf
         print("  Connectivity score calculated.")
 
     # ------------------------------------------------------------------
@@ -155,7 +155,7 @@ class Connectivity:
         Parameters
         ----------
         roadways:
-            Object with a ``GA_RDWY_INV`` GeoDataFrame attribute.
+            Object with a ``Roadway_Inventory`` GeoDataFrame attribute.
         """
         # Degrees of connection
         self._calculate_degrees_of_connection(roadways)

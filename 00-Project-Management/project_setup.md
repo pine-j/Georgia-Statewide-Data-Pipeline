@@ -203,8 +203,6 @@ Notes:
 
 Open these from the VS Code editor or Markdown preview:
 
-- [Assessment And Options Index](./Assessment_and_Options/README.md)
-- [2026-04-03 Roadway Gap-Fill Exploratory Report](./Assessment_and_Options/2026-04-03-roadway-gap-fill-exploratory-report.md)
 - [Roadway Gap-Fill Options](./Assessment_and_Options/roadway-gap-fill-options.md)
 - [Roadway Supplement Options](./Assessment_and_Options/roadway-supplement-options.md)
 - [Roadway Gap-Fill Options CSV](./Assessment_and_Options/roadway-gap-fill-options.csv)

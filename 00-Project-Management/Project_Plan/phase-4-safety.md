@@ -108,7 +108,7 @@ Additional (weight=0, available for tuning):
 - `02-Data-Staging/spatial/safety.gpkg` (layer: `crash_points`)
 - `05-RAPTOR-Integration/states/Georgia/categories/Safety/Safety.py`
 - `05-RAPTOR-Integration/states/Georgia/categories/Safety/Extract_and_Merge.py`
-- Updated `Georgia_Data_Inventory_GDOT.csv`
+- Updated `Georgia_Data_Inventory.csv`
 
 ## Verification
 - [ ] Crash counts per year are plausible
