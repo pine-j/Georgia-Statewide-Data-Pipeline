@@ -62,14 +62,12 @@ Relevant implementation notes:
 
 ### What the current staged network contains
 
-Note: Segment counts and coverage metrics below are from the initial simplified build. Run validate.py for current numbers.
-
 Observed from `roadway_inventory.db` and `base_network.gpkg`:
 
 - Raw GDOT route count: `206,994`
-- Total staged segments: `244,904`
+- Total staged segments: `245,863`
 - Unique route IDs: `206,994`
-- Current AADT coverage: `244,819` segments
+- Current AADT coverage: `245,778` segments
 - Total staged miles: `133,994.4`
 - Miles with current AADT: `133,830.6`
 
@@ -143,7 +141,7 @@ Interpretation:
 
 ### 2026-04-04 visual follow-up
 
-After the initial exploratory write-up, the local web app at `http://127.0.0.1:5173/` was re-checked after allowing the staged roadway layer to finish loading completely (`244,904 segments loaded` in the simplified build).
+After the initial exploratory write-up, the local web app at `http://127.0.0.1:5173/` was re-checked after allowing the staged roadway layer to finish loading completely (`245,863 segments loaded`).
 
 Three sample areas were reviewed visually against the basemap:
 
