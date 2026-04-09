@@ -525,6 +525,7 @@ The ETL then computes:
 
 - `segment_length_m`
 - `segment_length_mi`
+- `county_all`
 
 ### 10. Write staged outputs
 
@@ -646,6 +647,10 @@ with:
 - `HPMS_ROUTE_NUMBER`
 - `HPMS_ROUTE_NAME`
 
+### From spatial county overlap
+
+- `county_all` - comma-separated county names crossed by the segment, keeping counties that cover at least 1% of segment length, starting with `COUNTY_NAME`, then listing any additional counties by descending overlap share
+
 ### AADT provenance fields
 
 - `AADT_2024` — canonical 2024 AADT (official, HPMS, or estimated)
@@ -683,6 +688,7 @@ with:
 - `current_aadt_covered`
 - `segment_length_m`
 - `segment_length_mi`
+- `county_all`
 
 ---
 

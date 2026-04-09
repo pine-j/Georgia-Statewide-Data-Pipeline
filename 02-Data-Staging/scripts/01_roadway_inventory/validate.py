@@ -219,6 +219,30 @@ def decode_lookup_value(value, lookup: dict, zero_pad: int | None = None) -> str
     return lookup.get(numeric_value) or lookup.get(str(numeric_value))
 
 
+def clean_optional_text(value) -> str | None:
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip()
+    if text in {"", "nan", "None"}:
+        return None
+    return text
+
+
+def split_county_all(value) -> list[str]:
+    text = clean_optional_text(value)
+    if text is None:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def county_all_has_blank_token(value) -> bool:
+    text = clean_optional_text(value)
+    if text is None:
+        return False
+    return any(not part.strip() for part in text.split(","))
+
+
 def validate_row_count(result: ValidationResult) -> pd.DataFrame | None:
     """Check that normalized CSV has a reasonable number of rows."""
     csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
@@ -439,6 +463,110 @@ def validate_decoded_label_correctness(result: ValidationResult, df: pd.DataFram
         )
 
 
+def validate_county_all_semantics(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check county_all export structure and alignment with the major county."""
+    if "county_all" not in df.columns:
+        result.add("county_all column", False, "Column not found")
+        return
+
+    result.add("county_all column", True, "Column present")
+
+    parsed_values = df["county_all"].map(split_county_all)
+    valid_county_names = {
+        str(county_name).strip().casefold()
+        for county_name in COUNTY_CODE_LOOKUP.values()
+        if str(county_name).strip()
+    }
+    blank_token_rows = int(df["county_all"].map(county_all_has_blank_token).sum())
+    duplicate_rows = int(
+        parsed_values.map(
+            lambda values: len({value.casefold() for value in values}) != len(values)
+        ).sum()
+    )
+    unknown_token_rows = int(
+        parsed_values.map(
+            lambda values: any(value.casefold() not in valid_county_names for value in values)
+        ).sum()
+    )
+    county_name_missing_rows = 0
+    leading_name_mismatch_rows = 0
+    single_name_mismatch_rows = 0
+    if "COUNTY_NAME" in df.columns:
+        county_name_series = df["COUNTY_NAME"].map(clean_optional_text)
+        county_name_missing_rows = int(
+            sum(
+                county_name is not None
+                and county_name.casefold() not in {value.casefold() for value in values}
+                for county_name, values in zip(
+                    county_name_series.tolist(),
+                    parsed_values.tolist(),
+                )
+            )
+        )
+        leading_name_mismatch_rows = int(
+            sum(
+                bool(values)
+                and county_name is not None
+                and values[0].casefold() != county_name.casefold()
+                for county_name, values in zip(
+                    county_name_series.tolist(),
+                    parsed_values.tolist(),
+                )
+            )
+        )
+        single_name_mismatch_rows = int(
+            sum(
+                len(values) == 1
+                and county_name is not None
+                and values[0].casefold() != county_name.casefold()
+                for county_name, values in zip(
+                    county_name_series.tolist(),
+                    parsed_values.tolist(),
+                )
+            )
+        )
+
+    result.add(
+        "county_all token structure",
+        blank_token_rows == 0 and duplicate_rows == 0 and unknown_token_rows == 0,
+        (
+            "No blank, duplicate, or unknown county tokens"
+            if blank_token_rows == 0 and duplicate_rows == 0 and unknown_token_rows == 0
+            else (
+                f"blank_rows={blank_token_rows:,}, duplicate_rows={duplicate_rows:,}, "
+                f"unknown_rows={unknown_token_rows:,}"
+            )
+        ),
+    )
+    result.add(
+        "county_all contains COUNTY_NAME",
+        county_name_missing_rows == 0,
+        (
+            "COUNTY_NAME is present in county_all for all populated rows"
+            if county_name_missing_rows == 0
+            else f"{county_name_missing_rows:,} rows missing COUNTY_NAME inside county_all"
+        ),
+    )
+    result.add(
+        "county_all leading COUNTY_NAME alignment",
+        leading_name_mismatch_rows == 0,
+        (
+            "county_all starts with COUNTY_NAME for all populated rows"
+            if leading_name_mismatch_rows == 0
+            else f"{leading_name_mismatch_rows:,} rows start with a county other than COUNTY_NAME"
+        ),
+    )
+    result.add(
+        "county_all single-name alignment",
+        single_name_mismatch_rows == 0,
+        (
+            "Single-name county_all rows align with COUNTY_NAME"
+            if single_name_mismatch_rows == 0
+            else f"{single_name_mismatch_rows:,} single-name rows disagree with COUNTY_NAME"
+        ),
+    )
+
+
 def validate_phase1_attribute_columns(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that the expanded raw roadway attribute columns are staged."""
     for column in EXPECTED_PHASE1_ATTRIBUTE_COLUMNS:
@@ -656,6 +784,11 @@ def validate_geometry(result: ValidationResult) -> None:
         invalid_count == 0,
         f"{invalid_count:,} invalid, {empty_count:,} empty out of {len(gdf):,}",
     )
+    result.add(
+        "GeoPackage county_all column",
+        "county_all" in gdf.columns,
+        "county_all present" if "county_all" in gdf.columns else "Missing county_all in roadway_segments",
+    )
     slot_columns_present = {
         "SECONDARY_SIGNED_ROUTE_FAMILY",
         "TERTIARY_SIGNED_ROUTE_FAMILY",
@@ -794,6 +927,11 @@ def validate_database(result: ValidationResult) -> None:
                     else "Missing signed-route slot columns in segments table"
                 ),
             )
+            result.add(
+                "Database county_all column",
+                "county_all" in segment_columns,
+                "county_all present" if "county_all" in segment_columns else "Missing county_all in segments table",
+            )
 
             csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
             if csv_path.exists():
@@ -878,6 +1016,7 @@ def main() -> None:
             validate_provenance_consistency(result, df)
             validate_decoded_labels(result, df)
             validate_decoded_label_correctness(result, df)
+            validate_county_all_semantics(result, df)
 
         validate_crs(result)
         validate_geometry(result)

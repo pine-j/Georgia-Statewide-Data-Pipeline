@@ -156,9 +156,30 @@ def _selected_county_codes(counties: list[str] | None) -> tuple[str, ...]:
     return tuple(sorted(selected_codes))
 
 
+def _selected_county_names(counties: list[str] | None) -> tuple[str, ...]:
+    if not counties:
+        return ()
+
+    code_to_county, county_to_code = _load_county_maps()
+    selected_names = {
+        code_to_county[county_to_code[county.casefold()]].strip().lower()
+        for county in counties
+        if county.casefold() in county_to_code
+    }
+    return tuple(sorted(selected_names))
+
+
+def _county_all_match_expression(column_name: str = "county_all") -> str:
+    return f"(',' || replace(lower(COALESCE({column_name}, '')), ', ', ',') || ',')"
+
+
+def _escape_sql_literal(value: str) -> str:
+    return value.replace("'", "''")
+
+
 def _build_sqlite_filters(
     district: int | None,
-    county_codes: tuple[str, ...],
+    county_names: tuple[str, ...],
 ) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -167,10 +188,12 @@ def _build_sqlite_filters(
         clauses.append("DISTRICT = ?")
         params.append(district)
 
-    if county_codes:
-        placeholders = ", ".join("?" for _ in county_codes)
-        clauses.append(f"COUNTY_CODE IN ({placeholders})")
-        params.extend(int(code) for code in county_codes)
+    if county_names:
+        county_expression = _county_all_match_expression()
+        clauses.append(
+            "(" + " OR ".join(f"{county_expression} LIKE ?" for _ in county_names) + ")"
+        )
+        params.extend(f"%,{county_name},%" for county_name in county_names)
 
     if not clauses:
         return "", params
@@ -178,15 +201,19 @@ def _build_sqlite_filters(
     return f"WHERE {' AND '.join(clauses)}", params
 
 
-def _build_gpkg_where(district: int | None, county_codes: tuple[str, ...]) -> str:
+def _build_gpkg_where(district: int | None, county_names: tuple[str, ...]) -> str:
     clauses: list[str] = []
 
     if district is not None:
         clauses.append(f"DISTRICT = {district}")
 
-    if county_codes:
-        quoted_codes = ", ".join(f"'{county_code}'" for county_code in county_codes)
-        clauses.append(f"COUNTY_CODE IN ({quoted_codes})")
+    if county_names:
+        county_expression = _county_all_match_expression()
+        county_patterns = " OR ".join(
+            f"{county_expression} LIKE '%,{_escape_sql_literal(county_name)},%'"
+            for county_name in county_names
+        )
+        clauses.append(f"({county_patterns})")
 
     if not clauses:
         return ""
@@ -278,8 +305,8 @@ def _open_sqlite() -> sqlite3.Connection:
 
 
 @lru_cache(maxsize=256)
-def _get_segment_count(district: int | None, county_codes: tuple[str, ...]) -> int:
-    where_clause, params = _build_sqlite_filters(district, county_codes)
+def _get_segment_count(district: int | None, county_names: tuple[str, ...]) -> int:
+    where_clause, params = _build_sqlite_filters(district, county_names)
     query = f"SELECT COUNT(*) FROM segments {where_clause}"
 
     with _open_sqlite() as connection:
@@ -293,9 +320,9 @@ def _get_segment_count(district: int | None, county_codes: tuple[str, ...]) -> i
 @lru_cache(maxsize=256)
 def _get_class_summary_rows(
     district: int | None,
-    county_codes: tuple[str, ...],
+    county_names: tuple[str, ...],
 ) -> tuple[tuple[str, int, float], ...]:
-    where_clause, params = _build_sqlite_filters(district, county_codes)
+    where_clause, params = _build_sqlite_filters(district, county_names)
     query = f"""
         SELECT
             FUNCTIONAL_CLASS,
@@ -325,12 +352,12 @@ def _get_class_summary_rows(
 @lru_cache(maxsize=256)
 def _get_filtered_bounds(
     district: int | None,
-    county_codes: tuple[str, ...],
+    county_names: tuple[str, ...],
 ) -> list[float] | None:
-    if _get_segment_count(district, county_codes) == 0:
+    if _get_segment_count(district, county_names) == 0:
         return None
 
-    if district is None and not county_codes:
+    if district is None and not county_names:
         info = pyogrio.read_info(STAGED_GPKG_PATH, layer="roadway_segments")
         total_bounds = info.get("total_bounds")
         if total_bounds is None:
@@ -338,7 +365,7 @@ def _get_filtered_bounds(
 
         return _project_bounds(tuple(float(value) for value in total_bounds))
 
-    where_clause = _build_gpkg_where(district, county_codes)
+    where_clause = _build_gpkg_where(district, county_names)
     _, feature_bounds = pyogrio.read_bounds(
         STAGED_GPKG_PATH,
         layer="roadway_segments",
@@ -367,8 +394,8 @@ def get_staged_roadway_manifest(
     if state_code != SUPPORTED_STATE:
         return _empty_manifest(state_code, chunk_size)
 
-    county_codes = _selected_county_codes(counties)
-    total_segments = _get_segment_count(district, county_codes)
+    county_names = _selected_county_names(counties)
+    total_segments = _get_segment_count(district, county_names)
     chunk_count = math.ceil(total_segments / chunk_size) if total_segments else 0
 
     return RoadwayManifestResponse(
@@ -376,7 +403,7 @@ def get_staged_roadway_manifest(
         total_segments=total_segments,
         chunk_size=chunk_size,
         chunk_count=chunk_count,
-        bounds=_get_filtered_bounds(district, county_codes),
+        bounds=_get_filtered_bounds(district, county_names),
     )
 
 
@@ -389,8 +416,8 @@ def get_staged_roadway_summary(
     if state_code != SUPPORTED_STATE:
         return _empty_summary(state_code)
 
-    county_codes = _selected_county_codes(counties)
-    class_rows = _get_class_summary_rows(district, county_codes)
+    county_names = _selected_county_names(counties)
+    class_rows = _get_class_summary_rows(district, county_names)
     classes = [
         FunctionalClassSummary(
             functional_class=functional_class,
@@ -417,8 +444,8 @@ def get_staged_roadway_bounds(
     if state_code != SUPPORTED_STATE:
         return None
 
-    county_codes = _selected_county_codes(counties)
-    return _get_filtered_bounds(district, county_codes)
+    county_names = _selected_county_names(counties)
+    return _get_filtered_bounds(district, county_names)
 
 
 def get_staged_roadway_features(
@@ -432,8 +459,8 @@ def get_staged_roadway_features(
     if state_code != SUPPORTED_STATE:
         return RoadwayFeatureCollection(type="FeatureCollection", features=[])
 
-    county_codes = _selected_county_codes(counties)
-    where_clause = _build_gpkg_where(district, county_codes)
+    county_names = _selected_county_names(counties)
+    where_clause = _build_gpkg_where(district, county_names)
     query = " ".join(
         [
             "SELECT RouteId, COUNTY_CODE, DISTRICT, FUNCTIONAL_CLASS,",

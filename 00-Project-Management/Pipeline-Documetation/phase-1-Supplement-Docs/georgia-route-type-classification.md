@@ -4,6 +4,8 @@
 
 This note defines a granular Georgia roadway route-type taxonomy for the GDOT roadway pipeline and maps every current segment in `02-Data-Staging/databases/roadway_inventory.db` to one code.
 
+It consolidates the earlier route-family strategy and is the canonical reference for both the coarse `ROUTE_FAMILY` layer and the final `ROUTE_TYPE_GDOT` layer.
+
 Snapshot used for this assessment:
 
 - Database: `02-Data-Staging/databases/roadway_inventory.db`
@@ -25,6 +27,52 @@ Official sources used for the taxonomy:
 - Local agent-friendly conversion of the GDOT data dictionary: `01-Raw-Data/Roadway-Inventory/GDOT_Road_Inventory/DataDictionary.agent.md`
 - FHWA HPMS Field Manual, October 1, 2024: <https://omb.report/icr/202405-2125-003/doc/144173100.pdf>
 - GDOT Road & Traffic Data landing page: <https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx>
+- GDOT live LRS metadata: <https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Network_LRSN/MapServer/exts/LRSServer/layers>
+
+## Classification Layers Covered Here
+
+This consolidated note keeps both classification layers because both remain materialized in the Georgia roadway pipeline.
+
+| Field | Purpose | Values / notes |
+| --- | --- | --- |
+| `BASE_ROUTE_NUMBER` | Family-level route number extracted from `ROUTE_ID` | Used for Appendix F/G crosswalks and downstream naming |
+| `ROUTE_SUFFIX_LABEL` | Decoded official GDOT alpha suffix | `Business`, `Spur`, `Connector`, `Loop`, etc. |
+| `ROUTE_FAMILY` | Broad family for filtering and reporting | `Interstate`, `U.S. Route`, `State Route`, `Local/Other` |
+| `ROUTE_FAMILY_DETAIL` | Readable coarse subtype | `U.S. Route Business`, `County Road`, `Public Road Ramp`, etc. |
+| `ROUTE_FAMILY_CONFIDENCE` | QA signal on coarse family | `high` for Interstate and public-road cases, `medium` for `U.S. Route` versus `State Route` route-code crosswalk cases |
+| `ROUTE_FAMILY_SOURCE` | Traceable coarse-family rule source | `gdot_appendix_f_interstate`, `public_road_numeric_suffix`, etc. |
+| `ROUTE_TYPE_GDOT` | Single HSYS-style granular code per segment | `I`, `US`, `SR`, `CR`, `CS`, `RP`, etc. |
+| `HWY_NAME` | Stable display name aligned to the granular code | `I-20`, `US-23 BUS`, `CR-3467`, `RAMP`, etc. |
+
+### What is safe to derive from `ROUTE_ID` alone
+
+High-confidence from the 16-character GDOT structure:
+
+- `FUNCTION_TYPE`, `SYSTEM_CODE`, route code, suffix, and direction
+- `BASE_ROUTE_NUMBER`
+- county road versus city street within `SYSTEM_CODE = 2` mainline public-road records
+- facility subtype for ramps, collector-distributors, frontage roads, alleys, managed facilities, and similar non-mainline cases
+
+Crosswalk-based from `ROUTE_ID` plus official GDOT appendices:
+
+- Interstate family using Appendix F route-code mappings -> high confidence
+- U.S. Route family using Appendix G route-code mappings -> medium confidence
+- State Route as the residual `SYSTEM_CODE = 1` family -> medium confidence
+
+Requires other staged fields or verification inputs:
+
+- signed-family upgrades from FHWA HPMS `RouteSigning`
+- functional hierarchy from `F_SYSTEM` / `FUNCTIONAL_CLASS`
+- signed-route verification sources when the project wants on-the-ground shield confidence instead of route-code inference alone
+
+### Coarse family priority
+
+The earlier route-family strategy used this exact family priority, and it still governs the coarse classifier and the signed-family input consumed by `ROUTE_TYPE_GDOT`:
+
+1. Interstate
+2. U.S. Route
+3. State Route
+4. Local/Other
 
 ## Official GDOT And FHWA Taxonomy
 
@@ -38,6 +86,7 @@ Key consequences for classification:
 
 - `FUNCTION_TYPE` is the official source for ramps, collector-distributors, frontage roads, alleys, managed facilities, and similar non-mainline facility types.
 - `SYSTEM_CODE` separates state-system routes from public roads and future private/federal roads.
+- Georgia route IDs encode administrative state-route numbers, so Interstate and U.S. Route identification is a crosswalk problem, not a literal prefix problem.
 - `ROUTE_SUFFIX` carries signed subtype cues such as business, spur, alternate, connector, loop, and bypass.
 - For `FUNCTION_TYPE` `2`-`4`, GDOT says route-code digits `6`-`8` are reference post and digits `9`-`11` are the underlying route number.
 
@@ -364,6 +413,8 @@ Examples from the standalone run:
 
 Code changes made without rerunning the full pipeline:
 
+- `02-Data-Staging/scripts/01_roadway_inventory/route_family.py`
+  - Coarse Georgia classifier retained as the upstream source of `BASE_ROUTE_NUMBER`, `ROUTE_SUFFIX_LABEL`, `ROUTE_FAMILY`, `ROUTE_FAMILY_DETAIL`, `ROUTE_FAMILY_CONFIDENCE`, and `ROUTE_FAMILY_SOURCE`.
 - `02-Data-Staging/scripts/01_roadway_inventory/hpms_enrichment.py`
   - Corrected FHWA HPMS `RouteSigning` interpretation so only codes `2`, `3`, `4`, and `5` upgrade signed family.
 - `02-Data-Staging/scripts/01_roadway_inventory/route_type_gdot.py`

@@ -88,36 +88,36 @@
   "by_district": [
     {
       "DISTRICT": 3.0,
-      "segment_count": 40515,
-      "covered_segments": 40488,
+      "segment_count": 40514,
+      "covered_segments": 40487,
       "uncovered_segments": 27,
-      "segment_miles": 22647.213395955605,
-      "covered_miles": 22629.35085833235,
+      "segment_miles": 22238.665547981516,
+      "covered_miles": 22220.80301035826,
       "uncovered_miles": 17.862537623255164,
-      "covered_pct_segments": 99.9333580155498,
-      "covered_pct_miles": 99.92112699557798
+      "covered_pct_segments": 99.9333563706373,
+      "covered_pct_miles": 99.91967801492083
     },
     {
       "DISTRICT": 2.0,
-      "segment_count": 25757,
-      "covered_segments": 25740,
+      "segment_count": 25758,
+      "covered_segments": 25741,
       "uncovered_segments": 17,
-      "segment_miles": 20038.28050689166,
-      "covered_miles": 20008.7770948346,
+      "segment_miles": 20241.74792667266,
+      "covered_miles": 20212.244514615602,
       "uncovered_miles": 29.503412057058664,
-      "covered_pct_segments": 99.9339985246729,
-      "covered_pct_miles": 99.85276475171155
+      "covered_pct_segments": 99.93400108704093,
+      "covered_pct_miles": 99.85424474129441
     },
     {
       "DISTRICT": 1.0,
-      "segment_count": 45272,
-      "covered_segments": 45261,
+      "segment_count": 45271,
+      "covered_segments": 45260,
       "uncovered_segments": 11,
-      "segment_miles": 19410.728613112286,
-      "covered_miles": 19315.1937866536,
+      "segment_miles": 19272.52839865176,
+      "covered_miles": 19176.993572193074,
       "uncovered_miles": 95.5348264586869,
-      "covered_pct_segments": 99.97570242092243,
-      "covered_pct_miles": 99.50782462439791
+      "covered_pct_segments": 99.97570188420843,
+      "covered_pct_miles": 99.50429531360624
     },
     {
       "DISTRICT": 6.0,
@@ -132,36 +132,36 @@
     },
     {
       "DISTRICT": 7.0,
-      "segment_count": 48758,
-      "covered_segments": 48749,
+      "segment_count": 48759,
+      "covered_segments": 48750,
       "uncovered_segments": 9,
-      "segment_miles": 13830.077669366301,
-      "covered_miles": 13823.972875793517,
+      "segment_miles": 13883.549234856226,
+      "covered_miles": 13877.444441283442,
       "uncovered_miles": 6.104793572783302,
-      "covered_pct_segments": 99.98154149062718,
-      "covered_pct_miles": 99.95585857347493
+      "covered_pct_segments": 99.98154186919338,
+      "covered_pct_miles": 99.95602858124019
     },
     {
       "DISTRICT": 5.0,
-      "segment_count": 29193,
-      "covered_segments": 29185,
+      "segment_count": 29192,
+      "covered_segments": 29184,
       "uncovered_segments": 8,
-      "segment_miles": 20445.62022451923,
-      "covered_miles": 20434.446878850475,
+      "segment_miles": 20355.3221373302,
+      "covered_miles": 20344.148791661446,
       "uncovered_miles": 11.173345668754235,
-      "covered_pct_segments": 99.9725961703148,
-      "covered_pct_miles": 99.94535090867356
+      "covered_pct_segments": 99.9725952315703,
+      "covered_pct_miles": 99.94510848026195
     },
     {
       "DISTRICT": 4.0,
-      "segment_count": 25402,
-      "covered_segments": 25399,
+      "segment_count": 25403,
+      "covered_segments": 25400,
       "uncovered_segments": 3,
-      "segment_miles": 21908.60662258227,
-      "covered_miles": 21907.02639368391,
+      "segment_miles": 22288.713786934986,
+      "covered_miles": 22287.133558036625,
       "uncovered_miles": 1.580228898358684,
-      "covered_pct_segments": 99.98818990630659,
-      "covered_pct_miles": 99.99278717754359
+      "covered_pct_segments": 99.988190371216,
+      "covered_pct_miles": 99.99291018354192
     }
   ],
   "by_aadt_2024_source": [
@@ -289,14 +289,14 @@
       "COUNTY_CODE": "121",
       "COUNTY_NAME": "Fulton",
       "DISTRICT": 7.0,
-      "segment_count": 14985,
-      "covered_segments": 14979,
+      "segment_count": 14986,
+      "covered_segments": 14980,
       "uncovered_segments": 6,
-      "segment_miles": 4487.2643448438175,
-      "covered_miles": 4486.059440739727,
+      "segment_miles": 4540.735910333742,
+      "covered_miles": 4539.531006229651,
       "uncovered_miles": 1.2049041040909743,
-      "covered_pct_segments": 99.95995995995996,
-      "covered_pct_miles": 99.9731483591896
+      "covered_pct_segments": 99.95996263178967,
+      "covered_pct_miles": 99.9734645632804
     },
     {
       "COUNTY_CODE": "113",
@@ -484,14 +484,14 @@
       "COUNTY_CODE": "175",
       "COUNTY_NAME": "Laurens",
       "DISTRICT": 2.0,
-      "segment_count": 1840,
-      "covered_segments": 1838,
+      "segment_count": 1841,
+      "covered_segments": 1839,
       "uncovered_segments": 2,
-      "segment_miles": 1682.9416498765809,
-      "covered_miles": 1682.6865610197456,
+      "segment_miles": 1848.4710769954424,
+      "covered_miles": 1848.2159881386071,
       "uncovered_miles": 0.25508885683528065,
-      "covered_pct_segments": 99.89130434782608,
-      "covered_pct_miles": 99.98484267967021
+      "covered_pct_segments": 99.89136338946226,
+      "covered_pct_miles": 99.98620000821165
     },
     {
       "COUNTY_CODE": "033",

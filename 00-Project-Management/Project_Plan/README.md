@@ -71,7 +71,7 @@ All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This
 
 ### Assessment And Options
 
-- [Roadway Supplement Options](../Assessment_and_Options/roadway-supplement-options.md)
+- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
 
 ---
 
@@ -208,5 +208,5 @@ The pipeline is designed to grow. Post-RAPTOR phases (Transit, Bike/Ped, EJ, Cli
 
 ### Assessment And Options
 
-- [Roadway Gap-Fill Exploratory Analysis](../Assessment_and_Options/roadway-gap-fill-options.md)
-  - Compares GDOT live services, TIGER/Line, OpenStreetMap, USGS NTD, and Georgia GIS clearinghouse options for filling local-road gaps in the staged GPKG while preserving source provenance.
+- [Roadway Gap-Fill and Supplement Strategy](../Assessment_and_Options/roadway-gap-fill-consolidated.md)
+  - Consolidates the GDOT gap analysis, supplemental source comparison, and recommended provenance-preserving merge strategy.

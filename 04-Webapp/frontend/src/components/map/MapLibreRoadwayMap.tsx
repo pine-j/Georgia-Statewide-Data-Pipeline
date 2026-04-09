@@ -49,6 +49,23 @@ function displayDistrictLabel(label: string): string {
   return separatorIndex >= 0 ? label.slice(separatorIndex + 3) : label;
 }
 
+function formatCountyMeta(county: string, countyAll?: string | null): string {
+  if (!countyAll) {
+    return `${county} County`;
+  }
+
+  const normalizedCountyAll = countyAll.trim();
+  if (!normalizedCountyAll) {
+    return `${county} County`;
+  }
+
+  if (normalizedCountyAll.toLowerCase() === county.trim().toLowerCase()) {
+    return `${county} County`;
+  }
+
+  return `Counties: ${normalizedCountyAll}`;
+}
+
 function buildLoadingPopupHtml(summary: {
   roadName: string;
   county: string;
@@ -88,6 +105,8 @@ function buildErrorPopupHtml(summary: {
 }
 
 function buildRoadwayPopupHtml(detail: RoadwayDetail): string {
+  const countyAll =
+    typeof detail.attributes.county_all === "string" ? detail.attributes.county_all : null;
   const rows = Object.entries(detail.attributes)
     .map(
       ([key, value]) => `
@@ -104,7 +123,7 @@ function buildRoadwayPopupHtml(detail: RoadwayDetail): string {
       <div class="roadway-popup__header">
         <div class="roadway-popup__title">${escapeHtml(detail.road_name)}</div>
         <div class="roadway-popup__meta">
-          ${escapeHtml(detail.county)} County | ${escapeHtml(displayDistrictLabel(detail.district_label))}
+          ${escapeHtml(formatCountyMeta(detail.county, countyAll))} | ${escapeHtml(displayDistrictLabel(detail.district_label))}
         </div>
       </div>
       <div class="roadway-popup__body">

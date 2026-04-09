@@ -93,6 +93,8 @@ CURRENT_TRAFFIC_LAYER = "TRAFFIC_DataYear2024"
 MILEPOINT_PRECISION = 4
 MILEPOINT_TOLERANCE = 1e-4
 AADT_2024_GAP_FILL_MAX_INTERPOLATION_MILES = 5.0
+COUNTY_ALL_MIN_SHARE = 0.01
+COUNTY_ALL_DELIMITER = ", "
 
 ROUTE_MERGE_KEYS = ["ROUTE_ID", "BeginPoint", "EndPoint"]
 
@@ -194,6 +196,63 @@ def get_or_empty_series(df: pd.DataFrame, column_name: str) -> pd.Series:
     if column_name in df.columns:
         return df[column_name]
     return pd.Series([None] * len(df), index=df.index, dtype="object")
+
+
+def _clean_optional_text(value) -> str | None:
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip()
+    if text in {"", "nan", "None"}:
+        return None
+    return text
+
+
+def _dedupe_county_names(names: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in names:
+        clean_name = _clean_optional_text(name)
+        if clean_name is None:
+            continue
+        name_key = clean_name.casefold()
+        if name_key in seen:
+            continue
+        seen.add(name_key)
+        ordered.append(clean_name)
+    return ordered
+
+
+def _merge_county_all_value(county_all_value, county_name) -> str | None:
+    county_names = _dedupe_county_names(
+        (_clean_optional_text(part) for part in str(county_all_value).split(","))
+        if _clean_optional_text(county_all_value) is not None
+        else []
+    )
+    clean_county_name = _clean_optional_text(county_name)
+    if clean_county_name is not None:
+        county_names = [
+            clean_county_name,
+            *[
+                name
+                for name in county_names
+                if name.casefold() != clean_county_name.casefold()
+            ],
+        ]
+
+    if not county_names:
+        return None
+    return COUNTY_ALL_DELIMITER.join(county_names)
+
+
+def _move_column_after(df: pd.DataFrame, column_name: str, after_column: str) -> pd.DataFrame:
+    if column_name not in df.columns or after_column not in df.columns:
+        return df
+
+    ordered_columns = [column for column in df.columns if column != column_name]
+    insert_at = ordered_columns.index(after_column) + 1
+    ordered_columns.insert(insert_at, column_name)
+    return df.loc[:, ordered_columns]
 
 
 def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -1654,6 +1713,63 @@ def _normalized_county_code_series(series: pd.Series) -> pd.Series:
     )
 
 
+def _overlay_segment_county_lengths(
+    segments: gpd.GeoDataFrame,
+    counties: gpd.GeoDataFrame,
+) -> pd.DataFrame:
+    if segments.empty:
+        return pd.DataFrame(
+            columns=[
+                "segment_index",
+                "COUNTYFP",
+                "NAME",
+                "GDOT_DISTRICT",
+                "intersection_length_m",
+            ]
+        )
+
+    overlay = gpd.overlay(
+        segments,
+        counties,
+        how="intersection",
+        keep_geom_type=False,
+    )
+    if overlay.empty:
+        return pd.DataFrame(
+            columns=[
+                "segment_index",
+                "COUNTYFP",
+                "NAME",
+                "GDOT_DISTRICT",
+                "intersection_length_m",
+            ]
+        )
+
+    overlay["intersection_length_m"] = overlay.geometry.length
+    overlay = overlay[overlay["intersection_length_m"] > MILEPOINT_TOLERANCE].copy()
+    if overlay.empty:
+        return pd.DataFrame(
+            columns=[
+                "segment_index",
+                "COUNTYFP",
+                "NAME",
+                "GDOT_DISTRICT",
+                "intersection_length_m",
+            ]
+        )
+
+    group_columns = [
+        column
+        for column in ["segment_index", "COUNTYFP", "NAME", "GDOT_DISTRICT"]
+        if column in overlay.columns
+    ]
+    return (
+        overlay.groupby(group_columns, dropna=False)["intersection_length_m"]
+        .sum()
+        .reset_index()
+    )
+
+
 def _assign_majority_county_district(
     filled: gpd.GeoDataFrame,
     counties: gpd.GeoDataFrame,
@@ -1675,25 +1791,12 @@ def _assign_majority_county_district(
     if statewide_segments.empty:
         return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
 
-    overlay = gpd.overlay(
-        statewide_segments,
-        counties,
-        how="intersection",
-        keep_geom_type=False,
-    )
-    if overlay.empty:
-        return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
-
-    overlay["intersection_length_m"] = overlay.geometry.length
-    overlay = overlay[overlay["intersection_length_m"] > MILEPOINT_TOLERANCE].copy()
-    if overlay.empty:
+    all_county_lengths = _overlay_segment_county_lengths(statewide_segments, counties)
+    if all_county_lengths.empty:
         return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
 
     county_lengths = (
-        overlay.groupby(["segment_index", "COUNTYFP", "NAME"], dropna=False)["intersection_length_m"]
-        .sum()
-        .reset_index()
-        .sort_values(
+        all_county_lengths.sort_values(
             by=["segment_index", "intersection_length_m", "COUNTYFP"],
             ascending=[True, False, True],
             na_position="last",
@@ -1701,7 +1804,7 @@ def _assign_majority_county_district(
         .drop_duplicates(subset=["segment_index"])
     )
     district_lengths = (
-        overlay.groupby(["segment_index", "GDOT_DISTRICT"], dropna=False)["intersection_length_m"]
+        all_county_lengths.groupby(["segment_index", "GDOT_DISTRICT"], dropna=False)["intersection_length_m"]
         .sum()
         .reset_index()
         .sort_values(
@@ -1906,6 +2009,83 @@ def backfill_county_district_from_geometry(
         nearest_match_count,
     )
     return filled
+
+
+def add_county_all_from_geometry(
+    gdf: gpd.GeoDataFrame,
+    county_boundaries: gpd.GeoDataFrame | None,
+) -> gpd.GeoDataFrame:
+    """Populate county_all using county overlap shares plus the staged major county."""
+
+    if county_boundaries is None or county_boundaries.empty:
+        logger.warning("Skipping county_all because no county boundaries are available")
+        return gdf
+
+    try:
+        counties = _prepare_county_boundaries_for_spatial_use(county_boundaries, gdf.crs)
+    except ValueError as exc:
+        logger.warning("Skipping county_all because %s", exc)
+        return gdf
+
+    updated = gdf.copy()
+    segments = updated.loc[:, ["geometry", "segment_length_m"]].copy()
+    segments = gpd.GeoDataFrame(segments, geometry="geometry", crs=updated.crs)
+    segments["segment_index"] = segments.index
+    segments["segment_length_m"] = pd.to_numeric(segments["segment_length_m"], errors="coerce")
+    segments = segments[
+        segments.geometry.notna()
+        & ~segments.geometry.is_empty
+        & segments["segment_length_m"].gt(MILEPOINT_TOLERANCE)
+    ].copy()
+
+    county_all = pd.Series(pd.NA, index=updated.index, dtype="object")
+    county_lengths = _overlay_segment_county_lengths(segments, counties)
+    if not county_lengths.empty:
+        county_lengths = county_lengths.merge(
+            segments[["segment_index", "segment_length_m"]],
+            on="segment_index",
+            how="left",
+        )
+        county_lengths["NAME"] = county_lengths["NAME"].map(_clean_optional_text)
+        county_lengths = county_lengths[county_lengths["NAME"].notna()].copy()
+        county_lengths["county_share"] = (
+            county_lengths["intersection_length_m"] / county_lengths["segment_length_m"]
+        )
+        county_lengths = county_lengths[
+            county_lengths["county_share"] >= COUNTY_ALL_MIN_SHARE
+        ].copy()
+        if not county_lengths.empty:
+            county_lengths = county_lengths.sort_values(
+                by=["segment_index", "county_share", "COUNTYFP"],
+                ascending=[True, False, True],
+                na_position="last",
+            )
+            county_all_values = county_lengths.groupby("segment_index")["NAME"].agg(
+                lambda values: COUNTY_ALL_DELIMITER.join(_dedupe_county_names(list(values)))
+            )
+            county_all.loc[county_all_values.index] = county_all_values
+
+    county_name_series = get_or_empty_series(updated, "COUNTY_NAME").map(_clean_optional_text)
+    merged_county_all = [
+        _merge_county_all_value(county_all_value, county_name)
+        for county_all_value, county_name in zip(
+            county_all.tolist(),
+            county_name_series.tolist(),
+        )
+    ]
+    updated["county_all"] = pd.Series(merged_county_all, index=updated.index, dtype="object")
+
+    non_null_count = int(updated["county_all"].notna().sum())
+    multi_county_count = int(
+        updated["county_all"].fillna("").str.contains(COUNTY_ALL_DELIMITER, regex=False).sum()
+    )
+    logger.info(
+        "Computed county_all for %d segments; %d multi-county rows retained at %.1f%% overlap threshold",
+        non_null_count,
+        multi_county_count,
+        COUNTY_ALL_MIN_SHARE * 100.0,
+    )
+    return updated
 
 
 def fetch_official_district_boundaries() -> gpd.GeoDataFrame:
@@ -2170,6 +2350,8 @@ def main() -> None:
     segmented = apply_nearest_neighbor_aadt(segmented)
     segmented = apply_future_aadt_fill_chain(segmented)
     segmented = add_decoded_label_columns(segmented)
+    segmented = add_county_all_from_geometry(segmented, county_boundaries_for_backfill)
+    segmented = _move_column_after(segmented, "county_all", "COUNTY_NAME")
 
     logger.info("Final segment count: %d", len(segmented))
     logger.info("Current AADT official coverage: %d segments", segmented["AADT_2024_OFFICIAL"].notna().sum())

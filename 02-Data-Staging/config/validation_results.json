@@ -490,6 +490,31 @@
     "detail": "245,863/245,863 authoritative matches; lookup_missing=0, mismatches=0"
   },
   {
+    "name": "county_all column",
+    "status": "PASS",
+    "detail": "Column present"
+  },
+  {
+    "name": "county_all token structure",
+    "status": "PASS",
+    "detail": "No blank, duplicate, or unknown county tokens"
+  },
+  {
+    "name": "county_all contains COUNTY_NAME",
+    "status": "PASS",
+    "detail": "COUNTY_NAME is present in county_all for all populated rows"
+  },
+  {
+    "name": "county_all leading COUNTY_NAME alignment",
+    "status": "PASS",
+    "detail": "county_all starts with COUNTY_NAME for all populated rows"
+  },
+  {
+    "name": "county_all single-name alignment",
+    "status": "PASS",
+    "detail": "Single-name county_all rows align with COUNTY_NAME"
+  },
+  {
     "name": "CRS verification",
     "status": "PASS",
     "detail": "CRS = EPSG:32617"
@@ -498,6 +523,11 @@
     "name": "Geometry validity",
     "status": "PASS",
     "detail": "0 invalid, 0 empty out of 245,863"
+  },
+  {
+    "name": "GeoPackage county_all column",
+    "status": "PASS",
+    "detail": "county_all present"
   },
   {
     "name": "GeoPackage signed-route slot columns",
@@ -560,6 +590,11 @@
     "detail": "SECONDARY_SIGNED_ROUTE_FAMILY and TERTIARY_SIGNED_ROUTE_FAMILY present"
   },
   {
+    "name": "Database county_all column",
+    "status": "PASS",
+    "detail": "county_all present"
+  },
+  {
     "name": "DB/CSV row count match",
     "status": "PASS",
     "detail": "DB=245,863, CSV=245,863"
@@ -582,6 +617,6 @@
   {
     "name": "RoadwayData district load",
     "status": "PASS",
-    "detail": "2,991 rows; districts=[np.int64(7)]"
+    "detail": "2,992 rows; districts=[np.int64(7)]"
   }
 ]
