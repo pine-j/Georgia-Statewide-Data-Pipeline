@@ -12,14 +12,55 @@ Current closeout position:
 - the GDOT-based staged network is accepted as the initial statewide planning baseline
 - supplementation remains a separate validation/improvement track rather than part of the closed Phase 1 build
 
-Official Georgia sources used for the roadway base layer, route-family crosswalk, and enrichment:
+### Data Sources (ordered by pipeline importance)
 
-- GDOT Road & Traffic Data: `https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx`
-- GDOT Understanding Route IDs: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Guides/UnderstandingRouteIDs_Doc.pdf`
-- GDOT Road Inventory Data Dictionary: `https://www.dot.ga.gov/DriveSmart/Data/Documents/Road_Inventory_Data_Dictionary.pdf`
-- GDOT live LRS metadata: `https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Network_LRSN/MapServer/exts/LRSServer/layers`
-- GDOT GPAS SpeedZone OnSystem: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
-- FHWA HPMS Georgia 2024: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
+| # | Source | URL | What it provides |
+|---|--------|-----|------------------|
+| 1 | **GDOT Road Inventory 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Base route geometry (`GA_2024_Routes`), route IDs, milepoints, and 15 attribute event layers (COUNTY_ID, F_SYSTEM, NHS, FACILITY_TYPE, THROUGH_LANES, LANE_WIDTH, MEDIAN_TYPE/WIDTH, SHOULDER_TYPE/WIDTH, OWNERSHIP, STRAHNET, SURFACE_TYPE, URBAN_ID). This is the foundation — every segment starts here. |
+| 2 | **GDOT Traffic Data 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Current AADT, future AADT, truck AADT, VMT, K-factor, D-factor, traffic class, and count station numbers. The traffic intervals define the segment boundaries — routes are sliced at traffic milepoint breaks to assign per-segment traffic values. |
+| 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Gap-fill for AADT, future AADT, and roadway attributes where GDOT values are missing. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
+| 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags, matched by route ID and milepoint overlap. |
+| 5 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
+| 6 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
+
+### How the sources come together
+
+```text
+GDOT Road Inventory GDB -> Base geometry + route attributes (206,994 routes)
+         |
+         v
+GDOT Traffic GDB -> Segment at traffic intervals -> assign AADT, VMT, factors (46,029 traffic records)
+         |
+         v
+GDOT GPAS SpeedZone -> Enrich: posted speed limits (matched by route + milepoint)
+         |
+         v
+FHWA HPMS 2024 -> Gap-fill: AADT, attributes, pavement condition; set initial signed-route family from routesigning
+         |
+         v
+GDOT GPAS Reference -> Verify: signed-route family (Interstate / US / State); override HPMS where GPAS matches
+         |
+         v
+GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
+         |
+         v
+Route Classification -> Derive: ROUTE_FAMILY, ROUTE_TYPE_GDOT, HWY_NAME from ROUTE_ID structure + verification
+         |
+         v
+Decoded Labels -> Add: human-readable _LABEL columns for all coded fields
+         |
+         v
+Final staged output -> roadway_inventory.db + base_network.gpkg
+```
+
+Note: GPAS has final authority for signed-route classification because it is the direct GDOT source. HPMS signed-route data is a federal derivative that originates from GDOT reporting.
+
+### Reference documentation
+
+- [GDOT Understanding Route IDs](https://www.dot.ga.gov/DriveSmart/Data/Documents/Guides/UnderstandingRouteIDs_Doc.pdf) — explains the 16-character ROUTE_ID structure
+- [GDOT Road Inventory Data Dictionary](https://www.dot.ga.gov/DriveSmart/Data/Documents/Road_Inventory_Data_Dictionary.pdf) — field definitions for the source GDB
+- [GDOT live LRS metadata](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Network_LRSN/MapServer/exts/LRSServer/layers) — linear referencing service metadata
+- [Staged data dictionary](./data_dictionary.csv) — column-by-column reference for the final staged output
 
 ---
 
@@ -37,7 +78,7 @@ Together, these provide:
 - joined roadway-inventory attributes from GDOT
 - current traffic fields from GDOT 2024 traffic data
 - future AADT projection (2044) from GDOT and HPMS sources
-- official signed-route verification from HPMS route signing codes
+- official signed-route verification from GDOT GPAS reference layers, seeded by HPMS `routesigning` coverage
 - posted speed limits from GDOT SpeedZone OnSystem permits
 - county and district boundary layers
 
@@ -124,9 +165,9 @@ Historical route-segment traffic files are available at:
 
 These files are retained for future use but are no longer loaded into the pipeline output. Removing historic traffic breakpoints reduced the segment count from 622,255 to 244,904, producing a cleaner network that segments only on current-year traffic intervals.
 
-### Signed-route verification (via HPMS, not GPAS)
+### Signed-route verification (HPMS first, GPAS authoritative)
 
-The earlier approach used GDOT GPAS reference layers (Interstates: 22 features, US Routes: 674 features) but only covered 6,590 segments (2.7%). Signed-route verification now uses HPMS `routesigning` codes, which cover 223,136 segments (91%). The GPAS signed-route reference files have been removed.
+HPMS `routesigning` codes provide the broad-coverage first pass for signed-route family classification, covering 223,136 segments (91%). GPAS reference layers remain the final authoritative verifier where they match, even though their direct coverage is narrower at 6,590 segments (2.7%).
 
 ### RNHP enrichment snapshots
 
@@ -154,7 +195,8 @@ HPMS contributes:
 - AADT gap-fill for segments not covered by the GDOT traffic GDB
 - Pavement condition: IRI, PSR, rutting, cracking percent
 - Safety attributes: access control, terrain type
-- Signed-route verification via `routesigning` codes (1=Interstate, 2=US Route, 3=State Route) — 223,136 segments (91%)
+- Initial signed-route classification via `routesigning` codes (223,136 segments, 91%)
+- GPAS reference layers provide the final authoritative signed-route family where they match
 - Roadway attribute gap-fill for 13 GDOT fields where GDOT values are null (never overwrites existing values)
 
 ### Official boundary source
@@ -387,24 +429,15 @@ The pipeline therefore does not intentionally discard the selected original netw
 ### 8. Apply official signed-route verification
 
 After segmentation, the ETL initializes signed-route verification fields from
-the baseline `ROUTE_ID` crosswalk. Signed-route flags are then verified using
-HPMS `routesigning` codes inside step 8b (HPMS enrichment), which replaced the
-earlier GDOT GPAS layer approach.
-
-HPMS `routesigning` codes:
-
-- `1` = Interstate
-- `2` = US Route
-- `3` = State Route
-
-The HPMS-based verification covers `223,136` segments (91% of the network),
-compared to the earlier GPAS verification which only covered `6,590` segments
-(2.7%). Segments not matched by HPMS retain the baseline `route_id_crosswalk`
-values.
+the baseline `ROUTE_ID` crosswalk. HPMS enrichment then applies a
+broad-coverage first pass using FHWA `routesigning` codes, and GPAS reference
+layers run after that as the final authoritative verifier for signed-route
+family.
 
 Current verification results:
 
-- `223,136` segments verified by `hpms_2024` (high confidence)
+- `223,136` segments seeded by `hpms_2024` (broad coverage)
+- `6,590` segments overridden or confirmed by `gdot_*` GPAS references (authoritative where matched)
 - remaining segments retain baseline `route_id_crosswalk`
 
 Current signed-route verification fields:
@@ -424,8 +457,9 @@ Current signed-route verification fields:
 
 ### 8a. Apply RNHP enrichment (speed zones)
 
-After signed-route verification, the ETL enriches state highway segments with
-posted speed limit data from the GDOT GPAS SpeedZone OnSystem layer.
+The ETL enriches state highway segments with posted speed limit data from the
+GDOT GPAS SpeedZone OnSystem layer before the HPMS and GPAS signed-route
+passes.
 
 Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
 
@@ -485,9 +519,9 @@ Future AADT 2044 fill chain uses the same multi-source pattern:
 
 Current Future AADT 2044 coverage: 52,236 / 244,904 segments (21.3%).
 
-HPMS signed-route verification:
+HPMS signed-route enrichment:
 
-The `SIGNED_INTERSTATE_FLAG`, `SIGNED_US_ROUTE_FLAG`, and `SIGNED_STATE_ROUTE_FLAG` fields are derived from HPMS `routesigning` codes (1=Interstate, 2=US Route, 3=State Route). This covers 223,136 segments (91% of the network).
+The `SIGNED_INTERSTATE_FLAG`, `SIGNED_US_ROUTE_FLAG`, and `SIGNED_STATE_ROUTE_FLAG` fields are seeded from HPMS `routesigning` codes to provide broad statewide coverage. GPAS reference verification runs after HPMS and has final authority where GPAS matches.
 
 HPMS gap-fills 13 GDOT roadway attributes where GDOT values are null (never overwrites existing values):
 
@@ -614,7 +648,7 @@ with:
 - `FUTURE_AADT_2044_FILL_METHOD` — method used for non-official values
 - `future_aadt_covered` — boolean: has any FUTURE_AADT_2044
 
-### From HPMS signed-route verification
+### From signed-route enrichment and verification
 
 - `SIGNED_INTERSTATE_FLAG`
 - `SIGNED_US_ROUTE_FLAG`
@@ -927,18 +961,18 @@ Reference note:
 
 ### 6. Signed-route verification (operational)
 
-Official verification is operational for Interstates, US Routes, and State Routes using HPMS `routesigning` codes derived from the FHWA HPMS 2024 dataset:
+Official verification is operational for Interstates, US Routes, and State Routes using a two-stage process:
 
-- `routesigning = 1` — Interstate
-- `routesigning = 2` — US Route
-- `routesigning = 3` — State Route
+- HPMS `routesigning` provides the broad-coverage first pass
+- GDOT GPAS reference layers provide the final authoritative family where GPAS matches
 
 Current verification coverage:
 
-- `223,136` segments verified by `hpms_2024` (high confidence, 91% of network)
+- `223,136` segments seeded by `hpms_2024` (91% of network)
+- `6,590` segments overridden or confirmed by `gdot_*` GPAS references (2.7% of network, authoritative where matched)
 - remaining segments retain `route_id_crosswalk` baseline
 
-This replaced the earlier GDOT GPAS layer approach (GPAS/7 Interstates, GPAS/6 US Routes), which only covered 6,590 segments (2.7%).
+GPAS has final authority because it is the direct GDOT live reference source. HPMS signed-route values are a federal derivative of GDOT reporting and are used first for coverage, not final precedence.
 
 ### 7. Speed limit enrichment (operational)
 
@@ -954,7 +988,7 @@ Current enrichment coverage:
 
 Detailed design note:
 
-- Signed-route verification in the current build is driven by HPMS `routesigning` enrichment rather than the older GDOT live-layer verification design.
+- Signed-route verification in the current build uses HPMS `routesigning` as the initial pass, followed by authoritative GPAS verification where GDOT live reference layers have coverage.
 
 ---
 
@@ -1026,8 +1060,9 @@ Current direct ETL inputs:
 
 - `GDOT_Road_Inventory/Road_Inventory_2024.gdb` — base route geometry and roadway attributes
 - `GDOT_Traffic/TRAFFIC_Data_2024.gdb` — current AADT and traffic measures
-- `GDOT_GPAS/rnhp_enrichment/` — speed zone enrichment geojson (signed-route references no longer used)
-- `FHWA_HPMS/2024/hpms_ga_2024_tabular.json` — HPMS enrichment, signed-route verification, and GDOT attribute gap-fill
+- `GDOT_GPAS/rnhp_enrichment/` — speed zone enrichment geojson
+- GDOT GPAS live reference layers (MapServer layers 5, 6, 7) — final authoritative signed-route verification
+- `FHWA_HPMS/2024/hpms_ga_2024_tabular.json` — HPMS enrichment, initial signed-route classification, and GDOT attribute gap-fill
 - GDOT boundary service (live download at runtime)
 
 Archived but retained for future use:
@@ -1070,13 +1105,14 @@ The staged network now retains the main roadway-inventory event layers used for 
 
 That may reflect sparse source publication, segmentation differences, or both. If those attributes become important for downstream scoring, they should be evaluated as a dedicated refinement task.
 
-### 4. Signed-route verification now covers all three families via HPMS
+### 4. Signed-route verification now uses HPMS coverage with GPAS final authority
 
 Signed-route verification for Interstates, US Routes, and State Routes is now
-operational via HPMS `routesigning` codes. This replaced the earlier GDOT GPAS
-layer approach, which only covered 6,590 segments (2.7%). HPMS verification
-covers 223,136 segments (91% of the network). Segments not matched by HPMS
-retain the baseline `route_id_crosswalk` values.
+operational through HPMS `routesigning` coverage plus authoritative GPAS
+reference verification. HPMS covers 223,136 segments (91% of the network) and
+GPAS directly verifies 6,590 segments (2.7%) with final precedence where it
+matches. Segments not matched by either source retain the baseline
+`route_id_crosswalk` values.
 
 ### 4a. RNHP data source exploration results
 
@@ -1113,7 +1149,7 @@ Closed with Phase 1:
 - 2024 AADT coverage at 99.97% (`244,819` segments) via five-tier fill chain
 - Future AADT 2044 coverage at 21.3% (`52,236` segments) via same fill chain
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
-- official signed-route verification for Interstates, US Routes, and State Routes via HPMS (223,136 segments, 91%)
+- signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
 - HPMS gap-fill for 13 GDOT roadway attributes
 - posted speed limit enrichment from GDOT SpeedZone OnSystem
 - staged SQLite database, GeoPackage, and table CSV outputs

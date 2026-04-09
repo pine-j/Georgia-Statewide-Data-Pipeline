@@ -102,11 +102,18 @@ def _hpms_signed_family(signing_value) -> str | None:
 def _fallback_signed_family(
     route_family: str,
     signed_route_family_primary: str,
+    signed_route_verify_source: str,
     hpms_route_signing,
 ) -> str | None:
+    verify_source = _clean_text(signed_route_verify_source).lower()
     hpms_family = _hpms_signed_family(hpms_route_signing)
-    if hpms_family in {"Interstate", "U.S. Route", "State Route"}:
-        return hpms_family
+
+    if verify_source.startswith("gdot_"):
+        if signed_route_family_primary in {"Interstate", "U.S. Route", "State Route"}:
+            return signed_route_family_primary
+    elif verify_source in {"hpms_2024", "route_id_crosswalk"}:
+        if hpms_family in {"Interstate", "U.S. Route", "State Route"}:
+            return hpms_family
 
     if signed_route_family_primary in {"Interstate", "U.S. Route", "State Route"}:
         return signed_route_family_primary
@@ -290,6 +297,10 @@ def apply_gdot_route_type_classification(df: pd.DataFrame) -> pd.DataFrame:
         "SIGNED_ROUTE_FAMILY_PRIMARY",
         pd.Series(index=df.index, dtype="object"),
     ).fillna("").astype(str)
+    working["SIGNED_ROUTE_VERIFY_SOURCE"] = df.get(
+        "SIGNED_ROUTE_VERIFY_SOURCE",
+        pd.Series(index=df.index, dtype="object"),
+    ).fillna("").astype(str)
     working["HPMS_ROUTE_SIGNING"] = df.get("HPMS_ROUTE_SIGNING", pd.Series(index=df.index, dtype="object"))
     working["HPMS_ROUTE_NUMBER"] = df.get("HPMS_ROUTE_NUMBER", pd.Series(index=df.index, dtype="object"))
     working["HPMS_ROUTE_NAME"] = df.get("HPMS_ROUTE_NAME", pd.Series(index=df.index, dtype="object")).fillna("").astype(str)
@@ -304,6 +315,7 @@ def apply_gdot_route_type_classification(df: pd.DataFrame) -> pd.DataFrame:
         signed_family = _fallback_signed_family(
             route_family=row.ROUTE_FAMILY,
             signed_route_family_primary=row.SIGNED_ROUTE_FAMILY_PRIMARY,
+            signed_route_verify_source=row.SIGNED_ROUTE_VERIFY_SOURCE,
             hpms_route_signing=row.HPMS_ROUTE_SIGNING,
         )
         local_family = _fallback_local_family(

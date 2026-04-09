@@ -2340,10 +2340,15 @@ def main() -> None:
         segmented,
         county_boundaries_for_backfill,
     )
-    segmented = apply_signed_route_verification(segmented)
-    # Signed-route verification runs before HPMS, but HPMS routesigning is
-    # allowed to override earlier GPAS/GDOT-family results when the sources disagree.
     segmented = apply_hpms_enrichment(segmented)
+    # Signed-route verification precedence:
+    # 1. HPMS enrichment runs first — broad coverage, gap-fills AADT and
+    #    attributes, sets initial signed-route classification from federal
+    #    routesigning codes.
+    # 2. GPAS verification runs second — GDOT's own live reference layers have
+    #    final authority for signed-route family. GPAS can upgrade or confirm
+    #    but never downgrade a higher-priority family.
+    segmented = apply_signed_route_verification(segmented)
     segmented = sync_derived_alias_fields(segmented)
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
