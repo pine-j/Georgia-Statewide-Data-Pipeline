@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 GDOT_BASE_URL = "https://myfiles.dot.ga.gov/OTD/RoadAndTrafficData/"
 
 ROADWAY_GDB_URL = GDOT_BASE_URL + "Road_Inventory_Geodatabase.zip"
-TRAFFIC_GDB_URL = GDOT_BASE_URL + "TRAFFIC_Data_Geodatabase.zip"
+TRAFFIC_GDB_URL = GDOT_BASE_URL + "Traffic_GeoDatabase.zip"
 DATA_DICT_URL = (
     "https://www.dot.ga.gov/DriveSmart/Data/Documents/"
     "Road_Inventory_Data_Dictionary.pdf"
