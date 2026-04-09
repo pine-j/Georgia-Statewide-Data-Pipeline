@@ -1,25 +1,25 @@
 {
-  "segment_count": 244904,
-  "speed_limit_coverage": 20343,
-  "school_zone_segments": 494,
+  "segment_count": 245863,
+  "speed_limit_coverage": 21295,
+  "school_zone_segments": 523,
   "speed_limit_distribution": {
-    "0": 1537,
+    "0": 1539,
     "15": 6,
     "20": 7,
-    "25": 1470,
-    "30": 802,
-    "35": 2148,
-    "40": 685,
-    "45": 2685,
-    "50": 528,
-    "55": 8838,
+    "25": 1551,
+    "30": 811,
+    "35": 2178,
+    "40": 733,
+    "45": 2928,
+    "50": 536,
+    "55": 9369,
     "60": 54,
     "65": 947,
     "70": 636
   },
   "speed_limit_source_counts": {
-    "None": 224561,
-    "gdot_speed_zone_on_system": 14766,
-    "hpms_2024": 5577
+    "None": 224568,
+    "gdot_speed_zone_on_system": 15710,
+    "hpms_2024": 5585
   }
 }

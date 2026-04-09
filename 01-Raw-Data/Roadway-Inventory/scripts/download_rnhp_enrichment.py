@@ -7,6 +7,15 @@ Outputs are written under:
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+STAGING_SCRIPT_DIR = (
+    PROJECT_ROOT / "02-Data-Staging" / "scripts" / "01_roadway_inventory"
+)
+if str(STAGING_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(STAGING_SCRIPT_DIR))
 
 from rnhp_enrichment import LAYER_CONFIG, fetch_enrichment_layer
 

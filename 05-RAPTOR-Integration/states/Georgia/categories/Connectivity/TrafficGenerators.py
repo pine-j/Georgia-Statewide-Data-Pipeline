@@ -28,7 +28,7 @@ class TrafficGenerators:
     GENERATORS_DENSITY = "Density_of_Major_Traffic_Generators"
 
     # Relative to project root
-    _CLEAN_DIR = Path("02-Data-Staging") / "cleaned" / "connectivity"
+    _CLEAN_DIR = Path("02-Data-Staging") / "tables" / "connectivity"
 
     # Dataset name -> (filename stem, geometry type hint)
     _POINT_LAYERS = {
@@ -61,7 +61,7 @@ class TrafficGenerators:
     # ------------------------------------------------------------------
 
     def load_data(self) -> None:
-        """Read cleaned GeoJSON files for all generator types."""
+        """Read normalized GeoJSON files for all generator types."""
         print("Loading traffic generator data ...")
         for attr in (
             "airports", "seaports", "universities", "military_bases",

@@ -1,24 +1,19 @@
 """Normalize Georgia roadway inventory data onto official GDOT route geometry.
 
 This workflow uses the official `GA_2024_Routes` geometry as the base network,
-then attaches current and historic GDOT traffic fields by route ID and
-milepoint intervals.
+then attaches current GDOT traffic fields by route ID and milepoint intervals.
 
-Historical route-segment files contribute actual AADT series only. Any legacy
-`Future_AADT` / `FUTURE_AAD` values in older files are ignored. The only
-canonical future projection kept in the normalized network is `FUTURE_AADT`
-from the current 2024 GDOT traffic record.
+The only canonical future projection kept in the normalized network is
+`FUTURE_AADT` from the current 2024 GDOT traffic record.
 
 Data sources:
 1. `Road_Inventory_2024.gdb` layer `GA_2024_Routes`
    Official full roadway geometry.
 2. `TRAFFIC_Data_2024.gdb` layer `TRAFFIC_DataYear2024`
    Current traffic segmentation with AADT, truck counts, VMT, and factors.
-3. `Traffic_Historical.zip`
-   Historic segment traffic tables for 2010-2020.
 
 Output:
-- `02-Data-Staging/cleaned/roadway_inventory_cleaned.csv`
+- `02-Data-Staging/tables/roadway_inventory_cleaned.csv`
 - `02-Data-Staging/spatial/base_network.gpkg` layers
   `roadway_segments`, `county_boundaries`, `district_boundaries`
 """
@@ -27,21 +22,23 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import sqlite3
 from pathlib import Path
-from zipfile import ZipFile
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely import force_2d, line_merge
+from shapely import force_2d, line_merge, make_valid
 from shapely.geometry import LineString
 from shapely.ops import substring
 
 from hpms_enrichment import apply_hpms_enrichment, write_hpms_enrichment_summary
 from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
 from route_family import classify_route_families
+from route_verification import (
+    apply_signed_route_verification,
+    write_signed_route_verification_summary,
+)
 from route_type_gdot import apply_gdot_route_type_classification
 
 logger = logging.getLogger(__name__)
@@ -50,7 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
-CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"
+TABLES_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables"
 
 TARGET_CRS = "EPSG:32617"
 
@@ -89,16 +86,9 @@ ROADWAY_DOMAIN_LABELS = load_json_mapping(CONFIG_DIR / "roadway_domain_labels.js
 
 TRAFFIC_GDB_NAME = "TRAFFIC_Data_2024.gdb"
 ROAD_INV_GDB_NAME = "Road_Inventory_2024.gdb"
-TRAFFIC_HISTORICAL_ZIP = "Traffic_Historical.zip"
 
 ROUTE_LAYER = "GA_2024_Routes"
 CURRENT_TRAFFIC_LAYER = "TRAFFIC_DataYear2024"
-HISTORICAL_YEARS = list(range(2010, 2021))
-HISTORICAL_UNAVAILABLE_YEARS = {
-    2021: "GDOT release is station-based Excel only; no route-segment network geometry found.",
-    2022: "GDOT release is station-based Excel only; no route-segment network geometry found.",
-    2023: "GDOT release is station-based Excel only; no route-segment network geometry found.",
-}
 
 MILEPOINT_PRECISION = 4
 MILEPOINT_TOLERANCE = 1e-4
@@ -137,24 +127,6 @@ CURRENT_TRAFFIC_FIELDS = {
     "TruckVMT": "TRUCK_VMT_2024",
     "Traffic_Class": "TRAFFIC_CLASS_2024",
     "TC_NUMBER": "TC_NUMBER",
-}
-
-HISTORICAL_COLUMN_CANDIDATES = {
-    "ROUTE_ID": ["ROUTE_ID", "Route_ID", "RCLINK"],
-    "FROM_MILEPOINT": ["FROM_MILEPOINT", "Begin_Poin", "BEG_MP", "FROM_MILEP"],
-    "TO_MILEPOINT": ["TO_MILEPOINT", "End_Point", "END_MP", "TO_MILEPOI"],
-    "COUNTY_ID": ["COUNTY_ID", "COUNTY_COD", "COUNTY_CODE", "COUNTY_COD", "COUNTY"],
-    "AADT": ["AADT_VN", "AADT"],
-    "COMBO_UNIT_AADT": ["AADT_COMBI", "AADT_Combi"],
-    "SINGLE_UNIT_AADT": ["AADT_SINGL", "AADT_Singl"],
-    "K_FACTOR": ["K_FACTOR", "K_FACTOR_V"],
-    "D_FACTOR": ["D_FACTOR", "D_Factor", "DIR_FACTOR", "Dir_Factor"],
-    "PCT_PEAK_C": ["PCT_PEAK_C"],
-    "PCT_PEAK_S": ["PCT_PEAK_S"],
-    "URBAN_CODE": ["URBAN_CODE"],
-    "F_SYSTEM": ["F_SYSTEM", "F_SYSTEM_V"],
-    "FACILITY_TYPE": ["FACILITY_TYPE", "FACILITY_T"],
-    "NHS": ["NHS", "NHS_VN"],
 }
 
 
@@ -420,291 +392,6 @@ def load_current_traffic(traffic_gdb_path: Path) -> pd.DataFrame:
     return df.sort_values(["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT"]).reset_index(drop=True)
 
 
-def build_route_id_lookup(routes: gpd.GeoDataFrame) -> tuple[set[str], dict[str, list[str]]]:
-    route_ids = sorted(routes["ROUTE_ID"].astype(str).unique())
-    route_id_set = set(route_ids)
-    route_base_lookup: dict[str, list[str]] = {}
-    for route_id in route_ids:
-        route_base_lookup.setdefault(route_id[:-3], []).append(route_id)
-    return route_id_set, route_base_lookup
-
-
-def normalize_current_style_route_base(route_id: str) -> str | None:
-    raw = str(route_id).strip()
-    if not raw:
-        return None
-
-    core = raw[:-3] if len(raw) > 3 and raw[-3:].isalpha() else raw
-    if len(core) < 8:
-        return None
-
-    prefix = core[:5]
-    stem = core[5:]
-    if len(stem) < 3:
-        return None
-
-    suffix = stem[-2:]
-    route_part = stem[:-2]
-    if not route_part or len(route_part) > 6:
-        return None
-    if not suffix.isalnum():
-        return None
-    if not route_part.isalnum():
-        return None
-
-    return f"{prefix}{route_part.zfill(6)}{suffix}"
-
-
-def legacy_historic_route_base_candidates(route_id: str) -> list[str]:
-    raw = str(route_id).strip()
-    if len(raw) != 10:
-        return []
-
-    county = raw[:3]
-    system_code = raw[3]
-    route_number = raw[4:8]
-    suffix = raw[8:10]
-
-    candidates = [f"1{county}{system_code}00{route_number}{suffix}"]
-    if system_code == "1":
-        candidates.append(f"1000{system_code}00{route_number}{suffix}")
-
-    deduped: list[str] = []
-    for candidate in candidates:
-        if candidate not in deduped:
-            deduped.append(candidate)
-    return deduped
-
-
-def resolve_historical_route_candidates(
-    raw_route_id: str,
-    route_id_set: set[str],
-    route_base_lookup: dict[str, list[str]],
-) -> list[str]:
-    raw = str(raw_route_id).strip()
-    if not raw or raw.lower() == "nan":
-        return []
-    if raw in route_id_set:
-        return [raw]
-
-    bases: list[str] = []
-
-    current_style_base = normalize_current_style_route_base(raw)
-    if current_style_base is not None:
-        bases.append(current_style_base)
-        if current_style_base[1:4] != "000" and current_style_base[4:5] == "1":
-            bases.append(f"{current_style_base[0]}000{current_style_base[4:]}")
-
-    bases.extend(legacy_historic_route_base_candidates(raw))
-
-    resolved: list[str] = []
-    seen_bases: set[str] = set()
-    for base in bases:
-        if base in seen_bases:
-            continue
-        seen_bases.add(base)
-        resolved.extend(route_base_lookup.get(base, []))
-
-    deduped: list[str] = []
-    for route_id in resolved:
-        if route_id not in deduped:
-            deduped.append(route_id)
-    return deduped
-
-
-def read_historical_source_from_zip(traffic_zip: Path, year: int, temp_dir: Path) -> pd.DataFrame:
-    with ZipFile(traffic_zip) as zf:
-        target_shp = next(
-            (name for name in zf.namelist() if name.endswith(f"Traffic_Data_GA_{year}.shp")),
-            None,
-        )
-        if target_shp is not None:
-            stem = target_shp[:-4]
-            for suffix in [".shp", ".shx", ".dbf", ".prj", ".cpg", ".sbn", ".sbx"]:
-                candidate = f"{stem}{suffix}"
-                if candidate in zf.namelist():
-                    zf.extract(candidate, temp_dir)
-            return gpd.read_file(temp_dir / target_shp, engine="pyogrio", ignore_geometry=True)
-
-        if year == 2020:
-            folder_prefix = "2010_thr_2023_Published_Traffic/2020_Published_Traffic/"
-            members = [name for name in zf.namelist() if name.startswith(folder_prefix)]
-            if not members:
-                raise FileNotFoundError(f"No route-segment geodatabase found for {year} in {traffic_zip.name}")
-
-            for member in members:
-                zf.extract(member, temp_dir)
-
-            extracted_dir = temp_dir / "2010_thr_2023_Published_Traffic" / "2020_Published_Traffic"
-            temp_gdb = temp_dir / "Traffic_Data_GA_2020.gdb"
-            if temp_gdb.exists():
-                shutil.rmtree(temp_gdb)
-            shutil.copytree(extracted_dir, temp_gdb)
-            return gpd.read_file(temp_gdb, layer="Traffic_Data_2020", engine="pyogrio", ignore_geometry=True)
-
-    raise FileNotFoundError(f"No route-segment traffic source found for {year} in {traffic_zip.name}")
-
-
-def first_matching_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    for candidate in candidates:
-        if candidate in df.columns:
-            return candidate
-    return None
-
-
-def normalize_historical_columns(df: pd.DataFrame, year: int) -> pd.DataFrame:
-    df = clean_column_names(df)
-
-    rename_map: dict[str, str] = {}
-    for target_col, candidates in HISTORICAL_COLUMN_CANDIDATES.items():
-        match = first_matching_column(df, candidates)
-        if match is not None:
-            rename_map[match] = target_col
-
-    df = df.rename(columns=rename_map)
-
-    required = {"ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT", "AADT"}
-    missing = required - set(df.columns)
-    if missing:
-        raise KeyError(f"Historic {year} is missing required columns: {sorted(missing)}")
-
-    keep = [
-        "ROUTE_ID",
-        "FROM_MILEPOINT",
-        "TO_MILEPOINT",
-        "COUNTY_ID",
-        "AADT",
-        "COMBO_UNIT_AADT",
-        "SINGLE_UNIT_AADT",
-        "K_FACTOR",
-        "D_FACTOR",
-        "PCT_PEAK_C",
-        "PCT_PEAK_S",
-        "URBAN_CODE",
-        "F_SYSTEM",
-        "FACILITY_TYPE",
-        "NHS",
-    ]
-    keep = [col for col in keep if col in df.columns]
-    df = df[keep].copy()
-
-    df["ROUTE_ID"] = df["ROUTE_ID"].astype(str).str.strip()
-    df["FROM_MILEPOINT"] = pd.to_numeric(df["FROM_MILEPOINT"], errors="coerce").apply(round_milepoint)
-    df["TO_MILEPOINT"] = pd.to_numeric(df["TO_MILEPOINT"], errors="coerce").apply(round_milepoint)
-
-    for col in [c for c in keep if c not in {"ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT"}]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df = df[df["TO_MILEPOINT"] > df["FROM_MILEPOINT"]].copy()
-
-    rename_yearly = {
-        "AADT": f"AADT_{year}",
-        "COMBO_UNIT_AADT": f"COMBO_UNIT_AADT_{year}",
-        "SINGLE_UNIT_AADT": f"SINGLE_UNIT_AADT_{year}",
-        "K_FACTOR": f"K_FACTOR_{year}",
-        "D_FACTOR": f"D_FACTOR_{year}",
-    }
-    df = df.rename(columns={k: v for k, v in rename_yearly.items() if k in df.columns})
-
-    combo_col = f"COMBO_UNIT_AADT_{year}"
-    single_col = f"SINGLE_UNIT_AADT_{year}"
-    if combo_col in df.columns or single_col in df.columns:
-        combo = df[combo_col] if combo_col in df.columns else pd.Series(0, index=df.index, dtype=float)
-        single = df[single_col] if single_col in df.columns else pd.Series(0, index=df.index, dtype=float)
-        df[f"TRUCK_AADT_{year}"] = combo.fillna(0) + single.fillna(0)
-        df[f"TRUCK_PCT_{year}"] = np.where(
-            df[f"AADT_{year}"] > 0,
-            (df[f"TRUCK_AADT_{year}"] / df[f"AADT_{year}"]) * 100.0,
-            np.nan,
-        )
-
-    return df
-
-
-def expand_historical_route_ids(
-    df: pd.DataFrame,
-    year: int,
-    route_id_set: set[str],
-    route_base_lookup: dict[str, list[str]],
-) -> pd.DataFrame:
-    route_map = {
-        route_id: resolve_historical_route_candidates(route_id, route_id_set, route_base_lookup)
-        for route_id in df["ROUTE_ID"].dropna().astype(str).unique()
-    }
-
-    expanded = df.copy()
-    expanded["SOURCE_ROUTE_ID"] = expanded["ROUTE_ID"].astype(str)
-    expanded["MATCHED_ROUTE_IDS"] = expanded["SOURCE_ROUTE_ID"].map(route_map)
-
-    unmatched_rows = int((~expanded["MATCHED_ROUTE_IDS"].map(bool)).sum())
-    multi_match_rows = int((expanded["MATCHED_ROUTE_IDS"].map(len) > 1).sum())
-    expanded = expanded[expanded["MATCHED_ROUTE_IDS"].map(bool)].copy()
-    expanded = expanded.explode("MATCHED_ROUTE_IDS").drop(columns=["ROUTE_ID"])
-    expanded = expanded.rename(columns={"MATCHED_ROUTE_IDS": "ROUTE_ID"})
-
-    matched_unique_ids = sum(bool(candidates) for candidates in route_map.values())
-    logger.info(
-        "Historic %s route matching: %d / %d source route IDs matched, %d unmatched rows, %d multi-match rows, %d expanded rows",
-        year,
-        matched_unique_ids,
-        len(route_map),
-        unmatched_rows,
-        multi_match_rows,
-        len(expanded),
-    )
-    return expanded.reset_index(drop=True)
-
-
-def load_historical_year(
-    traffic_zip: Path,
-    year: int,
-    temp_dir: Path,
-    route_id_set: set[str],
-    route_base_lookup: dict[str, list[str]],
-) -> pd.DataFrame:
-    df = read_historical_source_from_zip(traffic_zip, year, temp_dir)
-    df = normalize_historical_columns(df, year)
-    df = expand_historical_route_ids(df, year, route_id_set, route_base_lookup)
-    logger.info("Loaded historic %d traffic segments for %s after route matching", len(df), year)
-    return df.sort_values(["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT"]).reset_index(drop=True)
-
-
-def load_historical_traffic(
-    traffic_zip: Path,
-    route_id_set: set[str],
-    route_base_lookup: dict[str, list[str]],
-) -> dict[int, pd.DataFrame]:
-    historical: dict[int, pd.DataFrame] = {}
-    temp_root = PROJECT_ROOT / ".tmp" / "normalize_historical_traffic"
-    if temp_root.exists():
-        shutil.rmtree(temp_root)
-    temp_root.mkdir(parents=True, exist_ok=True)
-
-    try:
-        for year in HISTORICAL_YEARS:
-            year_temp_dir = temp_root / str(year)
-            if year_temp_dir.exists():
-                shutil.rmtree(year_temp_dir)
-            year_temp_dir.mkdir(parents=True, exist_ok=True)
-
-            try:
-                historical[year] = load_historical_year(
-                    traffic_zip,
-                    year,
-                    year_temp_dir,
-                    route_id_set,
-                    route_base_lookup,
-                )
-            except FileNotFoundError as exc:
-                logger.warning("Skipping historic year %s: %s", year, exc)
-            except KeyError as exc:
-                logger.warning("Skipping historic year %s due to schema issue: %s", year, exc)
-    finally:
-        if temp_root.exists():
-            shutil.rmtree(temp_root, ignore_errors=True)
-    return historical
-
-
 def build_interval_lookup(df: pd.DataFrame) -> dict[str, list[dict]]:
     lookup: dict[str, list[dict]] = {}
     for route_id, group in df.groupby("ROUTE_ID", sort=False):
@@ -777,18 +464,12 @@ def get_breakpoints(
     route_start: float,
     route_end: float,
     current_records: list[dict],
-    historical_records: dict[int, list[dict]],
 ) -> list[float]:
     points = {round_milepoint(route_start), round_milepoint(route_end)}
     for record in current_records:
         interval = clamp_interval(record["FROM_MILEPOINT"], record["TO_MILEPOINT"], route_start, route_end)
         if interval:
             points.update(interval)
-    for records in historical_records.values():
-        for record in records:
-            interval = clamp_interval(record["FROM_MILEPOINT"], record["TO_MILEPOINT"], route_start, route_end)
-            if interval:
-                points.update(interval)
     return sorted(points)
 
 
@@ -802,14 +483,57 @@ def find_covering_record(records: list[dict], start: float, end: float) -> dict 
     return None
 
 
-def prepare_route_geometry(geometry) -> LineString | None:
+def _extract_route_line_components(geometry) -> list[LineString]:
     if geometry is None or geometry.is_empty:
-        return None
+        return []
+
     flattened = force_2d(geometry)
     merged = line_merge(flattened)
+
     if merged.geom_type == "LineString":
-        return merged
-    return None
+        return [merged]
+    if merged.geom_type == "MultiLineString":
+        return [component for component in merged.geoms if component.length > 0]
+    if flattened.geom_type == "LineString":
+        return [flattened]
+    if flattened.geom_type == "MultiLineString":
+        return [component for component in flattened.geoms if component.length > 0]
+    return []
+
+
+def prepare_route_geometry_components(
+    geometry,
+    route_start: float,
+    route_end: float,
+) -> list[dict[str, LineString | float]]:
+    components = _extract_route_line_components(geometry)
+    if not components:
+        return []
+
+    route_span = route_end - route_start
+    total_length = sum(component.length for component in components)
+    if total_length <= MILEPOINT_TOLERANCE:
+        return []
+
+    prepared_components: list[dict[str, LineString | float]] = []
+    cumulative_length = 0.0
+    for component_index, component in enumerate(components):
+        component_start = route_start + (route_span * (cumulative_length / total_length))
+        cumulative_length += component.length
+        if component_index == len(components) - 1:
+            component_end = route_end
+        else:
+            component_end = route_start + (route_span * (cumulative_length / total_length))
+
+        prepared_components.append(
+            {
+                "geometry": component,
+                "route_start": round_milepoint(component_start),
+                "route_end": round_milepoint(component_end),
+            }
+        )
+
+    return prepared_components
 
 
 def slice_route_geometry(
@@ -847,7 +571,6 @@ def compute_truck_pct(aadt: float | None, truck_aadt: float | None) -> float | N
 def build_segment_row(
     route_row: pd.Series,
     current_record: dict | None,
-    historical_records_by_year: dict[int, list[dict]],
     segment_start: float,
     segment_end: float,
     geometry,
@@ -921,25 +644,6 @@ def build_segment_row(
         row["SINGLE_UNIT_AADT_2024"] = np.nan
         row["COMBO_UNIT_AADT_2024"] = np.nan
 
-    historical_years_available = 0
-    for year, records in historical_records_by_year.items():
-        record = find_covering_record(records, segment_start, segment_end)
-        value_col = f"AADT_{year}"
-        truck_col = f"TRUCK_AADT_{year}"
-        truck_pct_col = f"TRUCK_PCT_{year}"
-        row[value_col] = record.get(value_col) if record else np.nan
-        if truck_col in (record or {}):
-            row[truck_col] = record.get(truck_col)
-        elif truck_col not in row:
-            row[truck_col] = np.nan
-        if truck_pct_col in (record or {}):
-            row[truck_pct_col] = record.get(truck_pct_col)
-        elif truck_pct_col not in row:
-            row[truck_pct_col] = np.nan
-        if record and pd.notna(row[value_col]):
-            historical_years_available += 1
-
-    row["historical_aadt_years_available"] = historical_years_available
     row["COUNTY_CODE"] = (
         f"{int(row['COUNTY_ID']):03d}" if pd.notna(row.get("COUNTY_ID")) else row.get("COUNTY_CODE")
     )
@@ -949,7 +653,6 @@ def build_segment_row(
 def segment_routes(
     routes: gpd.GeoDataFrame,
     current_lookup: dict[str, list[dict]],
-    historical_lookup: dict[int, dict[str, list[dict]]],
 ) -> gpd.GeoDataFrame:
     output_rows: list[dict] = []
     split_failures = 0
@@ -963,45 +666,75 @@ def segment_routes(
         route_end = round_milepoint(route_row["TO_MILEPOINT"])
 
         current_records = current_lookup.get(route_id, [])
-        historical_records = {
-            year: lookup.get(route_id, [])
-            for year, lookup in historical_lookup.items()
-            if route_id in lookup
-        }
 
         if route_end - route_start <= MILEPOINT_TOLERANCE:
-            row = build_segment_row(route_row, None, historical_records, route_start, route_end, force_2d(route_row.geometry))
+            current_record = find_covering_record(current_records, route_start, route_end)
+            row = build_segment_row(route_row, current_record, route_start, route_end, force_2d(route_row.geometry))
             output_rows.append(row)
             continue
 
-        if not current_records and not historical_records:
-            row = build_segment_row(route_row, None, historical_records, route_start, route_end, force_2d(route_row.geometry))
+        if not current_records:
+            row = build_segment_row(route_row, None, route_start, route_end, force_2d(route_row.geometry))
             output_rows.append(row)
             continue
 
-        merged_geometry = prepare_route_geometry(route_row.geometry)
-        if merged_geometry is None:
+        prepared_components = prepare_route_geometry_components(
+            route_row.geometry,
+            route_start,
+            route_end,
+        )
+        if not prepared_components:
             split_failures += 1
-            row = build_segment_row(route_row, None, historical_records, route_start, route_end, force_2d(route_row.geometry))
-            output_rows.append(row)
-            continue
-
-        breakpoints = get_breakpoints(route_start, route_end, current_records, historical_records)
-        for segment_start, segment_end in zip(breakpoints, breakpoints[1:]):
-            if segment_end - segment_start <= MILEPOINT_TOLERANCE:
-                continue
-            piece = slice_route_geometry(
-                merged_geometry,
+            current_record = find_covering_record(current_records, route_start, route_end)
+            row = build_segment_row(
+                route_row,
+                current_record,
                 route_start,
                 route_end,
-                segment_start,
-                segment_end,
+                force_2d(route_row.geometry),
             )
-            if piece is None:
-                continue
-            current_record = find_covering_record(current_records, segment_start, segment_end)
-            row = build_segment_row(route_row, current_record, historical_records, segment_start, segment_end, piece)
             output_rows.append(row)
+            continue
+
+        breakpoints = get_breakpoints(route_start, route_end, current_records)
+        for component in prepared_components:
+            component_geometry = component["geometry"]
+            component_start = float(component["route_start"])
+            component_end = float(component["route_end"])
+            component_breakpoints = {
+                round_milepoint(point)
+                for point in breakpoints
+                if component_start - MILEPOINT_TOLERANCE <= point <= component_end + MILEPOINT_TOLERANCE
+            }
+            component_breakpoints.update(
+                {
+                    round_milepoint(component_start),
+                    round_milepoint(component_end),
+                }
+            )
+
+            ordered_breakpoints = sorted(component_breakpoints)
+            for segment_start, segment_end in zip(ordered_breakpoints, ordered_breakpoints[1:]):
+                if segment_end - segment_start <= MILEPOINT_TOLERANCE:
+                    continue
+                piece = slice_route_geometry(
+                    component_geometry,
+                    component_start,
+                    component_end,
+                    segment_start,
+                    segment_end,
+                )
+                if piece is None:
+                    continue
+                current_record = find_covering_record(current_records, segment_start, segment_end)
+                row = build_segment_row(
+                    route_row,
+                    current_record,
+                    segment_start,
+                    segment_end,
+                    piece,
+                )
+                output_rows.append(row)
 
     logger.info("Route segmentation complete with %d split failures", split_failures)
     return gpd.GeoDataFrame(output_rows, geometry="geometry", crs=routes.crs)
@@ -1458,15 +1191,14 @@ def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
                 "segment_length_mi",
             ].sum()
         ),
-        "historical_year_coverage": {
-            str(year): {
-                "segments": int(gdf[f"AADT_{year}"].notna().sum()),
-                "miles": float(gdf.loc[gdf[f"AADT_{year}"].notna(), "segment_length_mi"].sum()),
-            }
-            for year in HISTORICAL_YEARS
-            if f"AADT_{year}" in gdf.columns
-        },
-        "historical_unavailable_years": HISTORICAL_UNAVAILABLE_YEARS,
+        "future_aadt_2044_segments": int(gdf["FUTURE_AADT_2044"].notna().sum())
+        if "FUTURE_AADT_2044" in gdf.columns
+        else 0,
+        "future_aadt_2044_miles": float(
+            gdf.loc[gdf["FUTURE_AADT_2044"].notna(), "segment_length_mi"].sum()
+        )
+        if "FUTURE_AADT_2044" in gdf.columns
+        else 0.0,
     }
     output_path = CONFIG_DIR / "traffic_match_summary.json"
     output_path.write_text(json.dumps(summary, indent=2))
@@ -1638,9 +1370,9 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
 
     Outputs:
     - config/current_aadt_coverage_audit_summary.json
-    - cleaned/current_aadt_uncovered_segments.csv
-    - cleaned/current_aadt_uncovered_route_summary.csv
-    - cleaned/current_aadt_state_system_gap_fill_candidates.csv
+    - .tmp/roadway_inventory/current_aadt_audit/current_aadt_uncovered_segments.csv
+    - .tmp/roadway_inventory/current_aadt_audit/current_aadt_uncovered_route_summary.csv
+    - .tmp/roadway_inventory/current_aadt_audit/current_aadt_state_system_gap_fill_candidates.csv
     """
 
     audit = df.copy()
@@ -1831,9 +1563,11 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
     summary["state_system_gap_fill_candidates"] = gap_fill_summary
 
     summary_path = CONFIG_DIR / "current_aadt_coverage_audit_summary.json"
-    uncovered_segments_path = CLEANED_DIR / "current_aadt_uncovered_segments.csv"
-    uncovered_route_summary_path = CLEANED_DIR / "current_aadt_uncovered_route_summary.csv"
-    gap_fill_candidates_path = CLEANED_DIR / "current_aadt_state_system_gap_fill_candidates.csv"
+    audit_tmp_dir = PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
+    audit_tmp_dir.mkdir(parents=True, exist_ok=True)
+    uncovered_segments_path = audit_tmp_dir / "current_aadt_uncovered_segments.csv"
+    uncovered_route_summary_path = audit_tmp_dir / "current_aadt_uncovered_route_summary.csv"
+    gap_fill_candidates_path = audit_tmp_dir / "current_aadt_state_system_gap_fill_candidates.csv"
 
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     uncovered_segments_df.to_csv(uncovered_segments_path, index=False)
@@ -1872,16 +1606,169 @@ def load_county_boundaries_for_attribute_backfill(
         return None
 
 
+def _prepare_county_boundaries_for_spatial_use(
+    county_boundaries: gpd.GeoDataFrame,
+    target_crs,
+) -> gpd.GeoDataFrame:
+    county_cols = [
+        column
+        for column in ["COUNTYFP", "NAME", "GDOT_DISTRICT", "geometry"]
+        if column in county_boundaries.columns
+    ]
+    if "geometry" not in county_cols:
+        raise ValueError("County boundaries are missing geometry")
+
+    counties = county_boundaries[county_cols].copy()
+    if counties.crs is not None and target_crs is not None and counties.crs != target_crs:
+        counties = counties.to_crs(target_crs)
+
+    counties["geometry"] = counties.geometry.map(
+        lambda geometry: (
+            make_valid(geometry)
+            if geometry is not None and not geometry.is_empty and not geometry.is_valid
+            else geometry
+        )
+    )
+    counties = counties[counties.geometry.notna() & ~counties.geometry.is_empty].copy()
+
+    if "COUNTYFP" in counties.columns:
+        counties["COUNTYFP"] = counties["COUNTYFP"].astype(str).str.zfill(3)
+    if "NAME" in counties.columns:
+        counties["NAME"] = counties["NAME"].astype(str).str.strip()
+    if "GDOT_DISTRICT" in counties.columns:
+        counties["GDOT_DISTRICT"] = pd.to_numeric(
+            counties["GDOT_DISTRICT"],
+            errors="coerce",
+        ).astype("Int64")
+
+    return counties
+
+
+def _normalized_county_code_series(series: pd.Series) -> pd.Series:
+    return series.map(
+        lambda value: (
+            f"{int(float(value)):03d}"
+            if pd.notna(value) and str(value).strip() not in {"", "nan", "None"}
+            else None
+        )
+    )
+
+
+def _assign_majority_county_district(
+    filled: gpd.GeoDataFrame,
+    counties: gpd.GeoDataFrame,
+    statewide_mask: pd.Series,
+) -> tuple[gpd.GeoDataFrame, dict[str, int]]:
+    statewide_segments = filled.loc[statewide_mask, ["geometry"]].copy()
+    if statewide_segments.empty:
+        return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
+
+    statewide_segments = gpd.GeoDataFrame(
+        statewide_segments,
+        geometry="geometry",
+        crs=filled.crs,
+    )
+    statewide_segments["segment_index"] = statewide_segments.index
+    statewide_segments = statewide_segments[
+        statewide_segments.geometry.notna() & ~statewide_segments.geometry.is_empty
+    ].copy()
+    if statewide_segments.empty:
+        return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
+
+    overlay = gpd.overlay(
+        statewide_segments,
+        counties,
+        how="intersection",
+        keep_geom_type=False,
+    )
+    if overlay.empty:
+        return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
+
+    overlay["intersection_length_m"] = overlay.geometry.length
+    overlay = overlay[overlay["intersection_length_m"] > MILEPOINT_TOLERANCE].copy()
+    if overlay.empty:
+        return filled, {"segments": 0, "county_fills": 0, "district_fills": 0}
+
+    county_lengths = (
+        overlay.groupby(["segment_index", "COUNTYFP", "NAME"], dropna=False)["intersection_length_m"]
+        .sum()
+        .reset_index()
+        .sort_values(
+            by=["segment_index", "intersection_length_m", "COUNTYFP"],
+            ascending=[True, False, True],
+            na_position="last",
+        )
+        .drop_duplicates(subset=["segment_index"])
+    )
+    district_lengths = (
+        overlay.groupby(["segment_index", "GDOT_DISTRICT"], dropna=False)["intersection_length_m"]
+        .sum()
+        .reset_index()
+        .sort_values(
+            by=["segment_index", "intersection_length_m", "GDOT_DISTRICT"],
+            ascending=[True, False, True],
+            na_position="last",
+        )
+        .drop_duplicates(subset=["segment_index"])
+    )
+
+    majority_assignments = county_lengths.merge(
+        district_lengths[["segment_index", "GDOT_DISTRICT"]],
+        on="segment_index",
+        how="outer",
+        suffixes=("", "_district"),
+    )
+
+    county_fill_count = 0
+    district_fill_count = 0
+    for assignment in majority_assignments.itertuples(index=False):
+        segment_index = int(assignment.segment_index)
+        countyfp = getattr(assignment, "COUNTYFP", None)
+        county_name = getattr(assignment, "NAME", None)
+        district_value = getattr(assignment, "GDOT_DISTRICT", None)
+
+        if pd.notna(countyfp):
+            county_id_value = int(str(countyfp))
+            if pd.isna(filled.at[segment_index, "COUNTY_ID"]) or int(filled.at[segment_index, "COUNTY_ID"]) == 0:
+                filled.at[segment_index, "COUNTY_ID"] = county_id_value
+                county_fill_count += 1
+            existing_county_code = _normalized_county_code_series(
+                pd.Series([filled.at[segment_index, "COUNTY_CODE"]])
+            ).iloc[0]
+            if existing_county_code in {None, "000"}:
+                filled.at[segment_index, "COUNTY_CODE"] = str(countyfp).zfill(3)
+                county_fill_count += 1
+            if "COUNTY_NAME" in filled.columns and (
+                pd.isna(filled.at[segment_index, "COUNTY_NAME"])
+                or str(filled.at[segment_index, "COUNTY_NAME"]).strip() in {"", "nan", "None"}
+            ):
+                filled.at[segment_index, "COUNTY_NAME"] = county_name
+
+        if pd.notna(district_value):
+            district_int = int(district_value)
+            if pd.isna(filled.at[segment_index, "GDOT_District"]):
+                filled.at[segment_index, "GDOT_District"] = district_int
+                district_fill_count += 1
+            if pd.isna(filled.at[segment_index, "DISTRICT"]):
+                filled.at[segment_index, "DISTRICT"] = district_int
+                district_fill_count += 1
+
+    return filled, {
+        "segments": int(len(majority_assignments)),
+        "county_fills": county_fill_count,
+        "district_fills": district_fill_count,
+    }
+
+
 def backfill_county_district_from_geometry(
     gdf: gpd.GeoDataFrame,
     county_boundaries: gpd.GeoDataFrame | None,
 ) -> gpd.GeoDataFrame:
     """Spatially backfill missing county and district fields.
 
-    This primarily addresses statewide GDOT route IDs whose route structure
-    uses county code `000`, leaving `COUNTY_ID` / `COUNTY_CODE` / `DISTRICT`
-    null after non-spatial joins. The fill is performed from county polygons
-    using a representative point for each affected segment.
+    Statewide GDOT route IDs with county code `000` are assigned using the
+    county and district that cover the longest portion of the segment. Other
+    missing records fall back to a representative-point join.
     """
 
     if county_boundaries is None or county_boundaries.empty:
@@ -1899,38 +1786,53 @@ def backfill_county_district_from_geometry(
     if missing_count == 0:
         return filled
 
-    county_cols = [
-        column
-        for column in ["COUNTYFP", "NAME", "GDOT_DISTRICT", "geometry"]
-        if column in county_boundaries.columns
-    ]
-    if "geometry" not in county_cols:
-        logger.warning("Skipping county/district backfill because county boundaries have no geometry")
+    try:
+        counties = _prepare_county_boundaries_for_spatial_use(county_boundaries, filled.crs)
+    except ValueError as exc:
+        logger.warning("Skipping county/district backfill because %s", exc)
         return filled
 
-    counties = county_boundaries[county_cols].copy()
-    if counties.crs is not None and filled.crs is not None and counties.crs != filled.crs:
-        counties = counties.to_crs(filled.crs)
-    if "COUNTYFP" in counties.columns:
-        counties["COUNTYFP"] = counties["COUNTYFP"].astype(str).str.zfill(3)
-    if "GDOT_DISTRICT" in counties.columns:
-        counties["GDOT_DISTRICT"] = pd.to_numeric(
-            counties["GDOT_DISTRICT"],
-            errors="coerce",
-        ).astype("Int64")
+    county_codes = _normalized_county_code_series(
+        filled.get("COUNTY_CODE", pd.Series(index=filled.index, dtype="object"))
+    )
+    parsed_county_codes = (
+        filled.get("PARSED_COUNTY_CODE", pd.Series(index=filled.index, dtype="object"))
+        .astype(str)
+        .str.zfill(3)
+        .where(lambda series: series.ne("nan"), None)
+    )
+    statewide_mask = missing_mask & (
+        county_codes.eq("000") | parsed_county_codes.eq("000")
+    )
+    filled, majority_stats = _assign_majority_county_district(
+        filled,
+        counties,
+        statewide_mask,
+    )
 
-    points = filled.loc[missing_mask, ["geometry"]].copy()
+    remaining_missing_mask = (
+        filled.get("COUNTY_ID", pd.Series(index=filled.index, dtype="float64")).isna()
+        | filled.get("COUNTY_CODE", pd.Series(index=filled.index, dtype="object")).isna()
+        | filled.get("DISTRICT", pd.Series(index=filled.index, dtype="float64")).isna()
+        | filled.get("GDOT_District", pd.Series(index=filled.index, dtype="float64")).isna()
+    )
+    remaining_missing_mask &= ~statewide_mask
+
+    points = filled.loc[remaining_missing_mask, ["geometry"]].copy()
     points = gpd.GeoDataFrame(points, geometry="geometry", crs=filled.crs)
     points["segment_index"] = points.index
     points["geometry"] = points.geometry.representative_point()
 
-    joined = gpd.sjoin(
-        points,
-        counties,
-        how="left",
-        predicate="intersects",
-    )
-    joined = joined.sort_values(by=["segment_index"]).drop_duplicates(subset=["segment_index"])
+    if points.empty:
+        joined = gpd.GeoDataFrame({"segment_index": []}, geometry=[], crs=filled.crs)
+    else:
+        joined = gpd.sjoin(
+            points,
+            counties,
+            how="left",
+            predicate="intersects",
+        )
+        joined = joined.sort_values(by=["segment_index"]).drop_duplicates(subset=["segment_index"])
 
     matched_segment_ids = joined.loc[joined.get("COUNTYFP").notna(), "segment_index"] if "COUNTYFP" in joined.columns else pd.Series(dtype="int64")
     unmatched_points = points[~points["segment_index"].isin(matched_segment_ids)].copy()
@@ -1995,11 +1897,12 @@ def backfill_county_district_from_geometry(
             backfilled_count += 1
 
     logger.info(
-        "Spatial county/district backfill matched %d of %d affected segments; county fills=%d, district fills=%d, nearest fallback matches=%d",
+        "Spatial county/district backfill matched %d of %d affected segments; statewide majority matches=%d, county fills=%d, district fills=%d, nearest fallback matches=%d",
         backfilled_count,
         missing_count,
-        county_fill_count,
-        district_fill_count,
+        majority_stats["segments"],
+        county_fill_count + majority_stats["county_fills"],
+        district_fill_count + majority_stats["district_fills"],
         nearest_match_count,
     )
     return filled
@@ -2100,11 +2003,78 @@ def fetch_official_county_boundaries(district_boundaries: gpd.GeoDataFrame | Non
     return gdf
 
 
+def assert_decoded_county_lookup_matches_boundaries(
+    gdf: gpd.GeoDataFrame,
+    county_boundaries: gpd.GeoDataFrame,
+) -> None:
+    boundary_lookup = {
+        str(row.COUNTYFP).zfill(3): str(row.NAME).strip()
+        for row in county_boundaries.itertuples(index=False)
+        if pd.notna(getattr(row, "COUNTYFP", None)) and pd.notna(getattr(row, "NAME", None))
+    }
+    if len(COUNTY_NAME_LOOKUP) != 159:
+        raise AssertionError(
+            f"county_codes.json must contain 159 Georgia counties; found {len(COUNTY_NAME_LOOKUP)}"
+        )
+    if len(boundary_lookup) != 159:
+        raise AssertionError(
+            f"county_boundaries must contain 159 Georgia counties; found {len(boundary_lookup)}"
+        )
+
+    mismatches = sorted(
+        (
+            county_code,
+            COUNTY_NAME_LOOKUP.get(county_code),
+            boundary_lookup.get(county_code),
+        )
+        for county_code in sorted(COUNTY_NAME_LOOKUP)
+        if COUNTY_NAME_LOOKUP.get(county_code) != boundary_lookup.get(county_code)
+    )
+    if mismatches:
+        sample = ", ".join(
+            f"{county_code}:{lookup_name}->{boundary_name}"
+            for county_code, lookup_name, boundary_name in mismatches[:10]
+        )
+        raise AssertionError(
+            "county_codes.json does not match the staged county boundary layer: "
+            f"{sample}"
+        )
+
+    if {"COUNTY_CODE", "COUNTY_NAME"}.issubset(gdf.columns):
+        decoded = gdf[["COUNTY_CODE", "COUNTY_NAME"]].copy()
+        decoded["COUNTY_CODE"] = _normalized_county_code_series(decoded["COUNTY_CODE"])
+        decoded["COUNTY_NAME"] = decoded["COUNTY_NAME"].where(
+            decoded["COUNTY_NAME"].notna(),
+            None,
+        )
+        decoded["COUNTY_NAME"] = decoded["COUNTY_NAME"].map(
+            lambda value: value.strip() if isinstance(value, str) else value
+        )
+        decoded = decoded[
+            decoded["COUNTY_CODE"].notna()
+            & decoded["COUNTY_NAME"].notna()
+            & decoded["COUNTY_CODE"].ne("000")
+        ].drop_duplicates()
+
+        decoded_mismatches = decoded[
+            decoded["COUNTY_CODE"].map(boundary_lookup).ne(decoded["COUNTY_NAME"])
+        ]
+        if not decoded_mismatches.empty:
+            sample = ", ".join(
+                f"{row.COUNTY_CODE}:{row.COUNTY_NAME}->{boundary_lookup.get(row.COUNTY_CODE)}"
+                for row in decoded_mismatches.head(10).itertuples(index=False)
+            )
+            raise AssertionError(
+                "Decoded county labels do not match the staged county boundary layer: "
+                f"{sample}"
+            )
+
+
 def write_supporting_boundary_layers(
     gpkg_path: Path,
     fallback_county_boundaries: gpd.GeoDataFrame | None = None,
     fallback_district_boundaries: gpd.GeoDataFrame | None = None,
-) -> None:
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """Append official GDOT boundary layers to the staged GeoPackage."""
     try:
         district_boundaries = fetch_official_district_boundaries()
@@ -2136,6 +2106,7 @@ def write_supporting_boundary_layers(
         mode="a",
     )
     logger.info("Appended district_boundaries layer to %s", gpkg_path)
+    return county_boundaries, district_boundaries
 
 
 def main() -> None:
@@ -2143,11 +2114,9 @@ def main() -> None:
 
     road_inv_gdb = find_path(RAW_DIR, ROAD_INV_GDB_NAME)
     traffic_gdb = find_path(RAW_DIR, TRAFFIC_GDB_NAME)
-    historical_zip = find_path(RAW_DIR, TRAFFIC_HISTORICAL_ZIP)
 
     routes = load_route_geometry(road_inv_gdb)
     routes = enrich_routes_with_static_attributes(routes, road_inv_gdb)
-    route_id_set, route_base_lookup = build_route_id_lookup(routes)
 
     current_traffic = load_current_traffic(traffic_gdb)
 
@@ -2155,9 +2124,7 @@ def main() -> None:
     routes = build_unique_id(routes)
 
     current_lookup = build_interval_lookup(current_traffic)
-    historical_lookup: dict[int, dict[str, list[dict]]] = {}
-
-    segmented = segment_routes(routes, current_lookup, historical_lookup)
+    segmented = segment_routes(routes, current_lookup)
     segmented = build_unique_id(segmented)
 
     if segmented.crs is not None:
@@ -2174,6 +2141,7 @@ def main() -> None:
         segmented,
         county_boundaries_for_backfill,
     )
+    segmented = apply_signed_route_verification(segmented)
     segmented = apply_hpms_enrichment(segmented)
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
@@ -2189,20 +2157,10 @@ def main() -> None:
     if "FUTURE_AADT_2044" in segmented.columns:
         logger.info("Future AADT 2044 coverage: %d segments", segmented["FUTURE_AADT_2044"].notna().sum())
 
-    historic_cols_to_drop = [
-        c for c in segmented.columns
-        if (c.startswith("AADT_20") and c != "AADT_2024" and not c.startswith("AADT_2024"))
-        or c.startswith("TRUCK_AADT_20")
-        or c.startswith("TRUCK_PCT_20")
-    ]
-    if historic_cols_to_drop:
-        segmented = segmented.drop(columns=historic_cols_to_drop)
-        logger.info("Dropped %d historic AADT columns: %s", len(historic_cols_to_drop), ", ".join(sorted(historic_cols_to_drop)))
-
-    CLEANED_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+    TABLES_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
     segmented.drop(columns=["geometry"], errors="ignore").to_csv(csv_path, index=False)
-    logger.info("Wrote cleaned CSV: %s (%d rows)", csv_path, len(segmented))
+    logger.info("Wrote staged roadway table CSV: %s (%d rows)", csv_path, len(segmented))
 
     segmented["geometry"] = segmented["geometry"].apply(lambda geom: force_2d(geom) if geom is not None else geom)
 
@@ -2213,16 +2171,18 @@ def main() -> None:
         gpkg_path.unlink()
     segmented.to_file(gpkg_path, layer="roadway_segments", driver="GPKG", engine="pyogrio")
     logger.info("Wrote GeoPackage: %s", gpkg_path)
-    write_supporting_boundary_layers(
+    staged_county_boundaries, _ = write_supporting_boundary_layers(
         gpkg_path,
         fallback_county_boundaries=fallback_county_boundaries,
         fallback_district_boundaries=fallback_district_boundaries,
     )
+    assert_decoded_county_lookup_matches_boundaries(segmented, staged_county_boundaries)
 
     write_match_summary(segmented)
     write_current_aadt_coverage_audit(segmented)
     write_enrichment_summary(segmented)
     write_hpms_enrichment_summary(segmented)
+    write_signed_route_verification_summary(segmented)
     logger.info("Normalization complete.")
 
 

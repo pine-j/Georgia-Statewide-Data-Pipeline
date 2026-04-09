@@ -1,6 +1,6 @@
-"""Create a GeoPackage from cleaned connectivity datasets.
+"""Create a GeoPackage from normalized connectivity datasets.
 
-Reads cleaned GeoJSON from 02-Data-Staging/cleaned/connectivity/ and writes
+Reads normalized GeoJSON from 02-Data-Staging/tables/connectivity/ and writes
 all layers into 02-Data-Staging/spatial/connectivity.gpkg in EPSG:32617.
 """
 
@@ -19,12 +19,12 @@ log = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "connectivity"
+CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables" / "connectivity"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 GPKG_PATH = SPATIAL_DIR / "connectivity.gpkg"
 TARGET_CRS = "EPSG:32617"
 
-# Layer mapping: cleaned file stem -> GeoPackage layer name
+# Layer mapping: normalized file stem -> GeoPackage layer name
 LAYER_MAP = {
     "priority_routes": "priority_routes",
     "nevi_corridors": "nevi_corridors",

@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DB_PATH = PROJECT_ROOT / "03-Processed-Data" / "demographics" / "socioeconomic.db"
 GPKG_PATH = PROJECT_ROOT / "03-Processed-Data" / "demographics" / "demographics.gpkg"
-CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "demographics"
+CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables" / "demographics"
 
 TARGET_CRS = "EPSG:32617"
 METERS_PER_MILE = 1_609.34
@@ -59,8 +59,9 @@ class SocioEconomic:
     EMPLOYMENT_DENSITY_2050 = "Employment_Density_2050"
     SOCIOECONOMY_SCORE = "Socio_Economic_Needs_Score"
 
-    def __init__(self, year: int = 2024):
+    def __init__(self, year: int = 2024, allow_statewide_growth_fallback: bool = False):
         self.year = year
+        self.allow_statewide_growth_fallback = allow_statewide_growth_fallback
 
         self.block_groups: gpd.GeoDataFrame | None = None
         self.lodes_wac: pd.DataFrame | None = None
@@ -79,7 +80,7 @@ class SocioEconomic:
 
     def load_data(self) -> None:
         """Load block-group geometry, LODES employment, and OPB projections."""
-        # Block groups with ACS attributes (from GeoPackage or cleaned GPKG)
+        # Block groups with ACS attributes (from GeoPackage or normalized GPKG)
         if GPKG_PATH.exists():
             self.block_groups = gpd.read_file(GPKG_PATH, layer="block_groups")
             self.block_groups = self.block_groups.to_crs(TARGET_CRS)
@@ -89,7 +90,7 @@ class SocioEconomic:
             if acs_gpkg.exists():
                 self.block_groups = gpd.read_file(acs_gpkg)
                 self.block_groups = self.block_groups.to_crs(TARGET_CRS)
-                logger.info("Loaded %d block groups from cleaned GPKG", len(self.block_groups))
+                logger.info("Loaded %d block groups from normalized GPKG", len(self.block_groups))
             else:
                 raise FileNotFoundError(
                     f"No block group geometry found. Expected {GPKG_PATH} or {acs_gpkg}."
@@ -265,14 +266,19 @@ class SocioEconomic:
 
         # --- 2050 Projections ---
         pop_growth = self._get_segment_growth_factors(intersections)
+        growth_factors = intersections["COUNTY_FIPS"].map(pop_growth)
+        missing_growth = int(growth_factors.isna().sum())
+        if missing_growth:
+            logger.warning(
+                "Population growth factor missing for %d intersection rows; using default factor 1.15",
+                missing_growth,
+            )
+            growth_factors = growth_factors.fillna(1.15)
         emp_growth_factor = 1.10  # Default BLS/DOL-style factor for Georgia
 
         agg_2050 = (
             intersections.assign(
-                weighted_pop_2050=lambda x: (
-                    x["weighted_pop"]
-                    * x["COUNTY_FIPS"].map(pop_growth).fillna(1.15)
-                ),
+                weighted_pop_2050=intersections["weighted_pop"] * growth_factors,
                 weighted_emp_2050=lambda x: x["weighted_emp"] * emp_growth_factor,
             )
             .groupby("unique_id")
@@ -316,22 +322,56 @@ class SocioEconomic:
         Uses OPB projections if available, otherwise returns a default factor.
         """
         default_factor = 1.15  # ~15% growth 2020-2050 statewide average
+        counties = pd.Index(intersections["COUNTY_FIPS"].dropna().unique(), dtype="object")
 
         if self.opb_projections is None or "pop_growth_factor" not in self.opb_projections.columns:
-            logger.info("Using default population growth factor: %.2f", default_factor)
-            counties = intersections["COUNTY_FIPS"].unique()
+            logger.warning("OPB county growth factors unavailable; using default factor %.2f", default_factor)
             return pd.Series(default_factor, index=counties)
 
-        # Try to map OPB county names to FIPS codes
         opb = self.opb_projections
-        if "COUNTY_FIPS" in opb.columns:
-            return opb.set_index("COUNTY_FIPS")["pop_growth_factor"]
+        if "COUNTY_FIPS" not in opb.columns:
+            if self.allow_statewide_growth_fallback:
+                avg_growth = float(opb["pop_growth_factor"].mean())
+                logger.warning(
+                    "OPB county FIPS mapping missing; using statewide average %.3f because allow_statewide_growth_fallback=True",
+                    avg_growth,
+                )
+                return pd.Series(avg_growth, index=counties)
 
-        # Fallback: use statewide average from OPB
-        avg_growth = opb["pop_growth_factor"].mean()
-        logger.info("Using OPB statewide average growth factor: %.3f", avg_growth)
-        counties = intersections["COUNTY_FIPS"].unique()
-        return pd.Series(avg_growth, index=counties)
+            logger.warning(
+                "OPB county FIPS mapping missing and statewide average fallback is disabled; using default factor %.2f",
+                default_factor,
+            )
+            return pd.Series(default_factor, index=counties)
+
+        growth = (
+            opb.dropna(subset=["COUNTY_FIPS"])
+            .drop_duplicates(subset=["COUNTY_FIPS"])
+            .set_index("COUNTY_FIPS")["pop_growth_factor"]
+        )
+        missing_counties = sorted(set(counties) - set(growth.index))
+        if missing_counties:
+            if self.allow_statewide_growth_fallback:
+                avg_growth = float(opb["pop_growth_factor"].mean())
+                logger.warning(
+                    "OPB county growth factors missing %d counties; using statewide average %.3f for missing counties because allow_statewide_growth_fallback=True",
+                    len(missing_counties),
+                    avg_growth,
+                )
+                growth = growth.reindex(counties)
+                growth.loc[missing_counties] = avg_growth
+                return growth
+
+            logger.warning(
+                "OPB county growth factors missing %d counties; statewide average fallback is disabled and default factor %.2f will be used for missing counties",
+                len(missing_counties),
+                default_factor,
+            )
+            growth = growth.reindex(counties)
+            growth.loc[missing_counties] = default_factor
+            return growth
+
+        return growth.reindex(counties)
 
     # ------------------------------------------------------------------
     # Lifecycle

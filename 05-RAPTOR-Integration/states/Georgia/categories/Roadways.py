@@ -5,13 +5,13 @@ Loads Georgia GDOT roadway inventory data from the processed SQLite database
 RAPTOR analysis, and provides the data as a GeoDataFrame.
 """
 
-import json
 import logging
 import sqlite3
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+import pyogrio
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ class RoadwayData:
             conn.close()
 
     def _load_geometry(self) -> gpd.GeoDataFrame:
-        """Load geometry from GeoPackage or original GDB as fallback."""
+        """Load geometry from GeoPackage or the official road inventory GDB."""
         gpkg_path = SPATIAL_DIR / "base_network.gpkg"
 
         if gpkg_path.exists():
@@ -183,15 +183,37 @@ class RoadwayData:
             logger.info("Loaded geometry from GeoPackage: %d features", len(gdf))
             return gdf
 
-        # Fallback to original GDB
-        gdb_dirs = list(RAW_DIR.rglob("*.gdb"))
-        if gdb_dirs:
-            gdf = gpd.read_file(gdb_dirs[0], engine="pyogrio", use_arrow=True)
-            logger.info("Loaded geometry from GDB: %d features", len(gdf))
+        gdb_dirs = sorted(RAW_DIR.rglob("Road_Inventory*.gdb"))
+        for gdb_path in gdb_dirs:
+            layer_names = [layer_name for layer_name, _ in pyogrio.list_layers(gdb_path)]
+            route_layers = [
+                layer_name
+                for layer_name in layer_names
+                if layer_name.startswith("GA_") and layer_name.endswith("_Routes")
+            ]
+            if not route_layers:
+                continue
+
+            route_layer = sorted(route_layers)[0]
+            gdf = gpd.read_file(
+                gdb_path,
+                layer=route_layer,
+                engine="pyogrio",
+                use_arrow=True,
+            )
+            logger.info(
+                "Loaded geometry from %s layer %s: %d features",
+                gdb_path.name,
+                route_layer,
+                len(gdf),
+            )
             return gdf
 
         raise FileNotFoundError(
-            "No geometry source found. Expected base_network.gpkg or .gdb file."
+            (
+                "No geometry source found. Expected "
+                f"{gpkg_path} or a Road_Inventory*.gdb containing a GA_*_Routes layer."
+            )
         )
 
     def load_data(self) -> None:

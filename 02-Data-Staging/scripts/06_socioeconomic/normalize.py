@@ -1,14 +1,15 @@
-"""Normalize and clean socioeconomic datasets for the Georgia pipeline.
+"""Normalize socioeconomic datasets for the Georgia pipeline.
 
 This script:
 1. Standardizes FIPS codes across all datasets (zero-padded strings)
 2. Joins ACS tabular data to TIGER block-group geometries
 3. Cleans and validates fields (numeric coercion, null handling)
-4. Outputs cleaned files to ``02-Data-Staging/cleaned/demographics/``
+4. Outputs normalized files to ``02-Data-Staging/tables/demographics/``
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -17,9 +18,10 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics"
-CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "cleaned" / "demographics"
+CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "tables" / "demographics"
+CONFIG_DIR = REPO_ROOT / "02-Data-Staging" / "config"
 
 STATE_FIPS = "13"
 
@@ -42,6 +44,18 @@ def _build_block_group_geoid(row: pd.Series) -> str:
         + str(row.get("tract", "")).zfill(6)
         + str(row.get("block group", row.get("block_group", ""))).zfill(1)
     )
+
+
+def _normalize_county_name(value: str) -> str:
+    return "".join(character for character in str(value).strip().upper() if character.isalnum())
+
+
+def _load_county_fips_lookup() -> dict[str, str]:
+    county_codes = json.loads((CONFIG_DIR / "county_codes.json").read_text(encoding="utf-8"))
+    return {
+        _normalize_county_name(county_name): county_fips
+        for county_fips, county_name in county_codes.items()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -177,11 +191,57 @@ def normalize_opb() -> pd.DataFrame:
         logger.warning("No OPB projections Excel file found")
         return pd.DataFrame()
 
-    # Read the first sheet; OPB format has county rows and year columns
-    df = pd.read_excel(files[0], sheet_name=0)
+    raw = pd.read_excel(files[0], sheet_name=0, header=None)
+    header_mask = raw.iloc[:, 0].astype(str).str.strip().eq("COUNTY")
+    if not bool(header_mask.any()):
+        raise AssertionError("OPB projections sheet is missing the COUNTY header row")
 
-    # Standardize column names
-    df.columns = [str(c).strip() for c in df.columns]
+    header_index = int(raw.index[header_mask][0])
+    raw_header = raw.iloc[header_index].tolist()
+    normalized_header: list[str] = []
+    for column_index, value in enumerate(raw_header):
+        if column_index == 0:
+            normalized_header.append("COUNTY")
+            continue
+        if pd.notna(value) and str(value).strip():
+            try:
+                normalized_header.append(str(int(float(value))))
+            except (TypeError, ValueError):
+                normalized_header.append(str(value).strip())
+        else:
+            normalized_header.append(f"unnamed_{column_index}")
+
+    df = raw.iloc[header_index + 1:].copy()
+    df.columns = normalized_header
+    df = df[df["COUNTY"].notna()].copy()
+    df["COUNTY"] = df["COUNTY"].astype(str).str.strip()
+    df = df[
+        ~df["COUNTY"].str.upper().eq("GEORGIA")
+        & ~df["COUNTY"].str.startswith("Source:", na=False)
+    ].copy()
+
+    year_cols = [column for column in df.columns if column.isdigit()]
+    df = df[["COUNTY", *year_cols]].copy()
+    for column in year_cols:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    county_lookup = _load_county_fips_lookup()
+    df["COUNTY_FIPS"] = df["COUNTY"].map(
+        lambda county_name: county_lookup.get(_normalize_county_name(county_name))
+    )
+    mapped_count = int(df["COUNTY_FIPS"].notna().sum())
+    unique_count = int(df["COUNTY_FIPS"].dropna().nunique())
+    if mapped_count != 159 or unique_count != 159:
+        missing = sorted(
+            county_name
+            for county_name in df.loc[df["COUNTY_FIPS"].isna(), "COUNTY"].astype(str).unique()
+        )
+        raise AssertionError(
+            "OPB county-to-FIPS mapping must cover all 159 Georgia counties; "
+            f"mapped_rows={mapped_count}, unique_fips={unique_count}, missing={missing[:10]}"
+        )
+
+    df = df.sort_values("COUNTY_FIPS").reset_index(drop=True)
 
     logger.info("OPB projections: %d rows normalized", len(df))
     return df

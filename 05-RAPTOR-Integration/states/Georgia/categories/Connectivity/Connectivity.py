@@ -58,21 +58,21 @@ class Connectivity:
         ----------
         roadways:
             Object with a ``Roadway_Inventory`` GeoDataFrame attribute that must
-            contain ``unique_id``, ``geometry``, and ``hwy_name`` columns.
+            contain ``unique_id``, ``geometry``, and ``HWY_NAME`` columns.
         """
         print("Calculating degrees of connection (1-mile buffer) ...")
         gdf = roadways.Roadway_Inventory
 
-        if "hwy_name" not in gdf.columns:
-            print("  WARNING: 'hwy_name' column not found – skipping.")
+        if "HWY_NAME" not in gdf.columns:
+            print("  WARNING: 'HWY_NAME' column not found â€“ skipping.")
             gdf[self.DEGREES_OF_CONNECTION_COUNT] = 0
             return
 
         # Build buffered version
-        buffered = gdf[["unique_id", "geometry", "hwy_name"]].copy()
+        buffered = gdf[["unique_id", "geometry", "HWY_NAME"]].copy()
         buffered["geometry"] = buffered.geometry.buffer(1609.34)
 
-        target = gdf[["unique_id", "geometry", "hwy_name"]]
+        target = gdf[["unique_id", "geometry", "HWY_NAME"]]
 
         joined = gpd.sjoin(
             buffered,
@@ -84,12 +84,12 @@ class Connectivity:
         )
 
         # Exclude self-matches (same highway name)
-        joined = joined[joined["hwy_name_left"] != joined["hwy_name_right"]]
+        joined = joined[joined["HWY_NAME_left"] != joined["HWY_NAME_right"]]
 
         # Count unique highway names per segment
         counts = (
             joined
-            .groupby("unique_id_left")["hwy_name_right"]
+            .groupby("unique_id_left")["HWY_NAME_right"]
             .nunique()
             .reset_index(name=self.DEGREES_OF_CONNECTION_COUNT)
         )
@@ -126,7 +126,7 @@ class Connectivity:
 
         for col, weight in self.weights.items():
             if col not in gdf.columns:
-                print(f"  WARNING: '{col}' missing – skipped in score.")
+                print(f"  WARNING: '{col}' missing â€“ skipped in score.")
                 continue
 
             series = gdf[col]

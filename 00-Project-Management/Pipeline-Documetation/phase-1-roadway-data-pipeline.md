@@ -63,10 +63,11 @@ For Phase 1 specifically:
 
 ```text
 01-Raw-Data/Roadway-Inventory/
+01-Raw-Data/Roadway-Inventory/scripts/
 02-Data-Staging/scripts/01_roadway_inventory/
 02-Data-Staging/databases/roadway_inventory.db
 02-Data-Staging/spatial/base_network.gpkg
-02-Data-Staging/cleaned/roadway_inventory_cleaned.csv
+02-Data-Staging/tables/roadway_inventory_cleaned.csv
 02-Data-Staging/config/
 ```
 
@@ -133,7 +134,8 @@ The speed zone enrichment downloads from GDOT GPAS to:
 
 - `01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson`
 
-This snapshot is cached locally and only re-downloaded when `download_rnhp_enrichment.py` is run with `refresh=True`.
+This snapshot is cached locally and only re-downloaded when
+`01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py` is run.
 
 ### FHWA HPMS 2024 data
 
@@ -265,14 +267,12 @@ The roadway pipeline consists of four main steps:
 
 The key scripts are:
 
-- `02-Data-Staging/scripts/01_roadway_inventory/download.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/catalog_columns.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/download_rnhp_enrichment.py`
+- `01-Raw-Data/Roadway-Inventory/scripts/download.py`
+- `01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/normalize.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/route_family.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/rnhp_enrichment.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/hpms_enrichment.py`
-- `02-Data-Staging/scripts/01_roadway_inventory/audit_current_aadt_coverage.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/create_db.py`
 - `02-Data-Staging/scripts/01_roadway_inventory/validate.py`
 
@@ -528,7 +528,7 @@ The ETL then computes:
 
 The ETL writes:
 
-- `02-Data-Staging/cleaned/roadway_inventory_cleaned.csv`
+- `02-Data-Staging/tables/roadway_inventory_cleaned.csv`
 - `02-Data-Staging/spatial/base_network.gpkg`
 
 The roadway GeoPackage currently contains:
@@ -1104,7 +1104,7 @@ Closed with Phase 1:
 - official signed-route verification for Interstates, US Routes, and State Routes via HPMS (223,136 segments, 91%)
 - HPMS gap-fill for 13 GDOT roadway attributes
 - posted speed limit enrichment from GDOT SpeedZone OnSystem
-- staged SQLite database, GeoPackage, and cleaned CSV outputs
+- staged SQLite database, GeoPackage, and table CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
 - `82/82` validation checks passing

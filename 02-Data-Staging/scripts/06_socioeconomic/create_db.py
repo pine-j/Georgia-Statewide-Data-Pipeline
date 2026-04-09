@@ -1,6 +1,6 @@
-"""Create a SQLite database (socioeconomic.db) from cleaned demographic data.
+"""Create a SQLite database (socioeconomic.db) from normalized demographic data.
 
-Reads normalized CSVs and GeoPackages from ``02-Data-Staging/cleaned/demographics/``
+Reads normalized CSVs and GeoPackages from ``02-Data-Staging/tables/demographics/``
 and writes them into a single SQLite database with indexed FIPS columns for
 efficient querying.
 
@@ -24,8 +24,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "cleaned" / "demographics"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+CLEAN_DIR = REPO_ROOT / "02-Data-Staging" / "tables" / "demographics"
 DB_DIR = REPO_ROOT / "03-Processed-Data" / "demographics"
 
 # Map of table name -> (source file, FIPS index columns)
@@ -41,7 +41,7 @@ TABLE_SPEC: dict[str, tuple[str, list[str]]] = {
 
 
 def _load_source(filename: str) -> pd.DataFrame | None:
-    """Load a cleaned CSV or GeoPackage (dropping geometry for SQLite)."""
+    """Load a normalized CSV or GeoPackage (dropping geometry for SQLite)."""
     csv_path = CLEAN_DIR / filename
     gpkg_path = csv_path.with_suffix(".gpkg")
 
@@ -62,7 +62,7 @@ def _load_source(filename: str) -> pd.DataFrame | None:
 
 
 def create_database() -> Path:
-    """Create socioeconomic.db from cleaned demographic files."""
+    """Create socioeconomic.db from normalized demographic files."""
     DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = DB_DIR / "socioeconomic.db"
 

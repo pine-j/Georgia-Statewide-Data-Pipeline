@@ -83,7 +83,7 @@ Every dataset in this project follows the same pattern (inspired by BTS-TransBor
 
 ```
 01-Raw-Data/         →  02-Data-Staging/       →  03-Processed-Data/
-(sacred, never edit)    (scripts + cleaned DB)     (final outputs for RAPTOR)
+(sacred, never edit)    (scripts + staging tables/DB)     (final outputs for RAPTOR)
 ```
 
 - **01-Raw-Data/**: Downloaded files exactly as received. Never modify.
@@ -109,16 +109,20 @@ scripts/
       utils/
         __init__.py
 
+01-Raw-Data/
+  Roadway-Inventory/
+    scripts/
+      download.py                    # Download GDB from GDOT
+      download_signed_route_references.py   # Snapshot official GDOT signed-route verifier layers
+      download_rnhp_enrichment.py    # Download RNHP enrichment layers
+
 02-Data-Staging/
   scripts/
     01_roadway_inventory/
-      download.py                    # Download GDB from GDOT
       normalize.py                   # Clean, normalize, build unique_id
-      download_signed_route_references.py   # Snapshot official GDOT signed-route verifier layers
       route_family.py                # Georgia ROUTE_ID family crosswalk helper
       route_verification.py          # Official GDOT signed-route verification (GPAS layers)
       rnhp_enrichment.py             # RNHP enrichment (speed zones)
-      download_rnhp_enrichment.py    # Download RNHP enrichment layers
       create_db.py                   # Load into SQLite
       validate.py                    # Verify row counts, nulls, CRS
     requirements.txt                 # Shared Python dependencies
@@ -154,29 +158,8 @@ scripts/
 - **Action**: Download every file in the directory into `01-Raw-Data/Roadway-Inventory/` and record the source URLs, directory timestamps, and file sizes in `download_metadata.json`
 - **Why**: GDOT provides the full roadway geometry and the traffic/AADT products in separate packages, and the historic traffic archives are needed for later growth analysis
 
-### 1.2a Catalog all GDB columns
-After download, run a column inventory script to document every field in the GDB. This resolves many "need to verify" items from the Texas comparison:
-- Truck fields: `AADT_TRUCKS`, `PCT_SADT`, `PCT_CADT`, `TRK_DHV_PCT` equivalents?
-- DVMT field?
-- System flags: evacuation route, NHFN, freight network?
-- Design AADT (`AADT_DESGN` equivalent)?
-- Output: `02-Data-Staging/config/gdb_column_inventory.json`
-
-Also inventory the GDOT traffic products separately:
-- `Traffic_GeoDatabase.zip` / `TRAFFIC_Data_2024.gdb`
-- `Traffic_Tabular.zip` / `TRAFFIC_DataYear2024.csv`
-- `Traffic_Historical.zip`
-- `2010_thr_2019_Published_Traffic.zip`
-
-Confirmed current-year GDOT traffic fields include:
-- `AADTRound`
-- `Single_Unit_AADT`
-- `Combo_Unit_AADT`
-- `Future_AADT`
-- `VMT`
-- `TruckVMT`
-
-Confirmed historical traffic fields retained in the normalized network are actual AADT series only. Legacy future-projection fields from 2010-2020 are intentionally dropped.
+### 1.2a Schema inventory status
+The one-time schema inventory and data-dictionary conversion work is complete and is no longer part of the active staged pipeline. The current production workflow assumes the roadway source schema decisions already captured in the roadway normalization logic.
 
 ### 1.3 Install Python dependencies
 ```
@@ -195,10 +178,10 @@ geopandas, pyogrio, shapely, pandas, numpy, pyarrow, tqdm, python-dotenv, openpy
 7. Compute segment length in miles from geometry
 8. Reproject to `EPSG:32617` (UTM Zone 17N)
 9. Join or map in traffic attributes from GDOT traffic products where a defensible relationship exists
-10. Export cleaned data as CSV/GeoPackage to `02-Data-Staging/cleaned/`
+10. Export normalized data as CSV/GeoPackage to `02-Data-Staging/tables/`
 
 **`02-Data-Staging/scripts/01_roadway_inventory/create_db.py`**:
-1. Read cleaned data
+1. Read staged table data
 2. Create `roadway_inventory.db` with table `segments` (**tabular columns only — no geometry**)
 3. Create indexes on: ROUTE_ID, DISTRICT, COUNTY_CODE, FUNCTIONAL_CLASS, SYSTEM_CODE
 4. Create `load_summary` metadata table (row count, date, source URL)
@@ -283,8 +266,8 @@ The staged roadway network is built from the official GDOT route geometry, then 
 - Current-traffic summary fields:
   `AADT`, `AADT_YEAR`, `TRUCK_AADT`, `TRUCK_PCT`, `FUTURE_AADT`,
   `VMT`, `TruckVMT`, `current_aadt_covered`, `Traffic_Class`
-- Historical coverage summary:
-  `historical_aadt_years_available`
+- Texas RAPTOR alignment columns:
+  `HWY_DES`, `LN_MILES`, `PCT_SADT`, `PCT_CADT`
 
 **Important note on segmentation**:
 - The ETL uses `GA_2024_Routes` as the canonical geometry source.
@@ -376,6 +359,27 @@ The staged roadway network currently supports multiple kinds of classification, 
 - Current implementation note:
   - signed-route verification is currently driven by HPMS `routesigning` enrichment rather than the older GDOT live-layer verification design
 
+### 1.4c Post-HPMS Derived Column Sync and Texas RAPTOR Alignment
+
+After HPMS gap-fills `THROUGH_LANES` and `NHS`, the pipeline syncs these back to their derived counterparts:
+
+- `NUM_LANES`: 15.8% -> 98.7% (synced from HPMS-filled `THROUGH_LANES`)
+- `NHS_IND`: 3.9% -> 37.6% (synced from HPMS-filled `NHS`)
+- `FUNCTIONAL_CLASS` and `URBAN_CODE` also synced from their HPMS-filled sources
+
+The pipeline then derives four columns to align with the Texas RAPTOR roadway base layer:
+
+- **`HWY_DES`** (Highway Design): e.g. `2U` (2-lane undivided), `4D` (4-lane divided), `6D` (6-lane divided). Derived from `NUM_LANES` and divided/undivided status inferred from `FACILITY_TYPE`, `MEDIAN_TYPE`, route family, and `HPMS_ACCESS_CONTROL`. Coverage: 98.7% on state system. Known limitation: `MEDIAN_TYPE` is only 10.7% populated; segments without median info default to undivided, which is correct for most rural 2-lane roads but may misclassify some divided highways that lack GDOT/HPMS median data.
+- **`LN_MILES`** (Lane Miles): `NUM_LANES x segment_length_mi`. Coverage: 98.7%.
+- **`PCT_SADT`** (Single-unit truck % of AADT): `SINGLE_UNIT_AADT_2024 / AADT x 100`. Coverage: 78%.
+- **`PCT_CADT`** (Combination truck % of AADT): `COMBO_UNIT_AADT_2024 / AADT x 100`. Coverage: 78%.
+
+Columns that remain unavailable for Georgia compared to Texas RAPTOR:
+
+- `CLMB_PS_LANE` — no GDOT source for climbing/passing lane classification
+- `TRK_DHV_PCT` — limited HPMS data, no direct Georgia equivalent
+- `TOP100ID` — no Georgia equivalent of TxDOT's congestion ranking
+
 ### 1.5 Build config JSON files
 
 **`02-Data-Staging/config/district_codes.json`**:
@@ -435,7 +439,7 @@ COLUMNS_TO_KEEP = [
 ```
 
 **Processing steps** (in `load_data()`):
-1. Read tabular data from `roadway_inventory.db` (already cleaned and indexed)
+1. Read tabular data from `roadway_inventory.db` (already staged and indexed)
 2. Filter to `SYSTEM_CODE = 1` (State Highway Routes, ~18,000 centerline miles)
 3. Load geometry from the source GDB and join by ROUTE_ID + milepoints
 4. Filter by district if `district_id` specified
@@ -470,7 +474,8 @@ COLUMNS_TO_KEEP = [
 ## Deliverables
 
 ### ETL Pipeline
-- `02-Data-Staging/scripts/01_roadway_inventory/` — download, normalize, create_db, validate scripts
+- `01-Raw-Data/Roadway-Inventory/scripts/` — roadway raw-data download scripts
+- `02-Data-Staging/scripts/01_roadway_inventory/` — normalize, enrich, create_db, validate scripts
 - `02-Data-Staging/databases/roadway_inventory.db` — complete roadway inventory SQLite database
 - `02-Data-Staging/config/` — district_codes.json, county_codes.json, system_codes.json, crs_config.json
 
@@ -491,7 +496,9 @@ COLUMNS_TO_KEEP = [
 - [x] Signed-route verification is operational via FHWA HPMS `routesigning` codes (`223,136` segments with signed-route coverage)
 - [x] Speed limit enrichment is operational via GDOT GPAS SpeedZone OnSystem (102,335 segments)
 - [x] Critical-field null checks pass within the validation thresholds
-- [x] Validation script passes all recorded checks in `02-Data-Staging/config/validation_results.json`
+- [x] Post-HPMS derived column sync operational (`NUM_LANES` 98.7%, `NHS_IND` 37.6%)
+- [x] Texas RAPTOR alignment columns derived (`HWY_DES`, `LN_MILES`, `PCT_SADT`, `PCT_CADT`)
+- [x] Validation script passes all `88/88` recorded checks in `02-Data-Staging/config/validation_results.json`
 
 ## Deferred From Phase 1
 

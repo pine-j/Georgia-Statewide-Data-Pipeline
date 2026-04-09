@@ -43,6 +43,7 @@ CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 REFERENCE_CONFIG = CONFIG["references"]
 VERIFY_SCORES = CONFIG["default_verify_scores"]
 QUERY_BATCH_SIZE = int(CONFIG.get("query_batch_size", 500))
+COVERAGE_WARNING_THRESHOLD = float(CONFIG.get("coverage_warning_threshold", 0.8))
 USER_AGENT = "Georgia-Statewide-Data-Pipeline signed-route verification"
 MILEPOINT_TOLERANCE = 1e-4
 
@@ -52,7 +53,7 @@ SIGNED_ROUTE_PRIORITY = {
     "State Route": 2,
     "Local/Other": 3,
 }
-REFERENCE_MATCH_ORDER = ["interstates", "us_highway"]
+REFERENCE_MATCH_ORDER = ["interstates", "us_highway", "state_routes"]
 
 VERIFICATION_COLUMNS = [
     "SIGNED_INTERSTATE_FLAG",
@@ -528,6 +529,10 @@ def apply_signed_route_verification(
     if not reference_lookups:
         return verified
 
+    baseline_family = verified.get(
+        "ROUTE_FAMILY",
+        pd.Series(index=verified.index, dtype="object"),
+    )
     for reference_key in REFERENCE_MATCH_ORDER:
         reference_lookup = reference_lookups.get(reference_key)
         if reference_lookup is None:
@@ -556,6 +561,22 @@ def apply_signed_route_verification(
             reference_key,
             match_count,
         )
+        reference_family = REFERENCE_CONFIG[reference_key]["reference_family"]
+        expected_candidates = int(baseline_family.eq(reference_family).sum())
+        if expected_candidates > 0:
+            coverage = match_count / expected_candidates
+            if coverage < COVERAGE_WARNING_THRESHOLD:
+                LOGGER.warning(
+                    (
+                        "Signed-route verification coverage below threshold for %s: "
+                        "%d / %d segments matched (%.1f%% < %.1f%%)"
+                    ),
+                    reference_key,
+                    match_count,
+                    expected_candidates,
+                    coverage * 100.0,
+                    COVERAGE_WARNING_THRESHOLD * 100.0,
+                )
 
     return verified
 

@@ -3,6 +3,8 @@
 !01-Raw-Data/.gitkeep
 !01-Raw-Data/**/
 !01-Raw-Data/**/.gitkeep
+!01-Raw-Data/**/scripts/
+!01-Raw-Data/**/scripts/**
 
 # SQLite databases
 *.db
@@ -16,7 +18,7 @@
 # Staging outputs
 02-Data-Staging/databases/
 02-Data-Staging/spatial/
-02-Data-Staging/cleaned/
+02-Data-Staging/tables/
 
 # Python
 __pycache__/

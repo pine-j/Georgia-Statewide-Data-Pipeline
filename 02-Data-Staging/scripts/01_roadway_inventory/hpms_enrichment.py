@@ -6,7 +6,7 @@ interval-overlap matching without spatial joins.
 Current enrichment:
 - AADT gap-fill for segments missing GDOT official/analytical AADT
 - Future AADT gap-fill
-- Signed-route classification from routesigning (replaces GPAS verification)
+- Signed-route classification from routesigning (supplements baseline verification)
 - Pavement condition: IRI, PSR, rutting, cracking_percent
 - Safety geometry: access_control, terrain_type, speed_limit
 - Roadway attribute gap-fill: through_lanes, lane_width, median, shoulder,
@@ -168,25 +168,30 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if col not in enriched.columns:
             enriched[col] = None
 
-    # Initialize signed-route verification columns from baseline route-family
+    # Preserve any existing signed-route verification and backfill only missing fields.
     baseline_family = enriched.get("ROUTE_FAMILY", pd.Series(index=enriched.index, dtype="object"))
     baseline_confidence = enriched.get(
         "ROUTE_FAMILY_CONFIDENCE", pd.Series(index=enriched.index, dtype="object")
     )
-    enriched["SIGNED_INTERSTATE_FLAG"] = baseline_family.eq("Interstate")
-    enriched["SIGNED_US_ROUTE_FLAG"] = baseline_family.eq("U.S. Route")
-    enriched["SIGNED_STATE_ROUTE_FLAG"] = baseline_family.eq("State Route")
-    enriched["SIGNED_ROUTE_FAMILY_PRIMARY"] = baseline_family
-    enriched["SIGNED_ROUTE_FAMILY_ALL"] = baseline_family.fillna("").map(
-        lambda v: json.dumps([v]) if v else json.dumps([])
-    )
-    enriched["SIGNED_ROUTE_VERIFY_SOURCE"] = "route_id_crosswalk"
-    enriched["SIGNED_ROUTE_VERIFY_METHOD"] = "route_id_crosswalk"
-    enriched["SIGNED_ROUTE_VERIFY_CONFIDENCE"] = baseline_confidence
-    enriched["SIGNED_ROUTE_VERIFY_SCORE"] = baseline_confidence.map(
-        {"high": 0.95, "medium": 0.6, "low": 0.3}
-    ).fillna(0.3)
-    enriched["SIGNED_ROUTE_VERIFY_NOTES"] = None
+    signed_route_defaults = {
+        "SIGNED_INTERSTATE_FLAG": baseline_family.eq("Interstate"),
+        "SIGNED_US_ROUTE_FLAG": baseline_family.eq("U.S. Route"),
+        "SIGNED_STATE_ROUTE_FLAG": baseline_family.eq("State Route"),
+        "SIGNED_ROUTE_FAMILY_PRIMARY": baseline_family,
+        "SIGNED_ROUTE_FAMILY_ALL": baseline_family.fillna("").map(
+            lambda v: json.dumps([v]) if v else json.dumps([])
+        ),
+        "SIGNED_ROUTE_VERIFY_SOURCE": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_METHOD": "route_id_crosswalk",
+        "SIGNED_ROUTE_VERIFY_CONFIDENCE": baseline_confidence,
+        "SIGNED_ROUTE_VERIFY_SCORE": baseline_confidence.map(
+            {"high": 0.95, "medium": 0.6, "low": 0.3}
+        ).fillna(0.3),
+        "SIGNED_ROUTE_VERIFY_NOTES": None,
+    }
+    for column_name, default_value in signed_route_defaults.items():
+        if column_name not in enriched.columns:
+            enriched[column_name] = default_value
 
     aadt_fill_count = 0
     pavement_fill_count = 0

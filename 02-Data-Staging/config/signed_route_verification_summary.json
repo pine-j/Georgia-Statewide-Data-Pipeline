@@ -1,25 +1,27 @@
 {
-  "segment_count": 244904,
-  "signed_interstate_segments": 3659,
-  "signed_us_route_segments": 10281,
-  "signed_state_route_segments": 4904,
+  "segment_count": 245863,
+  "signed_interstate_segments": 3667,
+  "signed_us_route_segments": 11163,
+  "signed_state_route_segments": 4984,
   "primary_family_counts": {
-    "Local/Other": 226405,
-    "U.S. Route": 10169,
-    "State Route": 4671,
-    "Interstate": 3659
+    "Local/Other": 226398,
+    "U.S. Route": 11051,
+    "State Route": 4747,
+    "Interstate": 3667
   },
   "verification_confidence_counts": {
-    "high": 235580,
-    "medium": 9324
+    "high": 240824,
+    "medium": 5039
   },
   "verification_source_counts": {
-    "route_id_crosswalk": 238314,
-    "gdot_us_highway": 5516,
+    "route_id_crosswalk": 234030,
+    "gdot_us_highway": 6146,
+    "hpms_2024": 4613,
     "gdot_interstates": 1074
   },
   "verification_method_counts": {
-    "route_id_crosswalk": 238314,
-    "derived_rclink_interval": 6590
+    "route_id_crosswalk": 234030,
+    "derived_rclink_interval": 7220,
+    "hpms_routesigning": 4613
   }
 }

@@ -42,6 +42,7 @@ DISTRICT_LABELS = {
     6: "District 6 - Cartersville",
     7: "District 7 - Chamblee",
 }
+_STAGED_DATA_CACHE_STAMP: tuple[int | None, int | None] | None = None
 
 
 def _is_missing(value: Any) -> bool:
@@ -246,6 +247,32 @@ def _empty_summary(state_code: str) -> AnalyticsSummaryResponse:
     )
 
 
+def _get_staged_data_cache_stamp() -> tuple[int | None, int | None]:
+    def _mtime_ns(path: Path) -> int | None:
+        return path.stat().st_mtime_ns if path.exists() else None
+
+    return (_mtime_ns(STAGED_DB_PATH), _mtime_ns(STAGED_GPKG_PATH))
+
+
+def _clear_staged_data_caches() -> None:
+    _get_segment_count.cache_clear()
+    _get_class_summary_rows.cache_clear()
+    _get_filtered_bounds.cache_clear()
+
+
+def _ensure_staged_data_cache_fresh() -> None:
+    global _STAGED_DATA_CACHE_STAMP
+
+    current_stamp = _get_staged_data_cache_stamp()
+    if _STAGED_DATA_CACHE_STAMP is None:
+        _STAGED_DATA_CACHE_STAMP = current_stamp
+        return
+
+    if current_stamp != _STAGED_DATA_CACHE_STAMP:
+        _clear_staged_data_caches()
+        _STAGED_DATA_CACHE_STAMP = current_stamp
+
+
 def _open_sqlite() -> sqlite3.Connection:
     return sqlite3.connect(STAGED_DB_PATH)
 
@@ -336,6 +363,7 @@ def get_staged_roadway_manifest(
     district: int | None = None,
     counties: list[str] | None = None,
 ) -> RoadwayManifestResponse:
+    _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_manifest(state_code, chunk_size)
 
@@ -357,6 +385,7 @@ def get_staged_roadway_summary(
     district: int | None = None,
     counties: list[str] | None = None,
 ) -> AnalyticsSummaryResponse:
+    _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_summary(state_code)
 
@@ -384,6 +413,7 @@ def get_staged_roadway_bounds(
     district: int | None = None,
     counties: list[str] | None = None,
 ) -> list[float] | None:
+    _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return None
 
@@ -398,6 +428,7 @@ def get_staged_roadway_features(
     district: int | None = None,
     counties: list[str] | None = None,
 ) -> RoadwayFeatureCollection:
+    _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return RoadwayFeatureCollection(type="FeatureCollection", features=[])
 
@@ -460,6 +491,7 @@ def get_staged_boundary_features(
     district: int | None = None,
     counties: list[str] | None = None,
 ) -> GeoJsonFeatureCollection:
+    _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return GeoJsonFeatureCollection(type="FeatureCollection", features=[])
 
@@ -505,6 +537,7 @@ def get_staged_boundary_features(
 
 
 def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
+    _ensure_staged_data_cache_fresh()
     county_code_to_name, _ = _load_county_maps()
 
     with _open_sqlite() as connection:
@@ -541,6 +574,7 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
 
 
 def get_staged_roadway_detail(unique_id: str) -> RoadwayDetailResponse | None:
+    _ensure_staged_data_cache_fresh()
     county_code_to_name, _ = _load_county_maps()
 
     with _open_sqlite() as connection:

@@ -1,8 +1,8 @@
-"""Normalize and clean downloaded connectivity datasets for Georgia.
+"""Normalize downloaded connectivity datasets for Georgia.
 
 Reads raw GeoJSON files from 01-Raw-Data/connectivity/, reprojects to
-EPSG:32617 (UTM 17N), standardizes column names, and writes cleaned outputs
-to 02-Data-Staging/cleaned/connectivity/.
+EPSG:32617 (UTM 17N), standardizes column names, and writes normalized outputs
+to 02-Data-Staging/tables/connectivity/.
 """
 
 import logging
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "01-Raw-Data" / "connectivity"
-CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "connectivity"
+CLEAN_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables" / "connectivity"
 TARGET_CRS = "EPSG:32617"
 
 # ---------------------------------------------------------------------------

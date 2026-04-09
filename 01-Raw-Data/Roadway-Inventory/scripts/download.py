@@ -55,7 +55,6 @@ def extract_gdb(zip_path: Path, extract_to: Path) -> Path:
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(extract_to)
 
-    # Find the .gdb folder inside the extracted contents
     gdb_dirs = list(extract_to.rglob("*.gdb"))
     if not gdb_dirs:
         raise FileNotFoundError("No .gdb directory found in the zip archive")
@@ -64,11 +63,7 @@ def extract_gdb(zip_path: Path, extract_to: Path) -> Path:
     return gdb_dirs[0]
 
 
-def write_metadata(
-    gdb_path: Path,
-    zip_size: int,
-    pdf_size: int,
-) -> Path:
+def write_metadata(gdb_path: Path, zip_size: int, pdf_size: int) -> Path:
     """Write download metadata JSON."""
     metadata = {
         "download_date": datetime.now(timezone.utc).isoformat(),
@@ -94,16 +89,13 @@ def main() -> None:
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Download GDB zip
     zip_dest = RAW_DIR / "Road_Inventory_Geodatabase.zip"
     logger.info("Downloading roadway inventory GDB...")
     zip_size = download_file(ROADWAY_GDB_URL, zip_dest, "Roadway GDB")
 
-    # Extract GDB
     logger.info("Extracting geodatabase...")
     gdb_path = extract_gdb(zip_dest, RAW_DIR)
 
-    # Download data dictionary PDF
     pdf_dest = RAW_DIR / "DataDictionary.pdf"
     logger.info("Downloading data dictionary PDF...")
     try:
@@ -112,7 +104,6 @@ def main() -> None:
         logger.warning("Could not download data dictionary PDF, continuing...")
         pdf_size = 0
 
-    # Write metadata
     write_metadata(gdb_path, zip_size, pdf_size)
 
     logger.info("Download complete. GDB at: %s", gdb_path)

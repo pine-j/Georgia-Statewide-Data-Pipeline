@@ -1,6 +1,6 @@
 """Validate the processed Georgia Roadway Inventory data.
 
-Runs a suite of quality checks against the cleaned data, SQLite database,
+Runs a suite of quality checks against the normalized data, SQLite database,
 and GeoPackage outputs. Reports pass/fail for each check.
 """
 
@@ -16,12 +16,26 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CLEANED_DIR = PROJECT_ROOT / "02-Data-Staging" / "cleaned"
+TABLES_DIR = PROJECT_ROOT / "02-Data-Staging" / "tables"
 DB_DIR = PROJECT_ROOT / "02-Data-Staging" / "databases"
 SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
+CONFIG_DIR = PROJECT_ROOT / "02-Data-Staging" / "config"
 RAPTOR_DIR = PROJECT_ROOT / "05-RAPTOR-Integration"
 
 TARGET_CRS = "EPSG:32617"
+
+COUNTY_CODE_LOOKUP = json.loads((CONFIG_DIR / "county_codes.json").read_text(encoding="utf-8"))
+DISTRICT_SHORT_NAME_LOOKUP = {
+    int(code): name
+    for code, name in json.loads((CONFIG_DIR / "district_codes.json").read_text(encoding="utf-8")).items()
+}
+DISTRICT_LABEL_LOOKUP = {
+    code: f"District {code} - {name}"
+    for code, name in DISTRICT_SHORT_NAME_LOOKUP.items()
+}
+ROADWAY_DOMAIN_LABELS = json.loads(
+    (CONFIG_DIR / "roadway_domain_labels.json").read_text(encoding="utf-8")
+)
 
 # Critical columns that should not have excessive nulls
 CRITICAL_COLUMNS = [
@@ -56,6 +70,32 @@ DECODED_LABEL_COLUMNS = {
     "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
     "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
     "ROUTE_TYPE_GDOT_LABEL": "ROUTE_TYPE_GDOT",
+}
+
+DECODED_LABEL_LOOKUPS = {
+    "COUNTY_NAME": (COUNTY_CODE_LOOKUP, 3),
+    "DISTRICT_NAME": (DISTRICT_SHORT_NAME_LOOKUP, None),
+    "DISTRICT_LABEL": (DISTRICT_LABEL_LOOKUP, None),
+    "SYSTEM_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
+    "FUNCTION_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["function_type"], None),
+    "PARSED_FUNCTION_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["function_type"], None),
+    "F_SYSTEM_LABEL": (ROADWAY_DOMAIN_LABELS["functional_class"], None),
+    "FUNCTIONAL_CLASS_LABEL": (ROADWAY_DOMAIN_LABELS["functional_class"], None),
+    "FACILITY_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["facility_type"], None),
+    "NHS_LABEL": (ROADWAY_DOMAIN_LABELS["nhs"], None),
+    "NHS_IND_LABEL": (ROADWAY_DOMAIN_LABELS["nhs"], None),
+    "OWNERSHIP_LABEL": (ROADWAY_DOMAIN_LABELS["ownership"], None),
+    "STRAHNET_LABEL": (ROADWAY_DOMAIN_LABELS["strahnet"], None),
+    "MEDIAN_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["median_type"], None),
+    "SHOULDER_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["shoulder_type"], None),
+    "SURFACE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["surface_type"], None),
+    "URBAN_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["urban_code"], 5),
+    "DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
+    "PARSED_DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
+    "ROUTE_DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
+    "PARSED_SYSTEM_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
+    "ROUTE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
+    "ROUTE_TYPE_GDOT_LABEL": (ROADWAY_DOMAIN_LABELS["route_type_gdot"], None),
 }
 
 EXPECTED_PHASE1_ATTRIBUTE_COLUMNS = [
@@ -105,11 +145,16 @@ EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
     "current_aadt_covered",
 ]
 
-CURRENT_AADT_AUDIT_ARTIFACTS = [
-    PROJECT_ROOT / "02-Data-Staging" / "config" / "current_aadt_coverage_audit_summary.json",
-    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_uncovered_segments.csv",
-    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_uncovered_route_summary.csv",
-    PROJECT_ROOT / "02-Data-Staging" / "cleaned" / "current_aadt_state_system_gap_fill_candidates.csv",
+CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT = (
+    PROJECT_ROOT / "02-Data-Staging" / "config" / "current_aadt_coverage_audit_summary.json"
+)
+CURRENT_AADT_AUDIT_TMP_DIR = (
+    PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
+)
+CURRENT_AADT_AUDIT_TRANSIENT_ARTIFACTS = [
+    CURRENT_AADT_AUDIT_TMP_DIR / "current_aadt_uncovered_segments.csv",
+    CURRENT_AADT_AUDIT_TMP_DIR / "current_aadt_uncovered_route_summary.csv",
+    CURRENT_AADT_AUDIT_TMP_DIR / "current_aadt_state_system_gap_fill_candidates.csv",
 ]
 
 
@@ -135,9 +180,45 @@ class ValidationResult:
         return f"{passed}/{total} checks passed"
 
 
+def decode_lookup_value(value, lookup: dict, zero_pad: int | None = None) -> str | None:
+    if pd.isna(value):
+        return None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text in lookup:
+            return lookup[text]
+        upper_text = text.upper()
+        if upper_text in lookup:
+            return lookup[upper_text]
+        try:
+            numeric_text = int(float(text))
+        except ValueError:
+            return None
+        if zero_pad is not None:
+            padded = f"{numeric_text:0{zero_pad}d}"
+            if padded in lookup:
+                return lookup[padded]
+        return lookup.get(numeric_text) or lookup.get(str(numeric_text))
+
+    try:
+        numeric_value = int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+    if zero_pad is not None:
+        padded = f"{numeric_value:0{zero_pad}d}"
+        if padded in lookup:
+            return lookup[padded]
+
+    return lookup.get(numeric_value) or lookup.get(str(numeric_value))
+
+
 def validate_row_count(result: ValidationResult) -> pd.DataFrame | None:
-    """Check that cleaned CSV has a reasonable number of rows."""
-    csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+    """Check that normalized CSV has a reasonable number of rows."""
+    csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
     if not csv_path.exists():
         result.add("Row count", False, f"CSV not found: {csv_path}")
         return None
@@ -260,7 +341,7 @@ def validate_state_system_location_fields(result: ValidationResult, df: pd.DataF
 
 
 def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
-    """Report current and historic AADT coverage."""
+    """Report current and future AADT coverage."""
     if "AADT_2024" not in df.columns and "AADT" not in df.columns:
         result.add("Current AADT coverage", False, "AADT_2024/AADT column not found")
         return
@@ -277,21 +358,6 @@ def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
         current_count > 0,
         f"{current_count:,} segments with canonical current AADT; official={official_count:,}",
     )
-
-    historical_cols = sorted(
-        col for col in df.columns if col.startswith("AADT_") and col[5:].isdigit() and col != "AADT_2024"
-    )
-    if historical_cols:
-        covered_years = {
-            col: int(df[col].notna().sum())
-            for col in historical_cols
-        }
-        years_with_data = {col: count for col, count in covered_years.items() if count > 0}
-        result.add(
-            "Historic AADT coverage",
-            len(years_with_data) > 0,
-            ", ".join(f"{col}={count:,}" for col, count in years_with_data.items()) if years_with_data else "No historic segments matched",
-        )
 
     if "FUTURE_AADT_2044" in df.columns:
         future_count = int(df["FUTURE_AADT_2044"].notna().sum())
@@ -323,6 +389,50 @@ def validate_decoded_labels(result: ValidationResult, df: pd.DataFrame) -> None:
             f"Decoded label: {label_col}",
             decoded_count == source_count,
             f"{decoded_count:,}/{source_count:,} source-coded rows decoded",
+        )
+
+
+def validate_decoded_label_correctness(result: ValidationResult, df: pd.DataFrame) -> None:
+    """Check decoded labels against authoritative lookup tables."""
+    for label_col, source_col in DECODED_LABEL_COLUMNS.items():
+        lookup_spec = DECODED_LABEL_LOOKUPS.get(label_col)
+        if lookup_spec is None:
+            result.add(f"Decoded label correctness: {label_col}", False, "No authoritative lookup configured")
+            continue
+        if label_col not in df.columns:
+            result.add(f"Decoded label correctness: {label_col}", False, "Column not found")
+            continue
+        if source_col not in df.columns:
+            result.add(
+                f"Decoded label correctness: {label_col}",
+                False,
+                f"Source column missing: {source_col}",
+            )
+            continue
+
+        lookup, zero_pad = lookup_spec
+        source_mask = df[source_col].notna()
+        if not bool(source_mask.any()):
+            result.add(f"Decoded label correctness: {label_col}", True, "No source-coded rows present")
+            continue
+
+        expected = df.loc[source_mask, source_col].map(
+            lambda value: decode_lookup_value(value, lookup, zero_pad=zero_pad)
+        )
+        actual = df.loc[source_mask, label_col].map(
+            lambda value: value.strip() if isinstance(value, str) else value
+        )
+
+        missing_lookup = int(expected.isna().sum())
+        comparable = pd.DataFrame({"expected": expected, "actual": actual}).dropna(subset=["expected"])
+        mismatch_count = int(comparable["expected"].ne(comparable["actual"]).sum())
+        result.add(
+            f"Decoded label correctness: {label_col}",
+            missing_lookup == 0 and mismatch_count == 0,
+            (
+                f"{len(comparable) - mismatch_count:,}/{len(comparable):,} authoritative matches; "
+                f"lookup_missing={missing_lookup:,}, mismatches={mismatch_count:,}"
+            ),
         )
 
 
@@ -423,11 +533,29 @@ def validate_provenance_consistency(result: ValidationResult, df: pd.DataFrame) 
 
 
 def validate_current_aadt_audit_artifacts(result: ValidationResult) -> None:
-    """Check that current-year AADT audit artifacts were written."""
-    for path in CURRENT_AADT_AUDIT_ARTIFACTS:
-        exists = path.exists()
-        detail = f"{path.name} present" if exists else f"Missing: {path}"
-        result.add(f"Current AADT audit artifact: {path.name}", exists, detail)
+    """Check that the retained current-year AADT audit summary was written."""
+    exists = CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT.exists()
+    detail = (
+        f"{CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT.name} present"
+        if exists
+        else f"Missing: {CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT}"
+    )
+    result.add(
+        f"Current AADT audit artifact: {CURRENT_AADT_AUDIT_SUMMARY_ARTIFACT.name}",
+        exists,
+        detail,
+    )
+
+
+def cleanup_current_aadt_audit_artifacts() -> None:
+    """Remove transient detailed AADT audit CSVs after validation finishes."""
+    for path in CURRENT_AADT_AUDIT_TRANSIENT_ARTIFACTS:
+        if path.exists():
+            path.unlink()
+            logger.info("Removed transient current AADT audit artifact: %s", path)
+    if CURRENT_AADT_AUDIT_TMP_DIR.exists() and not any(CURRENT_AADT_AUDIT_TMP_DIR.iterdir()):
+        CURRENT_AADT_AUDIT_TMP_DIR.rmdir()
+        logger.info("Removed empty transient AADT audit directory: %s", CURRENT_AADT_AUDIT_TMP_DIR)
 
 
 def validate_geometry(result: ValidationResult) -> None:
@@ -487,6 +615,16 @@ def validate_boundary_layers(result: ValidationResult) -> None:
         len(district_gdf) == 7,
         f"{len(district_gdf):,} features",
     )
+    result.add(
+        "County boundary geometry validity",
+        bool(county_gdf.geometry.is_valid.all()),
+        f"{int((~county_gdf.geometry.is_valid).sum()):,} invalid of {len(county_gdf):,}",
+    )
+    result.add(
+        "District boundary geometry validity",
+        bool(district_gdf.geometry.is_valid.all()),
+        f"{int((~district_gdf.geometry.is_valid).sum()):,} invalid of {len(district_gdf):,}",
+    )
 
     county_names_ok = "DISTRICT_NAME" in county_gdf.columns and county_gdf["DISTRICT_NAME"].notna().all()
     district_names_ok = "DISTRICT_NAME" in district_gdf.columns and district_gdf["DISTRICT_NAME"].notna().all()
@@ -500,6 +638,25 @@ def validate_boundary_layers(result: ValidationResult) -> None:
         district_names_ok,
         "DISTRICT_NAME populated" if district_names_ok else "Missing or null DISTRICT_NAME values",
     )
+    if {"COUNTYFP", "NAME"}.issubset(county_gdf.columns):
+        county_lookup = {
+            str(county_code).zfill(3): str(county_name).strip()
+            for county_code, county_name in county_gdf[["COUNTYFP", "NAME"]].itertuples(index=False)
+        }
+        mismatches = [
+            county_code
+            for county_code, county_name in COUNTY_CODE_LOOKUP.items()
+            if county_lookup.get(county_code) != county_name
+        ]
+        result.add(
+            "County boundary lookup correctness",
+            len(county_lookup) == 159 and not mismatches,
+            (
+                f"{159 - len(mismatches):,}/159 county FIPS-name pairs match county_codes.json"
+                if len(county_lookup) == 159
+                else f"Expected 159 county polygons, found {len(county_lookup)}"
+            ),
+        )
 
 
 def validate_database(result: ValidationResult) -> None:
@@ -525,7 +682,7 @@ def validate_database(result: ValidationResult) -> None:
             db_count = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
             result.add("Database row count", db_count > 0, f"{db_count:,} rows")
 
-            csv_path = CLEANED_DIR / "roadway_inventory_cleaned.csv"
+            csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
             if csv_path.exists():
                 csv_count = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
                 match = db_count == csv_count
@@ -589,42 +746,49 @@ def main() -> None:
     logger.info("Running validation checks...")
 
     result = ValidationResult()
+    try:
+        # Run checks
+        df = validate_row_count(result)
 
-    # Run checks
-    df = validate_row_count(result)
+        if df is not None:
+            validate_unique_id(result, df)
+            validate_null_checks(result, df)
+            validate_district_range(result, df)
+            validate_aadt_coverage(result, df)
+            validate_state_system_location_fields(result, df)
+            validate_phase1_attribute_columns(result, df)
+            validate_route_family_columns(result, df)
+            validate_gdot_route_type_columns(result, df)
+            validate_signed_route_verification_columns(result, df)
+            validate_current_aadt_provenance_columns(result, df)
+            validate_provenance_consistency(result, df)
+            validate_decoded_labels(result, df)
+            validate_decoded_label_correctness(result, df)
 
-    if df is not None:
-        validate_unique_id(result, df)
-        validate_null_checks(result, df)
-        validate_district_range(result, df)
-        validate_aadt_coverage(result, df)
-        validate_state_system_location_fields(result, df)
-        validate_phase1_attribute_columns(result, df)
-        validate_route_family_columns(result, df)
-        validate_gdot_route_type_columns(result, df)
-        validate_signed_route_verification_columns(result, df)
-        validate_current_aadt_provenance_columns(result, df)
-        validate_provenance_consistency(result, df)
-        validate_decoded_labels(result, df)
+        validate_crs(result)
+        validate_geometry(result)
+        validate_boundary_layers(result)
+        validate_database(result)
+        validate_current_aadt_audit_artifacts(result)
+        validate_raptor_loader(result)
 
-    validate_crs(result)
-    validate_geometry(result)
-    validate_boundary_layers(result)
-    validate_database(result)
-    validate_current_aadt_audit_artifacts(result)
-    validate_raptor_loader(result)
+        # Summary
+        logger.info("")
+        logger.info(
+            "Validation %s: %s",
+            "PASSED" if result.all_passed else "FAILED",
+            result.summary(),
+        )
 
-    # Summary
-    logger.info("")
-    logger.info("Validation %s: %s", "PASSED" if result.all_passed else "FAILED", result.summary())
+        # Write results to JSON
+        output_path = PROJECT_ROOT / "02-Data-Staging" / "config" / "validation_results.json"
+        output_path.write_text(json.dumps(result.checks, indent=2))
+        logger.info("Results written to %s", output_path)
 
-    # Write results to JSON
-    output_path = PROJECT_ROOT / "02-Data-Staging" / "config" / "validation_results.json"
-    output_path.write_text(json.dumps(result.checks, indent=2))
-    logger.info("Results written to %s", output_path)
-
-    if not result.all_passed:
-        raise SystemExit(1)
+        if not result.all_passed:
+            raise SystemExit(1)
+    finally:
+        cleanup_current_aadt_audit_artifacts()
 
 
 if __name__ == "__main__":

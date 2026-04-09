@@ -146,7 +146,7 @@ Build a **nationwide** U.S. Census database (reusable for Georgia, Tennessee, an
 4. `download_opportunity_zones.py` — Download OZ shapefiles
 5. `normalize.py` — Standardize geography codes (FIPS), join tables, validate
 6. `create_db.py` — Load into `socioeconomic.db` (tables: `decennial_blocks`, `acs_block_groups`, `lodes_wac`, `lodes_rac`, `economic_census`, `opportunity_zones`)
-7. `create_gpkg.py` — Write to `demographics.gpkg` layers: `census_blocks`, `block_groups`, `tracts`, `opportunity_zones` (EPSG:32617 for GA; consider national CRS for multi-state)
+7. `create_gpkg.py` — Write to `demographics.gpkg` layers: `tract_aggregated_blocks`, `block_groups`, `tracts`, `opportunity_zones` (EPSG:32617 for GA; consider national CRS for multi-state)
 8. `validate.py` — Population totals match published state totals, employment counts reasonable
 
 ---
