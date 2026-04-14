@@ -7,7 +7,6 @@ import {
   RoadwayVisualizationOption,
 } from "../../types/api";
 import { MapLibreRoadwayMap } from "./MapLibreRoadwayMap";
-import { RoadwayLegendCard } from "./RoadwayLegendCard";
 
 interface MapPanelProps {
   roadwayChunks: RoadwayFeatureCollection[];
@@ -22,6 +21,7 @@ interface MapPanelProps {
   progressPercent: number;
   etaSeconds: number | null;
   selectedVisualization?: RoadwayVisualizationOption;
+  selectedRoadwayId?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
 }
 
@@ -51,6 +51,7 @@ export function MapPanel({
   progressPercent,
   etaSeconds,
   selectedVisualization,
+  selectedRoadwayId,
   onSegmentClick,
 }: MapPanelProps) {
   const isShowingProgress = isManifestLoading || isLoading;
@@ -77,24 +78,10 @@ export function MapPanel({
           loadToken={loadToken}
           bounds={bounds}
           selectedVisualization={selectedVisualization}
+          selectedRoadwayId={selectedRoadwayId}
           onSegmentClick={onSegmentClick}
         />
       </Box>
-
-      {selectedVisualization && (
-        <Box
-          sx={{
-            position: "absolute",
-            top: 16,
-            left: 16,
-            zIndex: 2,
-            maxHeight: "calc(100% - 32px)",
-            overflow: "auto",
-          }}
-        >
-          <RoadwayLegendCard visualization={selectedVisualization} />
-        </Box>
-      )}
 
       {isShowingProgress && (
         <Box

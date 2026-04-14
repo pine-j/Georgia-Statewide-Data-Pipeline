@@ -20,7 +20,9 @@ import {
   DistrictOption,
   HighwayTypeOption,
   RoadwayVisualizationCatalog,
+  RoadwayVisualizationOption,
 } from "../../types/api";
+import { RoadwayLegendCard } from "../map/RoadwayLegendCard";
 
 function displayDistrictLabel(label: string): string {
   const separatorIndex = label.indexOf(" - ");
@@ -46,6 +48,7 @@ interface FiltersPanelProps {
   onCountyDelete: (county: string) => void;
   onHighwayTypeChange: (highwayTypes: string[]) => void;
   onHighwayTypeDelete: (highwayTypeId: string) => void;
+  selectedVisualization?: RoadwayVisualizationOption;
   onResetFilters: () => void;
   onVisualizationChange: (visualizationId: string) => void;
 }
@@ -59,6 +62,7 @@ export function FiltersPanel({
   selectedHighwayTypes,
   roadwayVisualizationCatalog,
   selectedVisualizationId,
+  selectedVisualization,
   themeCoveragePercent,
   onDistrictChange,
   onDistrictDelete,
@@ -462,7 +466,7 @@ export function FiltersPanel({
                   zIndex: 1,
                   px: 1.5,
                   py: 0.5,
-                  bgcolor: "rgba(17, 61, 73, 0.06)",
+                  bgcolor: "#f0f2f3",
                   borderBottom: "1px solid rgba(17, 61, 73, 0.1)",
                 }}
               >
@@ -503,6 +507,12 @@ export function FiltersPanel({
             />
           )}
         />
+
+        {selectedVisualization && (
+          <Box sx={{ mt: 1 }}>
+            <RoadwayLegendCard visualization={selectedVisualization} />
+          </Box>
+        )}
       </Stack>
     </Paper>
   );

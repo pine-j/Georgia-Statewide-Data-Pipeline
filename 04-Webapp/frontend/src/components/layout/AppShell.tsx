@@ -190,7 +190,8 @@ export function AppShell() {
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        height: "100vh",
+        overflow: "hidden",
         display: "grid",
         gridTemplateRows: "auto 1fr",
         bgcolor: "#eef2f3",
@@ -210,8 +211,8 @@ export function AppShell() {
         </Typography>
       </Box>
 
-      <Box sx={{ px: { xs: 0, md: 0 }, py: 0, minHeight: 0 }}>
-        <Stack spacing={0} sx={{ height: "100%" }}>
+      <Box sx={{ px: { xs: 0, md: 0 }, py: 0, minHeight: 0, overflow: "hidden" }}>
+        <Stack spacing={0} sx={{ height: "100%", minHeight: 0 }}>
           {hasApiError && (
             <Alert severity="warning" sx={{ mx: { xs: 2, md: 2.5 }, my: 1.5 }}>
               One or more requests failed while loading the roadway data.
@@ -231,11 +232,12 @@ export function AppShell() {
                   : "320px minmax(0, 1fr)",
               },
               gridTemplateRows: {
-                xs: "auto minmax(58vh, 1fr)",
+                xs: "minmax(0, auto) minmax(58vh, 1fr)",
                 lg: "minmax(0, 1fr)",
               },
               alignItems: "stretch",
               height: "100%",
+              overflowY: { xs: "auto", lg: "hidden" },
               transition: "grid-template-columns 0.25s ease",
             }}
           >
@@ -243,6 +245,7 @@ export function AppShell() {
               sx={{
                 minWidth: 0,
                 minHeight: 0,
+                overflow: "hidden",
                 borderRight: { xs: "none", lg: "1px solid rgba(17, 61, 73, 0.12)" },
               }}
             >
@@ -255,6 +258,7 @@ export function AppShell() {
                 selectedHighwayTypes={selectedHighwayTypes}
                 roadwayVisualizationCatalog={roadwayVisualizationCatalog}
                 selectedVisualizationId={selectedVisualization?.id ?? selectedVisualizationId}
+                selectedVisualization={selectedVisualization}
                 themeCoveragePercent={themeCoveragePercent}
                 onDistrictChange={handleDistrictChange}
                 onDistrictDelete={handleDistrictDelete}
@@ -267,7 +271,7 @@ export function AppShell() {
               />
             </Box>
 
-            <Box sx={{ minWidth: 0, minHeight: 0 }}>
+            <Box sx={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>
               <MapPanel
                 roadwayChunks={roadwayLoader.roadwayChunks}
                 countyBoundaries={boundaryLayersQuery.countiesQuery.data}
@@ -281,12 +285,13 @@ export function AppShell() {
                 progressPercent={roadwayLoader.progressPercent}
                 etaSeconds={roadwayLoader.etaSeconds}
                 selectedVisualization={selectedVisualization}
+                selectedRoadwayId={selectedRoadwayId}
                 onSegmentClick={handleSegmentClick}
               />
             </Box>
 
             {selectedRoadwayId && (
-              <Box sx={{ minWidth: 0, minHeight: 0 }}>
+              <Box sx={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>
                 <RoadwayDetailSidebar
                   detail={roadwayDetail}
                   isLoading={isLoadingDetail}

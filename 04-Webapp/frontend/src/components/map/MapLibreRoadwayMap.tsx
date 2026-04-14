@@ -19,9 +19,11 @@ const DISTRICT_LINE_LAYER_ID = "district-boundaries-line";
 const COUNTY_SOURCE_ID = "county-boundaries";
 const COUNTY_LINE_LAYER_ID = "county-boundaries-line";
 const SOURCE_ID = "roadways";
+const HIGHLIGHT_LAYER_ID = "roadways-highlight";
 const CASING_LAYER_ID = "roadways-casing";
 const LINE_LAYER_ID = "roadways-line";
 const HIT_LAYER_ID = "roadways-hit";
+const UNIQUE_ID_PROPERTY_CANDIDATES = ["unique_id", "UNIQUE_ID", "UniqueId"] as const;
 
 interface MapLibreRoadwayMapProps {
   roadwayChunks: RoadwayFeatureCollection[];
@@ -30,6 +32,7 @@ interface MapLibreRoadwayMapProps {
   loadToken: number;
   bounds?: [number, number, number, number] | null;
   selectedVisualization?: RoadwayVisualizationOption;
+  selectedRoadwayId?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
 }
 
@@ -72,6 +75,22 @@ function getGeoJsonSource(
   return source as maplibregl.GeoJSONSource;
 }
 
+function getUniqueIdPropertyName(
+  collection: RoadwayFeatureCollection,
+): (typeof UNIQUE_ID_PROPERTY_CANDIDATES)[number] {
+  const featureProperties = collection.features[0]?.properties;
+
+  if (!featureProperties) {
+    return "unique_id";
+  }
+
+  const propertyName = UNIQUE_ID_PROPERTY_CANDIDATES.find((candidate) =>
+    Object.prototype.hasOwnProperty.call(featureProperties, candidate),
+  );
+
+  return propertyName ?? "unique_id";
+}
+
 export function MapLibreRoadwayMap({
   roadwayChunks,
   countyBoundaries,
@@ -79,6 +98,7 @@ export function MapLibreRoadwayMap({
   loadToken,
   bounds,
   selectedVisualization,
+  selectedRoadwayId,
   onSegmentClick,
 }: MapLibreRoadwayMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +112,7 @@ export function MapLibreRoadwayMap({
     selectedVisualization,
   );
   const renderedLoadTokenRef = useRef(loadToken);
+  const selectedRoadwayIdRef = useRef(selectedRoadwayId);
   const onSegmentClickRef = useRef(onSegmentClick);
 
   roadwayChunksRef.current = roadwayChunks;
@@ -100,6 +121,7 @@ export function MapLibreRoadwayMap({
   boundsRef.current = bounds;
   loadTokenRef.current = loadToken;
   selectedVisualizationRef.current = selectedVisualization;
+  selectedRoadwayIdRef.current = selectedRoadwayId;
   onSegmentClickRef.current = onSegmentClick;
 
   const syncBounds = useEffectEvent(() => {
@@ -122,7 +144,9 @@ export function MapLibreRoadwayMap({
 
   const ensureRoadwayLayers = useEffectEvent(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) {
+    const styleLoaded = map?.isStyleLoaded() ?? false;
+
+    if (!map || !styleLoaded) {
       return;
     }
 
@@ -187,6 +211,7 @@ export function MapLibreRoadwayMap({
     }
 
     const nextData = combineRoadwayChunks(roadwayChunksRef.current);
+    const uniqueIdPropertyName = getUniqueIdPropertyName(nextData);
     const source = getRoadwaySource(map);
 
     if (source) {
@@ -330,7 +355,10 @@ export function MapLibreRoadwayMap({
       map.on("click", HIT_LAYER_ID, (event) => {
         const feature = event.features?.[0];
         const rawProperties = (feature?.properties ?? {}) as Record<string, unknown>;
-        const uniqueId = typeof rawProperties.unique_id === "string" ? rawProperties.unique_id : "";
+        const uniqueIdValue = UNIQUE_ID_PROPERTY_CANDIDATES.map(
+          (candidate) => rawProperties[candidate],
+        ).find((value) => typeof value === "string" && value.length > 0);
+        const uniqueId = typeof uniqueIdValue === "string" ? uniqueIdValue : "";
 
         if (!uniqueId) {
           return;
@@ -345,6 +373,52 @@ export function MapLibreRoadwayMap({
         HIT_LAYER_ID,
         "line-sort-key",
         buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+      );
+    }
+
+    if (!map.getLayer(HIGHLIGHT_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: HIGHLIGHT_LAYER_ID,
+          type: "line",
+          source: SOURCE_ID,
+          filter: ["==", uniqueIdPropertyName, "__highlight_unselected__"],
+          paint: {
+            "line-color": "#FFD600",
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              6,
+              8,
+              8,
+              11,
+              12,
+              14,
+              16,
+              17,
+              20,
+            ],
+            "line-opacity": 0.95,
+          },
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+            "line-sort-key": buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+          },
+        },
+        HIT_LAYER_ID,
+      );
+    }
+
+    if (map.getLayer(HIGHLIGHT_LAYER_ID)) {
+      const selectedId = selectedRoadwayIdRef.current;
+      map.setFilter(
+        HIGHLIGHT_LAYER_ID,
+        selectedId
+          ? (["==", uniqueIdPropertyName, selectedId] as maplibregl.FilterSpecification)
+          : (["==", uniqueIdPropertyName, "__highlight_unselected__"] as maplibregl.FilterSpecification),
       );
     }
 
@@ -388,6 +462,7 @@ export function MapLibreRoadwayMap({
     loadToken,
     roadwayChunks,
     selectedVisualization,
+    selectedRoadwayId,
     ensureRoadwayLayers,
   ]);
 

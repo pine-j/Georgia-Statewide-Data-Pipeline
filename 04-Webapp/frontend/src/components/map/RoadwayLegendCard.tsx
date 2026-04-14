@@ -1,7 +1,7 @@
-import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
+import { Box, Paper, Stack, Typography } from "@mui/material";
 
 import { RoadwayVisualizationOption } from "../../types/api";
-import { getImplementationStatusLabel, getLegendItemsForDisplay } from "./roadwayVisualization";
+import { getLegendItemsForDisplay } from "./roadwayVisualization";
 
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
@@ -14,32 +14,17 @@ export function RoadwayLegendCard({ visualization }: RoadwayLegendCardProps) {
     <Paper
       elevation={0}
       sx={{
-        width: "min(320px, calc(100vw - 32px))",
+        width: "100%",
         p: 1.5,
         borderRadius: 0,
         border: "1px solid rgba(17, 61, 73, 0.12)",
-        bgcolor: "rgba(255, 255, 255, 0.96)",
-        backdropFilter: "blur(12px)",
+        bgcolor: "rgba(246, 248, 249, 0.96)",
       }}
     >
       <Stack spacing={1.1}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-              {visualization.label}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Texas {visualization.texas_header}
-              {visualization.georgia_header ? ` -> Georgia ${visualization.georgia_header}` : ""}
-            </Typography>
-          </Box>
-
-          <Chip
-            size="small"
-            label={getImplementationStatusLabel(visualization.implementation_status)}
-            sx={{ height: 22 }}
-          />
-        </Stack>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+          {visualization.label}
+        </Typography>
 
         <Typography variant="caption" color="text.secondary">
           {visualization.description}

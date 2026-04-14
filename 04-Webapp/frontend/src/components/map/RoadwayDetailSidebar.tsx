@@ -344,14 +344,14 @@ export function RoadwayDetailSidebar({ detail, isLoading, hasError, onClose }: R
       )}
 
       {detail && !isLoading && (
-        <TableContainer sx={{ flex: 1, overflowY: "auto" }}>
+        <TableContainer sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {sections.map((section, sIdx) => (
             <Box key={section.title}>
               <Box
                 sx={{
                   px: 2,
                   py: 0.75,
-                  bgcolor: "rgba(17, 61, 73, 0.04)",
+                  bgcolor: "#f3f6f7",
                   borderBottom: "1px solid rgba(17, 61, 73, 0.08)",
                   position: "sticky",
                   top: 0,
