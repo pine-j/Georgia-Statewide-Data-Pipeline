@@ -63,10 +63,13 @@ AADT_2024_FILL_METHOD,Method used to populate AADT_2024 when a direct official m
 AADT_YEAR,Traffic year associated with the canonical AADT value.,2024.0
 TRUCK_AADT,"Estimated total truck annual average daily traffic, typically single-unit plus combination trucks.",
 TRUCK_PCT,Truck share of total AADT expressed as a proportion of total traffic.,
+PCT_SADT,Single-unit truck percentage of AADT (SINGLE_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,4.2
+PCT_CADT,Combination-unit truck percentage of AADT (COMBO_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,8.1
+HWY_DES,"Highway design class derived from NUM_LANES + divided/undivided determination. Divided (D) when MEDIAN_TYPE != 1, Interstate, or HPMS access-control 1-3 with 4+ lanes. Texas RAPTOR alignment column.",4D
 FUTURE_AADT,Canonical future AADT field retained for compatibility and synchronized to the 2044 projection.,6930.0
 FUTURE_AADT_2044,Final projected 2044 annual average daily traffic for the segment after official matches and gap-filling.,6930.0
 FUTURE_AADT_2044_OFFICIAL,Official GDOT-matched 2044 future AADT before any modeled fill methods are applied.,
-FUTURE_AADT_2044_SOURCE,Source used to populate FUTURE_AADT_2044.,nearest_neighbor
+FUTURE_AADT_2044_SOURCE,"Source used to populate FUTURE_AADT_2044: official_exact, hpms_2024, direction_mirror, analytical_gap_fill, nearest_neighbor, projection_cagr_segment, projection_cagr_aggregate, or missing.",projection_cagr_aggregate
 FUTURE_AADT_2044_CONFIDENCE,Confidence level assigned to the final FUTURE_AADT_2044 value.,low
 FUTURE_AADT_2044_FILL_METHOD,Method used to populate FUTURE_AADT_2044 when a direct official match was not available.,nearest_covered_segment_same_route
 future_aadt_covered,Boolean flag showing whether the segment has any populated future AADT value after processing.,1
@@ -79,7 +82,7 @@ COMBO_UNIT_AADT_2024,2024 annual average daily traffic for combination-unit truc
 K_FACTOR,Proportion of daily traffic occurring during the design hour used for traffic analysis.,
 D_FACTOR,Directional distribution factor representing the share of design-hour traffic in the peak direction.,
 TC_NUMBER,Traffic count station or traffic-count reference number from GDOT traffic data.,
-Traffic_Class,Traffic classification code from the 2024 GDOT traffic file.,
+TRAFFIC_CLASS_2024,Traffic classification code from the 2024 GDOT traffic file.,
 segment_length_m,Computed segment length in meters using the staged geometry.,43582.45588089433
 segment_length_mi,Computed segment length in miles using the staged geometry.,27.08088257134232
 SPEED_LIMIT,"Posted speed limit assigned to the segment, in miles per hour.",65.0
@@ -132,3 +135,7 @@ ROUTE_DIRECTION_LABEL,Human-readable label for the stored route direction field.
 PARSED_SYSTEM_CODE_LABEL,Human-readable label for the system code parsed from ROUTE_ID.,State Highway Route
 ROUTE_TYPE_LABEL,Human-readable label for the route system type parsed from ROUTE_ID.,State Highway Route
 ROUTE_TYPE_GDOT_LABEL,Human-readable label for the derived GDOT route subtype.,State Route Mainline
+SEC_EVAC,Boolean flag indicating the segment overlaps a GDOT-designated hurricane evacuation route.,True
+SEC_EVAC_CONTRAFLOW,Boolean flag indicating the segment overlaps a GDOT hurricane evacuation contraflow route.,False
+SEC_EVAC_ROUTE_NAME,"Evacuation route name(s) matched to the segment from the GDOT EOC layer, semicolon-separated when multiple.",SR 17; SR 25
+SEC_EVAC_SOURCE,Source attribution for the evacuation flag.,gdot_eoc_hurricane_evacuation

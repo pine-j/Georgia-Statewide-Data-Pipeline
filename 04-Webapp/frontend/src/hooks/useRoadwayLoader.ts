@@ -41,13 +41,16 @@ function isAbortError(error: unknown): boolean {
 }
 
 export function useRoadwayLoader(
-  district: number | null,
+  districts: number[],
   counties: string[],
+  highwayTypes: string[],
   enabled: boolean,
 ): RoadwayLoaderState {
   const [state, setState] = useState<RoadwayLoaderState>(() => createEmptyState(0));
   const loadTokenRef = useRef(0);
+  const districtsKey = districts.join("|");
   const countiesKey = counties.join("|");
+  const highwayTypesKey = highwayTypes.join("|");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,7 +78,7 @@ export function useRoadwayLoader(
     void (async () => {
       try {
         const manifest = await getRoadwayManifest(
-          { district, counties },
+          { districts, counties, highwayTypes },
           DEFAULT_CHUNK_SIZE,
           controller.signal,
         );
@@ -122,7 +125,7 @@ export function useRoadwayLoader(
             nextChunkIndex += 1;
             const offset = chunkOffsets[currentIndex];
             const chunk = await getRoadways(
-              { district, counties },
+              { districts, counties, highwayTypes },
               manifest.chunk_size,
               offset,
               controller.signal,
@@ -175,7 +178,7 @@ export function useRoadwayLoader(
     return () => {
       controller.abort();
     };
-  }, [countiesKey, district, enabled]);
+  }, [districtsKey, countiesKey, enabled, highwayTypesKey]);
 
   return state;
 }

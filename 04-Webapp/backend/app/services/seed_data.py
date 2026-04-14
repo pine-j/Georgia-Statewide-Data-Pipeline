@@ -7,6 +7,12 @@ from app.schemas import (
     StateOption,
 )
 
+SEED_ROUTE_FAMILY_BY_HIGHWAY_TYPE = {
+    "IH": "Interstate",
+    "US": "U.S. Route",
+    "SH": "State Route",
+    "LOCAL": "Local/Other",
+}
 
 SEED_STATES = [
     StateOption(code="ga", name="Georgia"),
@@ -28,6 +34,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-1",
         "state_code": "ga",
         "road_name": "GA 316 Corridor",
+        "route_family": "State Route",
         "county": "Clarke",
         "district": 1,
         "functional_class": "Interstate",
@@ -46,6 +53,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-2",
         "state_code": "ga",
         "road_name": "I-20 Augusta",
+        "route_family": "Interstate",
         "county": "Richmond",
         "district": 2,
         "functional_class": "Principal Arterial",
@@ -64,6 +72,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-3",
         "state_code": "ga",
         "road_name": "I-75 Macon",
+        "route_family": "Interstate",
         "county": "Bibb",
         "district": 3,
         "functional_class": "Interstate",
@@ -82,6 +91,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-4",
         "state_code": "ga",
         "road_name": "US 82 Albany",
+        "route_family": "U.S. Route",
         "county": "Dougherty",
         "district": 4,
         "functional_class": "Minor Arterial",
@@ -100,6 +110,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-5",
         "state_code": "ga",
         "road_name": "I-16 Savannah",
+        "route_family": "Interstate",
         "county": "Chatham",
         "district": 5,
         "functional_class": "Interstate",
@@ -118,6 +129,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-6",
         "state_code": "ga",
         "road_name": "I-75 Cartersville",
+        "route_family": "Interstate",
         "county": "Bartow",
         "district": 6,
         "functional_class": "Interstate",
@@ -136,6 +148,7 @@ SEED_ROADWAYS = [
         "unique_id": "seed-7",
         "state_code": "ga",
         "road_name": "I-285 Eastside",
+        "route_family": "Interstate",
         "county": "DeKalb",
         "district": 7,
         "functional_class": "Interstate",
@@ -158,27 +171,48 @@ def list_seed_states() -> list[StateOption]:
 
 def filter_seed_roadways(
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> list[dict]:
     roadways = [item for item in SEED_ROADWAYS if item["state_code"] == state_code]
 
-    if district is not None:
-        roadways = [item for item in roadways if item["district"] == district]
+    if district:
+        district_set = set(district)
+        roadways = [item for item in roadways if item["district"] in district_set]
 
     if counties:
         county_set = {county.lower() for county in counties}
         roadways = [item for item in roadways if item["county"].lower() in county_set]
+
+    if highway_types:
+        selected_route_families = {
+            SEED_ROUTE_FAMILY_BY_HIGHWAY_TYPE[highway_type]
+            for highway_type in highway_types
+            if highway_type in SEED_ROUTE_FAMILY_BY_HIGHWAY_TYPE
+        }
+        if selected_route_families:
+            roadways = [
+                item
+                for item in roadways
+                if item.get("route_family") in selected_route_families
+            ]
 
     return roadways
 
 
 def get_seed_summary(
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> AnalyticsSummaryResponse:
-    roadways = filter_seed_roadways(state_code, district=district, counties=counties)
+    roadways = filter_seed_roadways(
+        state_code,
+        district=district,
+        counties=counties,
+        highway_types=highway_types,
+    )
     grouped: dict[str, list[dict]] = {}
 
     for roadway in roadways:
@@ -204,13 +238,15 @@ def get_seed_summary(
 def get_seed_roadways(
     state_code: str,
     limit: int,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> RoadwayFeatureCollection:
     roadways = filter_seed_roadways(
         state_code,
         district=district,
         counties=counties,
+        highway_types=highway_types,
     )[:limit]
 
     return RoadwayFeatureCollection(
@@ -238,10 +274,16 @@ def get_seed_roadways(
 
 def get_seed_bounds(
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> list[float] | None:
-    roadways = filter_seed_roadways(state_code, district=district, counties=counties)
+    roadways = filter_seed_roadways(
+        state_code,
+        district=district,
+        counties=counties,
+        highway_types=highway_types,
+    )
     if not roadways:
         return None
 

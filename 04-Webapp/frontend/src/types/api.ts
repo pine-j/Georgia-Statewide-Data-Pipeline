@@ -14,9 +14,16 @@ export interface CountyOption {
   district: number;
 }
 
+export interface HighwayTypeOption {
+  id: string;
+  label: string;
+  route_family: string;
+}
+
 export interface GeorgiaFilterOptions {
   districts: DistrictOption[];
   counties: CountyOption[];
+  highway_types: HighwayTypeOption[];
 }
 
 export interface AppConfig {
@@ -48,6 +55,25 @@ export interface RoadwayFeatureProperties {
   district: number;
   district_label: string;
   county: string;
+  system_code_label?: string | null;
+  direction_label?: string | null;
+  num_lanes?: number | null;
+  future_aadt_2044?: number | null;
+  k_factor?: number | null;
+  d_factor?: number | null;
+  truck_aadt?: number | null;
+  pct_sadt?: number | null;
+  pct_cadt?: number | null;
+  vmt?: number | null;
+  nhs_ind_label?: string | null;
+  median_type_label?: string | null;
+  hwy_des?: string | null;
+  speed_limit?: number | null;
+  truck_pct?: number | null;
+  functional_class_viz?: string | null;
+  surface_type_label?: string | null;
+  ownership_label?: string | null;
+  facility_type_label?: string | null;
 }
 
 export interface RoadwayFeature {
@@ -91,4 +117,45 @@ export interface RoadwayDetail {
 
 export interface BoundsResponse {
   bounds: [number, number, number, number] | null;
+}
+
+export interface RoadwayLegendItem {
+  color: string;
+  label: string;
+  value?: string | null;
+  min_value?: number | null;
+  max_value?: number | null;
+}
+
+export type RoadwayVisualizationKind = "numeric" | "categorical";
+export type RoadwayVisualizationMapMode = "thematic" | "details_only" | "unavailable";
+export type RoadwayVisualizationImplementationStatus =
+  | "staged"
+  | "derived"
+  | "popup_only"
+  | "unavailable";
+
+export interface RoadwayVisualizationOption {
+  id: string;
+  texas_header: string;
+  georgia_header: string | null;
+  label: string;
+  description: string;
+  notes: string | null;
+  kind: RoadwayVisualizationKind | null;
+  map_mode: RoadwayVisualizationMapMode;
+  implementation_status: RoadwayVisualizationImplementationStatus;
+  property_name: string | null;
+  status: string;
+  unit: string | null;
+  default: boolean;
+  no_data_color: string;
+  legend_items: RoadwayLegendItem[];
+}
+
+export interface RoadwayVisualizationCatalog {
+  default_option_id: string;
+  thematic_options: RoadwayVisualizationOption[];
+  details_only_options: RoadwayVisualizationOption[];
+  unavailable_options: RoadwayVisualizationOption[];
 }

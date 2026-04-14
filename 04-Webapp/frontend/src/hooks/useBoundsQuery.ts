@@ -3,13 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getBounds } from "../services/api";
 
 export function useBoundsQuery(
-  district: number | null,
+  districts: number[],
   counties: string[],
+  highwayTypes: string[],
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: ["bounds", district, counties, enabled],
-    queryFn: () => getBounds({ district, counties }),
+    queryKey: ["bounds", districts, counties, highwayTypes, enabled],
+    queryFn: () => getBounds({ districts, counties, highwayTypes }),
     enabled,
   });
 }

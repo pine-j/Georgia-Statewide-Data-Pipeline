@@ -7,6 +7,7 @@ import {
   RoadwayDetail,
   RoadwayFeatureCollection,
   RoadwayManifest,
+  RoadwayVisualizationCatalog,
   StateOption,
 } from "../types/api";
 
@@ -14,8 +15,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const DEFAULT_STATE = "ga";
 
 interface QueryFilters {
-  district?: number | null;
+  districts?: number[];
   counties?: string[];
+  highwayTypes?: string[];
 }
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -40,15 +42,19 @@ export function getStates(): Promise<StateOption[]> {
   return fetchJson<StateOption[]>("/meta/states");
 }
 
-function buildFilterQuery({ district, counties }: QueryFilters): string {
+function buildFilterQuery({ districts, counties, highwayTypes }: QueryFilters): string {
   const params = new URLSearchParams({ state: DEFAULT_STATE });
 
-  if (district) {
-    params.set("district", String(district));
+  for (const district of districts ?? []) {
+    params.append("district", String(district));
   }
 
   for (const county of counties ?? []) {
     params.append("county", county);
+  }
+
+  for (const highwayType of highwayTypes ?? []) {
+    params.append("highway_type", highwayType);
   }
 
   return params.toString();
@@ -84,6 +90,10 @@ export function getRoadways(
     `/layers/roadways?${params.toString()}`,
     signal,
   );
+}
+
+export function getRoadwayVisualizationCatalog(): Promise<RoadwayVisualizationCatalog> {
+  return fetchJson<RoadwayVisualizationCatalog>("/layers/roadways/visualizations");
 }
 
 export function getRoadwayDetail(

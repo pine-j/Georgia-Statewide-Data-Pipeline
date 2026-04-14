@@ -44,7 +44,6 @@ class RoadwayData:
         # RAPTOR-relevant columns to retain
         self.COLUMNS_TO_KEEP = [
             "unique_id",
-            "RCLINK",
             "ROUTE_ID",
             "COUNTY_CODE",
             "COUNTY_NAME",
@@ -84,7 +83,6 @@ class RoadwayData:
             "SIGNED_ROUTE_VERIFY_NOTES",
             "NUM_LANES",
             "LANE_WIDTH",
-            "SURFACE_WIDTH",
             "SURFACE_TYPE",
             "SURFACE_TYPE_LABEL",
             "MEDIAN_TYPE",
@@ -94,12 +92,12 @@ class RoadwayData:
             "SHOULDER_TYPE_LABEL",
             "SHOULDER_WIDTH_L",
             "SHOULDER_WIDTH_R",
-            "SHOULDER_WIDTH",
             "OWNERSHIP",
             "OWNERSHIP_LABEL",
             "FACILITY_TYPE",
             "FACILITY_TYPE_LABEL",
             "SPEED_LIMIT",
+            "HWY_DES",
             "AADT",
             "AADT_2024",
             "AADT_2024_OFFICIAL",
@@ -109,16 +107,16 @@ class RoadwayData:
             "AADT_YEAR",
             "TRUCK_AADT",
             "TRUCK_PCT",
+            "PCT_SADT",
+            "PCT_CADT",
             "K_FACTOR",
             "D_FACTOR",
-            "TERRAIN",
             "URBAN_CODE",
             "URBAN_CODE_LABEL",
             "NHS_IND",
             "NHS_IND_LABEL",
             "STRAHNET",
             "STRAHNET_LABEL",
-            "ACCESS_CONTROL",
             "current_aadt_official_covered",
             "current_aadt_covered",
             "HPMS_ROUTE_NAME",
@@ -260,7 +258,7 @@ class RoadwayData:
         gdf = gdf[available_cols].copy()
 
         # Sort by route for consistent ordering
-        sort_cols = [c for c in ["ROUTE_ID", "RCLINK"] if c in gdf.columns]
+        sort_cols = [c for c in ["ROUTE_ID"] if c in gdf.columns]
         if sort_cols:
             gdf = gdf.sort_values(by=sort_cols).reset_index(drop=True)
 

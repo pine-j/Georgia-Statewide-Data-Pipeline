@@ -12,8 +12,9 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 @router.get("/summary", response_model=AnalyticsSummaryResponse)
 def get_summary(
     state: str = Query(default="ga", min_length=2, max_length=8),
-    district: int | None = Query(default=None, ge=1, le=7),
+    district: list[int] | None = Query(default=None),
     county: list[str] | None = Query(default=None),
+    highway_type: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> AnalyticsSummaryResponse:
     return get_roadway_summary(
@@ -21,4 +22,5 @@ def get_summary(
         state.lower(),
         district=district,
         counties=county,
+        highway_types=highway_type,
     )

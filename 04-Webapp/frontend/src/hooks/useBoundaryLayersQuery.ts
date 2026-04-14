@@ -3,22 +3,23 @@ import { useQueries } from "@tanstack/react-query";
 import { getBoundaryLayer } from "../services/api";
 
 export function useBoundaryLayersQuery(
-  district: number | null,
+  districts: number[],
   counties: string[],
+  highwayTypes: string[],
   enabled: boolean,
 ) {
   const [countiesQuery, districtsQuery] = useQueries({
     queries: [
       {
-        queryKey: ["boundary-layer", "counties", district, counties, enabled],
+        queryKey: ["boundary-layer", "counties", districts, counties, highwayTypes, enabled],
         queryFn: ({ signal }: { signal?: AbortSignal }) =>
-          getBoundaryLayer("counties", { district, counties }, signal),
+          getBoundaryLayer("counties", { districts, counties, highwayTypes }, signal),
         enabled,
       },
       {
-        queryKey: ["boundary-layer", "districts", district, counties, enabled],
+        queryKey: ["boundary-layer", "districts", districts, counties, highwayTypes, enabled],
         queryFn: ({ signal }: { signal?: AbortSignal }) =>
-          getBoundaryLayer("districts", { district, counties }, signal),
+          getBoundaryLayer("districts", { districts, counties, highwayTypes }, signal),
         enabled,
       },
     ],

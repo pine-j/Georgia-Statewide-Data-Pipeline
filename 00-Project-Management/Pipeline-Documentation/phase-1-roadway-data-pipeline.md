@@ -19,9 +19,11 @@ Current closeout position:
 | 1 | **GDOT Road Inventory 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Base route geometry (`GA_2024_Routes`), route IDs, milepoints, and 15 attribute event layers (COUNTY_ID, F_SYSTEM, NHS, FACILITY_TYPE, THROUGH_LANES, LANE_WIDTH, MEDIAN_TYPE/WIDTH, SHOULDER_TYPE/WIDTH, OWNERSHIP, STRAHNET, SURFACE_TYPE, URBAN_ID). This is the foundation — every segment starts here. |
 | 2 | **GDOT Traffic Data 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Current AADT, future AADT, truck AADT, VMT, K-factor, D-factor, traffic class, and count station numbers. The traffic intervals define the segment boundaries — routes are sliced at traffic milepoint breaks to assign per-segment traffic values. |
 | 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Gap-fill for AADT, future AADT, and roadway attributes where GDOT values are missing. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
-| 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags, matched by route ID and milepoint overlap. |
-| 5 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
-| 6 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
+| 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags for state highway routes, matched by route ID and milepoint overlap. |
+| 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads. Records with ROUTE_ID use milepoint matching; records without ROUTE_ID use spatial (geometry) matching. |
+| 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
+| 7 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
+| 8 | **GDOT EOC Hurricane Evacuation Routes** | [EOC MapServer/7](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/7) | Hurricane evacuation route polylines (268 features) used to flag roadway segments as evacuation routes via spatial overlay. Also includes contraflow routes ([Layer 8](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/8), 12 features). |
 
 ### How the sources come together
 
@@ -32,7 +34,10 @@ GDOT Road Inventory GDB -> Base geometry + route attributes (206,994 routes)
 GDOT Traffic GDB -> Segment at traffic intervals -> assign AADT, VMT, factors (46,029 traffic records)
          |
          v
-GDOT GPAS SpeedZone -> Enrich: posted speed limits (matched by route + milepoint)
+GDOT GPAS SpeedZone -> Enrich: posted speed limits (OnSystem by route + milepoint; OffSystem by spatial match)
+         |
+         v
+GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
          |
          v
 FHWA HPMS 2024 -> Gap-fill: AADT, attributes, pavement condition; set initial signed-route family from routesigning
@@ -41,10 +46,16 @@ FHWA HPMS 2024 -> Gap-fill: AADT, attributes, pavement condition; set initial si
 GDOT GPAS Reference -> Verify: signed-route family (Interstate / US / State); override HPMS where GPAS matches
          |
          v
-GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
+GDOT EOC Evacuation -> Flag: SEC_EVAC from spatial overlay with hurricane evacuation routes (268 + 12 contraflow)
          |
          v
 Route Classification -> Derive: ROUTE_FAMILY, ROUTE_TYPE_GDOT, HWY_NAME from ROUTE_ID structure + verification
+         |
+         v
+CAGR Growth Projection -> Fill: FUTURE_AADT_2044 gaps from historical AADT trends (2010-2023) + official implied rates
+         |
+         v
+Texas RAPTOR Alignment -> Derive: PCT_SADT, PCT_CADT, HWY_DES for downstream RAPTOR scoring compatibility
          |
          v
 Decoded Labels -> Add: human-readable _LABEL columns for all coded fields
@@ -79,7 +90,7 @@ Together, these provide:
 - current traffic fields from GDOT 2024 traffic data
 - future AADT projection (2044) from GDOT and HPMS sources
 - official signed-route verification from GDOT GPAS reference layers, seeded by HPMS `routesigning` coverage
-- posted speed limits from GDOT SpeedZone OnSystem permits
+- posted speed limits from GDOT SpeedZone OnSystem and OffSystem permits
 - county and district boundary layers
 
 Note: historical AADT (2010-2020) has been removed from pipeline output to produce a cleaner network. Raw historical source files are retained in `01-Raw-Data/` for future use.
@@ -132,7 +143,7 @@ That directory is organized by source:
 Roadway-Inventory/
 ├── GDOT_Road_Inventory/   (Road_Inventory_2024.gdb, DataDictionary)
 ├── GDOT_Traffic/           (TRAFFIC_Data_2024.gdb, Traffic_Historical.zip, 2010_thr_2019)
-├── GDOT_GPAS/              (rnhp_enrichment — speed zones)
+├── GDOT_GPAS/              (rnhp_enrichment — speed zones on-system & off-system)
 ├── FHWA_HPMS/              (2024 snapshot, field manual, metadata)
 └── download_metadata.json
 ```
@@ -174,8 +185,9 @@ HPMS `routesigning` codes provide the broad-coverage first pass for signed-route
 The speed zone enrichment downloads from GDOT GPAS to:
 
 - `01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_on_system.geojson`
+- `01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_off_system.geojson`
 
-This snapshot is cached locally and only re-downloaded when
+These snapshots are cached locally and only re-downloaded when
 `01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py` is run.
 
 ### FHWA HPMS 2024 data
@@ -276,7 +288,7 @@ The current traffic source contributes:
 - `D_Factor`
 - `VMT`
 - `TruckVMT`
-- `Traffic_Class`
+- `Traffic_Class` (staged as `TRAFFIC_CLASS_2024`)
 - `TC_NUMBER`
 - county and district references used during ETL backfilling
 
@@ -288,13 +300,11 @@ These fields are matched to the official GDOT route geometry by:
 
 ### `Traffic_Historical.zip`
 
-Historical route-segment traffic contributes actual historical AADT and truck-related measures, normalized year by year. The staged dataset currently includes:
+Historical traffic source files are archived in raw sources and retained for potential future use, but they are not normalized into or included in the staged output.
 
-- `AADT_2010` through `AADT_2020`
-- `TRUCK_AADT_2010` through `TRUCK_AADT_2020`
-- `TRUCK_PCT_2010` through `TRUCK_PCT_2020`
+The archived files remain available in `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`.
 
-Legacy future-projection fields in older historical datasets are intentionally not carried forward. The only canonical future AADT kept in the staged output is the 2024 current-year `FUTURE_AADT` field.
+Historical AADT and truck-related measures from these files are intentionally excluded from the staged dataset. Legacy future-projection fields in older historical datasets are also not carried forward. The only canonical future AADT kept in the staged output is the 2024 current-year `FUTURE_AADT` field.
 
 ---
 
@@ -457,9 +467,10 @@ Current signed-route verification fields:
 
 ### 8a. Apply RNHP enrichment (speed zones)
 
-The ETL enriches state highway segments with posted speed limit data from the
-GDOT GPAS SpeedZone OnSystem layer before the HPMS and GPAS signed-route
-passes.
+The ETL enriches roadway segments with posted speed limit data from two GDOT
+GPAS SpeedZone layers before the HPMS and GPAS signed-route passes.
+
+**OnSystem** (state highway routes):
 
 Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
 
@@ -468,6 +479,7 @@ Matching method:
 - filter to active speed zone records (`RECORD_STATUS_CD = 'ACTV'`)
 - match by `RNH_ROUTE_ID` base (first 13 characters) plus statewide milepoint interval overlap
 - when multiple speed zones cover a segment, take the best-covering (longest overlap)
+- applies to state highway segments only (`PARSED_SYSTEM_CODE = 1`)
 
 Current enrichment results:
 
@@ -483,11 +495,23 @@ Speed limit distribution:
 - 65 mph: `940` segments
 - 70 mph: `629` segments
 
+**OffSystem** (non-state-highway roads):
+
+Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9`
+
+This layer contains 81,778 speed zone features for county roads, city streets,
+and other non-state-highway roads. Two matching strategies are used:
+
+- **Phase 1 — Milepoint matching** (~1,468 records with `RNH_ROUTE_ID`): same route-base + milepoint overlap logic as OnSystem. Applied to any unfilled segment regardless of system code.
+- **Phase 2 — Spatial matching** (~80,310 records without `ROUTE_ID`): geometry-based `sjoin(predicate="intersects")` against unfilled non-state-highway segments. When multiple zones intersect a segment, the one with the longest geometric overlap is selected. Zero-overlap touches are rejected.
+
+Both phases only fill segments that do not already have a `SPEED_LIMIT` from the OnSystem pass. Source is tagged as `gdot_speed_zone_off_system`.
+
 Current enrichment fields:
 
 - `SPEED_LIMIT`
 - `IS_SCHOOL_ZONE`
-- `SPEED_LIMIT_SOURCE`
+- `SPEED_LIMIT_SOURCE` — `gdot_speed_zone_on_system` or `gdot_speed_zone_off_system`
 
 ### 8b. Apply HPMS 2024 enrichment
 
@@ -509,15 +533,16 @@ AADT gap-fill priority chain (each step only fills segments not yet covered):
 
 Final 2024 AADT coverage: 245,778 / 245,863 segments (99.97%).
 
-Future AADT 2044 fill chain uses the same multi-source pattern:
+Future AADT 2044 fill chain uses a multi-source pattern followed by growth-rate projection:
 
 1. **GDOT official** — direct FUTURE_AADT from GDOT traffic GDB
 2. **HPMS future_aadt** — FHWA HPMS future AADT values
 3. **Direction mirror** — INC→DEC copy
 4. **Interpolation** — linear interpolation on state highways
 5. **Nearest-neighbor** — nearest covered segment on same route (20-mile cap)
+6. **CAGR projection** — compound annual growth rate applied to AADT_2024 to project 2044 values for remaining gaps. Segment-level CAGR is computed from 14 years of historical GDOT traffic data (2010-2023) matched by ROUTE_ID + milepoint overlap. Where segment-level history is unavailable, the aggregate fallback uses the official implied CAGR derived from known FUTURE_AADT_2044/AADT_2024 pairs (statewide median ~1.17%), grouped by county+system code, district+system code, or system code. Growth rates are clamped to -3% to +5% per year.
 
-Current Future AADT 2044 coverage: 53,215 / 245,863 segments (21.64%).
+Steps 1-5 provide direct or proximate values. Step 6 extends coverage to nearly all remaining segments using growth-rate projection, achieving near-complete Future AADT 2044 coverage wherever AADT_2024 exists.
 
 HPMS signed-route enrichment:
 
@@ -532,7 +557,7 @@ HPMS gap-fills 13 GDOT roadway attributes where GDOT values are null (never over
 - `FACILITY_TYPE`: +19,684 segments
 - `SURFACE_TYPE`: +10,462 segments
 - `NHS`: +6,680 segments
-- `SPEED_LIMIT`: +5,577 segments (backfills gaps left by GPAS SpeedZone)
+- `SPEED_LIMIT`: +5,577 segments (backfills gaps left by GPAS SpeedZone OnSystem + OffSystem)
 - `LANE_WIDTH`: +3,805 segments
 - `SHOULDER_TYPE` / `SHOULDER_WIDTH_R`: +3,866 segments
 - `MEDIAN_TYPE`: +3,866 segments
@@ -643,7 +668,7 @@ with:
 
 - `FUTURE_AADT_2044` — canonical 20-year projection AADT
 - `FUTURE_AADT_2044_OFFICIAL` — direct GDOT traffic match only, never overwritten
-- `FUTURE_AADT_2044_SOURCE` — `official_exact`, `hpms_2024`, `direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`, or `missing`
+- `FUTURE_AADT_2044_SOURCE` — `official_exact`, `hpms_2024`, `direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`, `projection_cagr_segment`, `projection_cagr_aggregate`, or `missing`
 - `FUTURE_AADT_2044_CONFIDENCE` — `high`, `medium`, or `low`
 - `FUTURE_AADT_2044_FILL_METHOD` — method used for non-official values
 - `future_aadt_covered` — boolean: has any FUTURE_AADT_2044
@@ -663,7 +688,7 @@ with:
 - `SIGNED_ROUTE_VERIFY_SCORE`
 - `SIGNED_ROUTE_VERIFY_NOTES`
 
-### From GDOT GPAS SpeedZone OnSystem
+### From GDOT GPAS SpeedZone (OnSystem + OffSystem)
 
 - `SPEED_LIMIT`
 - `IS_SCHOOL_ZONE`
@@ -709,6 +734,9 @@ with:
 - `AADT_YEAR`
 - `TRUCK_AADT`
 - `TRUCK_PCT`
+- `PCT_SADT`
+- `PCT_CADT`
+- `HWY_DES`
 - `FUTURE_AADT`
 - `FUTURE_AADT_2044`
 - `FUTURE_AADT_2044_OFFICIAL`
@@ -773,7 +801,7 @@ The Phase 1 ETL now stages six additional official roadway-inventory attributes 
 
 Current populated segment counts in the staged database:
 
-- `OWNERSHIP`: `452,912`
+- `OWNERSHIP`: near-complete statewide coverage after HPMS gap-fill
 - `STRAHNET`: `2,228`
 - `LANE_WIDTH`: `713`
 - `SHOULDER_WIDTH_R`: `390`
@@ -817,9 +845,8 @@ Key validation: HPMS AADT values are 99.7% identical to GDOT official values whe
 
 ### Future AADT 2044 coverage
 
-- **Current coverage: `53,215` of `245,863` segments (`21.64%`)**
-- Future AADT is only available where GDOT or HPMS report a future projection value
-- The same fill chain (direction mirror, interpolation, nearest-neighbor) extends coverage beyond official sources
+- Official + gap-fill coverage (steps 1-5): `53,215` of `245,863` segments (`21.64%`)
+- **CAGR projection (step 6) extends coverage to near-complete** — projects FUTURE_AADT_2044 for all remaining segments that have AADT_2024, using compound annual growth rates from 14 years of historical GDOT traffic data (2010-2023) with official implied rates (~1.17% statewide median) as the aggregate fallback
 
 ### State-system null county and district diagnosis
 
@@ -949,9 +976,9 @@ Phase 1 currently has:
 - route-identity parsing
 - a Georgia-specific route-family crosswalk grounded in GDOT route documentation
 
-Important limitation:
+Note on baseline confidence:
 
-- `U.S. Route` versus `State Route` remains a medium-confidence interpretation because Georgia `ROUTE_ID` values encode state route numbers and concurrency can still exist
+- `U.S. Route` versus `State Route` is a medium-confidence interpretation when derived from `ROUTE_ID` alone, because Georgia route IDs encode state route numbers and concurrency can still exist. In practice, this baseline is largely superseded by the HPMS/GPAS signed-route verification pass (see section 6 below), which provides federal or GDOT-authoritative family classification for 91%+ of the network.
 
 Reference note:
 
@@ -974,10 +1001,11 @@ GPAS has final authority because it is the direct GDOT live reference source. HP
 
 ### 7. Speed limit enrichment (operational)
 
-Official posted speed limits are enriched from GDOT GPAS SpeedZone OnSystem
-permits from `rnhp.dot.ga.gov`:
+Official posted speed limits are enriched from GDOT GPAS SpeedZone permits
+from `rnhp.dot.ga.gov`:
 
-- GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits
+- GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits (state highways)
+- GPAS/9 `SpeedZone OffSystem` — 81,778 features (county roads, city streets; ~1,468 with ROUTE_ID, ~80,310 spatially matched)
 
 Current enrichment coverage:
 
@@ -1058,7 +1086,7 @@ Current direct ETL inputs:
 
 - `GDOT_Road_Inventory/Road_Inventory_2024.gdb` — base route geometry and roadway attributes
 - `GDOT_Traffic/TRAFFIC_Data_2024.gdb` — current AADT and traffic measures
-- `GDOT_GPAS/rnhp_enrichment/` — speed zone enrichment geojson
+- `GDOT_GPAS/rnhp_enrichment/` — speed zone enrichment geojson (on-system + off-system)
 - GDOT GPAS live reference layers (MapServer layers 5, 6, 7) — final authoritative signed-route verification
 - `FHWA_HPMS/2024/hpms_ga_2024_tabular.json` — HPMS enrichment, initial signed-route classification, and GDOT attribute gap-fill
 - GDOT boundary service (live download at runtime)
@@ -1085,7 +1113,7 @@ AADT source distribution:
 
 The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
 
-Future AADT 2044 coverage is `53,215` of `245,863` segments (`21.64%`). Future projections are only available where GDOT or HPMS report them; the fill chain extends coverage via direction mirror, interpolation, and nearest-neighbor.
+Future AADT 2044 official + gap-fill coverage is `53,215` of `245,863` segments (`21.64%`). The CAGR projection step extends this to near-complete coverage by applying compound annual growth rates (from 14 years of historical GDOT traffic data, with official implied rates as fallback) to AADT_2024 for all remaining segments.
 
 ### 2. Historical AADT removed from output
 
@@ -1122,7 +1150,7 @@ Several layers were evaluated but not integrated:
 - **Traffic Counters (FCRS/4)**: 17,145 features — stuck at 2013 data, superseded by 2024 AADT
 - **Crashes (FCRS/6)**: 1,827,102 features — 2016-2021 data, available for future safety analysis
 - **Fatalities (FCRS/5)**: 41,869 features — 2024-2026 data, available for future safety analysis
-- **SpeedZone OffSystem (GPAS/9)**: 81,778 features — only 1,468 have ROUTE_ID, rest need spatial matching
+- **SpeedZone OffSystem (GPAS/9)**: 81,778 features — now integrated via milepoint + spatial matching (see step 8a)
 - **Scenic Byways (GPAS/16)**: 112 features — available for future integration
 - **Estimated ROW (GDOT_Estimated_ROW/1)**: 7,460 features — available for future integration
 
@@ -1145,11 +1173,11 @@ Closed with Phase 1:
 
 - statewide staged roadway ETL with 245,863 segments and 133 columns
 - 2024 AADT coverage at 99.97% (`245,778` segments) via five-tier fill chain
-- Future AADT 2044 coverage at 21.64% (`53,215` segments) via same fill chain
+- Future AADT 2044 coverage extended to near-complete via six-tier fill chain including CAGR growth-rate projection (official + gap-fill: `53,215` segments; CAGR projection fills remaining segments with AADT_2024)
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
 - HPMS gap-fill for 13 GDOT roadway attributes
-- posted speed limit enrichment from GDOT SpeedZone OnSystem
+- posted speed limit enrichment from GDOT SpeedZone OnSystem and OffSystem
 - staged SQLite database, GeoPackage, and table CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
@@ -1158,5 +1186,4 @@ Closed with Phase 1:
 Deferred beyond Phase 1:
 
 - crash and fatality data enrichment from FCRS layers (data available on `rnhp.dot.ga.gov`)
-- off-system speed zone enrichment (requires spatial matching, 80,310 records without ROUTE_ID)
 - statewide roadway supplementation from TIGER / OSM unless later QA shows a planning-relevant omission pattern

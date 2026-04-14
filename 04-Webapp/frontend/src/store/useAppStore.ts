@@ -1,33 +1,45 @@
-import { create } from "zustand";
+import { create } from 'zustand';
+import { RoadwayDetail } from '../types/api';
 
-type LayerKey = "roadways";
-
+type LayerKey = 'roadways';
+export const DEFAULT_HIGHWAY_TYPES = ['IH'];
 interface AppState {
-  selectedDistrict: number | null;
+  selectedDistricts: number[];
   selectedCounties: string[];
+  selectedHighwayTypes: string[];
+  selectedVisualizationId: string;
   activeLayers: Record<LayerKey, boolean>;
-  setSelectedDistrict: (district: number | null) => void;
+  selectedRoadwayId: string | null;
+  roadwayDetail: RoadwayDetail | null;
+  isLoadingDetail: boolean;
+  detailError: boolean;
+  setSelectedDistricts: (districts: number[]) => void;
   setSelectedCounties: (counties: string[]) => void;
+  setSelectedHighwayTypes: (highwayTypes: string[]) => void;
+  setSelectedVisualizationId: (visualizationId: string) => void;
   setLayerVisibility: (layer: LayerKey, visible: boolean) => void;
+  openRoadwayDetail: (uniqueId: string) => void;
+  setRoadwayDetail: (detail: RoadwayDetail) => void;
+  setDetailError: () => void;
+  closeRoadwayDetail: () => void;
 }
-
 export const useAppStore = create<AppState>((set) => ({
-  selectedDistrict: null,
+  selectedDistricts: [],
   selectedCounties: [],
-  activeLayers: {
-    roadways: true,
-  },
-  setSelectedDistrict: (district) =>
-    set({
-      selectedDistrict: district,
-      selectedCounties: [],
-    }),
+  selectedHighwayTypes: [...DEFAULT_HIGHWAY_TYPES],
+  selectedVisualizationId: 'aadt',
+  activeLayers: { roadways: true },
+  selectedRoadwayId: null,
+  roadwayDetail: null,
+  isLoadingDetail: false,
+  detailError: false,
+  setSelectedDistricts: (selectedDistricts) => set({ selectedDistricts }),
   setSelectedCounties: (counties) => set({ selectedCounties: counties }),
-  setLayerVisibility: (layer, visible) =>
-    set((current) => ({
-      activeLayers: {
-        ...current.activeLayers,
-        [layer]: visible,
-      },
-    })),
+  setSelectedHighwayTypes: (selectedHighwayTypes) => set({ selectedHighwayTypes }),
+  setSelectedVisualizationId: (selectedVisualizationId) => set({ selectedVisualizationId }),
+  setLayerVisibility: (layer, visible) => set((current) => ({ activeLayers: { ...current.activeLayers, [layer]: visible } })),
+  openRoadwayDetail: (uniqueId) => set({ selectedRoadwayId: uniqueId, roadwayDetail: null, isLoadingDetail: true, detailError: false }),
+  setRoadwayDetail: (detail) => set({ roadwayDetail: detail, isLoadingDetail: false }),
+  setDetailError: () => set({ isLoadingDetail: false, detailError: true }),
+  closeRoadwayDetail: () => set({ selectedRoadwayId: null, roadwayDetail: null, isLoadingDetail: false, detailError: false }),
 }));
