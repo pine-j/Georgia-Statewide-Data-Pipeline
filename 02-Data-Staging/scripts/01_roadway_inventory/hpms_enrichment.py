@@ -218,6 +218,7 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     # Initialize HPMS-sourced columns if not present
     for col in ["HPMS_IRI", "HPMS_PSR", "HPMS_RUTTING", "HPMS_CRACKING_PCT",
+                "HPMS_PCT_DH_SINGLE", "HPMS_PCT_DH_COMBINATION",
                 "HPMS_ACCESS_CONTROL", "HPMS_TERRAIN_TYPE",
                 "HPMS_ROUTE_SIGNING", "HPMS_ROUTE_NUMBER", "HPMS_ROUTE_NAME"]:
         if col not in enriched.columns:
@@ -366,6 +367,14 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         cracking = match.get("cracking_percent")
         if cracking is not None and not pd.isna(cracking):
             enriched.at[idx, "HPMS_CRACKING_PCT"] = float(cracking)
+
+        pct_dh_single = match.get("pct_dh_single")
+        if pct_dh_single is not None and not pd.isna(pct_dh_single):
+            enriched.at[idx, "HPMS_PCT_DH_SINGLE"] = float(pct_dh_single)
+
+        pct_dh_combination = match.get("pct_dh_combination")
+        if pct_dh_combination is not None and not pd.isna(pct_dh_combination):
+            enriched.at[idx, "HPMS_PCT_DH_COMBINATION"] = float(pct_dh_combination)
 
         # --- Safety geometry ---
         ac = match.get("access_control")

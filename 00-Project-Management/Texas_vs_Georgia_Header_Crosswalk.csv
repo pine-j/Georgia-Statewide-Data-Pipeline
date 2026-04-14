@@ -11,7 +11,7 @@ ADT_CUR,AADTRound,AADT,Derived,Derived,Present,"AADT is the canonical current tr
 AADT_DESGN,Future_AADT,FUTURE_AADT_2044,Proxy,Proxy,Present,"FUTURE_AADT_2044 has near-complete coverage: GDOT official + HPMS + direction mirror for ~22% of segments, then official implied growth projection (~1.17% annual) fills the rest."
 K_FAC,K_Factor,K_FACTOR,Exact-ish,Exact-ish,Present,"Direct traffic-factor analogue exists."
 D_FAC,D_Factor,D_FACTOR,Exact-ish,Exact-ish,Present,"Direct traffic-factor analogue exists."
-TRK_DHV_PCT,,,Gap,Gap,Missing,"No direct Georgia equivalent has been identified in the staged schema."
+TRK_DHV_PCT,"HPMS pct_dh_single + pct_dh_combination",TRK_DHV_PCT,Derived,Derived,Present,"Primary: HPMS design-hour truck percent (pct_dh_single + pct_dh_combination). Fallback: TRUCK_PCT approximation for non-HPMS segments."
 AADT_TRUCKS,,TRUCK_AADT,Derived,Derived,Present,"Final-output TRUCK_AADT exists. At raw level this is derived from truck traffic components rather than carried as a single source header."
 PCT_SADT,Single_Unit_AADT,PCT_SADT,Proxy,Derived,Present,"SINGLE_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py."
 PCT_CADT,Combo_Unit_AADT,PCT_CADT,Proxy,Derived,Present,"COMBO_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py."

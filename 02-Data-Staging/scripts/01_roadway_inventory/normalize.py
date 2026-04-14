@@ -869,14 +869,30 @@ def derive_texas_alignment_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         None,
     )
 
+    # TRK_DHV_PCT — truck design-hour volume percent
+    # Primary: HPMS pct_dh_single + pct_dh_combination (direct design-hour data)
+    # Fallback: TRUCK_PCT (approximation)
+    hpms_single = pd.to_numeric(result.get("HPMS_PCT_DH_SINGLE"), errors="coerce")
+    hpms_combo = pd.to_numeric(result.get("HPMS_PCT_DH_COMBINATION"), errors="coerce")
+    hpms_dhv = hpms_single.fillna(0) + hpms_combo.fillna(0)
+    has_hpms_dhv = hpms_single.notna() | hpms_combo.notna()
+    truck_pct = pd.to_numeric(result.get("TRUCK_PCT"), errors="coerce")
+    result["TRK_DHV_PCT"] = np.where(
+        has_hpms_dhv,
+        hpms_dhv.round(1),
+        np.where(truck_pct.notna(), truck_pct.round(1), np.nan),
+    )
+
     pct_sadt_coverage = result["PCT_SADT"].notna().sum()
     pct_cadt_coverage = result["PCT_CADT"].notna().sum()
+    trk_dhv_pct_coverage = result["TRK_DHV_PCT"].notna().sum()
     hwy_des_coverage = result["HWY_DES"].notna().sum()
     total = len(result)
     logger.info(
-        "Texas alignment columns: PCT_SADT %d/%d (%.1f%%), PCT_CADT %d/%d (%.1f%%), HWY_DES %d/%d (%.1f%%)",
+        "Texas alignment columns: PCT_SADT %d/%d (%.1f%%), PCT_CADT %d/%d (%.1f%%), TRK_DHV_PCT %d/%d (%.1f%%), HWY_DES %d/%d (%.1f%%)",
         pct_sadt_coverage, total, pct_sadt_coverage / total * 100 if total else 0,
         pct_cadt_coverage, total, pct_cadt_coverage / total * 100 if total else 0,
+        trk_dhv_pct_coverage, total, trk_dhv_pct_coverage / total * 100 if total else 0,
         hwy_des_coverage, total, hwy_des_coverage / total * 100 if total else 0,
     )
     return result

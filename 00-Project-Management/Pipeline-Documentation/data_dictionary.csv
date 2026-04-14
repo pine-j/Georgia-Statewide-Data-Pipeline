@@ -44,6 +44,7 @@ TRUCK_PCT,Truck share of total AADT expressed as a proportion of total traffic.,
 PCT_SADT,Single-unit truck percentage of AADT (SINGLE_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,4.2
 PCT_CADT,Combination-unit truck percentage of AADT (COMBO_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,8.1
 HWY_DES,"Highway design class derived from NUM_LANES + divided/undivided determination. Divided (D) when MEDIAN_TYPE != 1, Interstate, or HPMS access-control 1-3 with 4+ lanes. Texas RAPTOR alignment column.",4D
+TRK_DHV_PCT,"Truck design-hour volume percent. Primary source: HPMS pct_dh_single + pct_dh_combination. Fallback: TRUCK_PCT approximation for non-HPMS segments. Texas RAPTOR alignment column.",12.3
 FUTURE_AADT_2044,Projected 2044 annual average daily traffic for the segment after official matches and gap-filling.,6930.0
 FUTURE_AADT_2044_OFFICIAL,Official GDOT-matched 2044 future AADT before any modeled fill methods are applied.,
 FUTURE_AADT_2044_SOURCE,"Source used to populate FUTURE_AADT_2044: official_exact, hpms_2024, direction_mirror, projection_official_implied, or missing.",projection_official_implied

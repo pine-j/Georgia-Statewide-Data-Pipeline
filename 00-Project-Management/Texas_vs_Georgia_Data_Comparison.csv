@@ -11,7 +11,7 @@ ADT_CUR,Texas current AADT,AADTRound,AADT,Derived,Present,AADT is the canonical 
 AADT_DESGN,Texas design / future AADT,Future_AADT,FUTURE_AADT_2044,Proxy,Present,FUTURE_AADT_2044 has near-complete coverage: GDOT official + HPMS + direction mirror for ~22% then official implied growth projection (~1.17% annual) fills the rest
 K_FAC,Texas K-factor,K_Factor,K_FACTOR,Exact-ish,Present,Direct traffic-factor analogue exists
 D_FAC,Texas directional factor,D_Factor,D_FACTOR,Exact-ish,Present,Direct traffic-factor analogue exists
-TRK_DHV_PCT,Texas truck design-hour percent,No confirmed Georgia raw header,No confirmed Georgia final-output column,Gap,Missing,Phase-1 docs still list no direct Georgia equivalent
+TRK_DHV_PCT,Texas truck design-hour percent,HPMS pct_dh_single + pct_dh_combination,TRK_DHV_PCT,Derived,Present,Primary: HPMS design-hour truck percent. Fallback: TRUCK_PCT approximation for non-HPMS segments
 AADT_TRUCKS,Texas truck AADT,"Single_Unit_AADT + Combo_Unit_AADT, TRUCK_AADT",TRUCK_AADT,Derived,Present,Georgia final output already has TRUCK_AADT
 PCT_SADT,Texas single-unit truck percent,Single_Unit_AADT,PCT_SADT,Derived,Present,SINGLE_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py
 PCT_CADT,Texas combination-truck percent,Combo_Unit_AADT,PCT_CADT,Derived,Present,COMBO_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py
