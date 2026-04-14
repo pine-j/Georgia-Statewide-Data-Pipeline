@@ -1,25 +1,14 @@
 Column,Description,Sample
 FUNCTION_TYPE,"GDOT route function code identifying whether the segment is mainline, ramp, frontage road, collector-distributor, alley, or another facility type.",1
-COUNTY,Legacy source county code carried through from the base GDOT route geometry.,0
 SYSTEM_CODE,"GDOT system code identifying whether the segment belongs to the state highway system, public road network, private road system, federal route system, ramp system, or collector-distributor system.",1
 DIRECTION,"Direction of increasing milepoints along the route calibration, typically INC or DEC.",INC
 ROUTE_ID,Official 16-character GDOT route identifier used to key the segment in the state linear referencing system.,1000100002900INC
-Comments,Source comments or manual notes attached to the route record in the base GDOT inventory.,Manually corrected on 2/11
-StateID,State-maintained source identifier for the base route feature carried through from GDOT geometry.,13
-BeginDate,Effective or begin date for the base route record in the source inventory.,1/1/2024
-START_M,Start measure of the original source route feature in the source measure system.,-2.7343048714101318e-08
-END_M,End measure of the original source route feature in the source measure system.,98.2820993000496
 FROM_MILEPOINT,Beginning milepoint of the staged segment along the route.,0.0
 TO_MILEPOINT,Ending milepoint of the staged segment along the route.,26.8308
-BeginPoint,Beginning linear reference point used for interval matching and segmentation.,0.0
-EndPoint,Ending linear reference point used for interval matching and segmentation.,26.8308
-RouteId,Source route identifier field from GDOT geometry retained as delivered.,1000100002900INC
-Shape_Length,Original geometry length of the source route feature in the source GIS units before staged reprojection.,1.535973024793271
 COUNTY_ID,Primary county code assigned to the segment after route parsing and spatial backfill.,209.0
-F_SYSTEM,"Functional system code for the segment, equivalent to FHWA functional classification.",4.0
-NHS,National Highway System code for the segment.,
 FACILITY_TYPE,"Facility type code describing whether the segment is two-way, one-way, ramp, non-mainline, or planned.",2.0
-THROUGH_LANES,Number of through travel lanes on the roadway segment.,2.0
+FUNCTIONAL_CLASS,FHWA functional classification code for the segment.,4.0
+NUM_LANES,Number of through travel lanes on the roadway segment.,2.0
 LANE_WIDTH,"Typical width of a through lane on the segment, in feet.",
 MEDIAN_TYPE,Median type code describing the separation between directions of travel.,
 MEDIAN_WIDTH,"Median width for divided roadways, in feet.",
@@ -28,21 +17,11 @@ SHOULDER_WIDTH_L,"Left shoulder width, in feet, referenced to the route calibrat
 SHOULDER_WIDTH_R,"Right shoulder width, in feet, referenced to the route calibration direction.",
 OWNERSHIP,Ownership or jurisdiction code for the agency responsible for the roadway.,1.0
 STRAHNET,STRAHNET code indicating whether the segment is on the Strategic Highway Network or a connector.,
+NHS_IND,National Highway System indicator code for the segment.,
 SURFACE_TYPE,Pavement surface type code for the roadway segment.,
-URBAN_ID,Urban area code identifying the FHWA urbanized or rural area assignment.,99999.0
-PARSED_FUNCTION_TYPE,Function type parsed directly from the leading character of ROUTE_ID.,1
-PARSED_COUNTY_CODE,County code parsed directly from ROUTE_ID.,0
-PARSED_SYSTEM_CODE,System code parsed directly from ROUTE_ID.,1
-PARSED_ROUTE_NUMBER,Route number parsed from ROUTE_ID before signed-route interpretation.,29
-PARSED_SUFFIX,Two-character suffix parsed from ROUTE_ID indicating route subtype or branch.,00
-PARSED_DIRECTION,"Direction token parsed from ROUTE_ID, typically INC or DEC.",INC
+URBAN_CODE,Urban area code identifying the FHWA urbanized or rural area assignment.,99999.0
 COUNTY_CODE,Zero-padded 3-digit county code assigned to the segment.,209
-GDOT_District,GDOT district number assigned to the segment based on county or spatial backfill.,5.0
-DISTRICT,Alias of GDOT_District retained for compatibility with other tables and reports.,5.0
-FUNCTIONAL_CLASS,Synchronized alias of F_SYSTEM representing the roadway's FHWA functional class.,
-NUM_LANES,Synchronized alias of THROUGH_LANES retained as a generic lane-count field.,
-URBAN_CODE,Synchronized alias of URBAN_ID retained as a generic urban area code field.,
-NHS_IND,Synchronized alias of NHS retained as an NHS indicator field.,
+DISTRICT,GDOT district number assigned to the segment based on county or spatial backfill.,5.0
 ROUTE_TYPE,Route system type parsed from ROUTE_ID and aligned with GDOT system code categories.,1
 ROUTE_NUMBER,Route number parsed from ROUTE_ID and retained as a numeric field.,29
 ROUTE_SUFFIX,"Two-character GDOT route suffix identifying a branch, business, spur, loop, or other subtype.",00
@@ -54,24 +33,22 @@ ROUTE_FAMILY_DETAIL,"More specific route family description that incorporates th
 ROUTE_FAMILY_CONFIDENCE,Confidence level assigned to the ROUTE_FAMILY classification.,medium
 ROUTE_FAMILY_SOURCE,Rule or source used to derive ROUTE_FAMILY.,gdot_appendix_g_us_route
 unique_id,Unique staged segment identifier built from ROUTE_ID plus beginning and ending milepoints.,1000100002900INC_0.0000_26.8308
-AADT,"Canonical current AADT field used across the pipeline, synchronized to the final AADT_2024 value.",5500.0
-AADT_2024,Final 2024 annual average daily traffic value for the segment after official matches and gap-filling.,5500.0
+AADT,Canonical current AADT (2024) for the segment after official matches and gap-filling.,5500.0
 AADT_2024_OFFICIAL,"Official GDOT-matched 2024 AADT before analytical, mirrored, HPMS, or nearest-neighbor fill.",
-AADT_2024_SOURCE,"Source used to populate AADT_2024, such as official GDOT, HPMS, direction mirror, or analytical fill.",hpms_2024
-AADT_2024_CONFIDENCE,Confidence level assigned to the final AADT_2024 value.,medium
-AADT_2024_FILL_METHOD,Method used to populate AADT_2024 when a direct official match was not available.,hpms_route_id_milepoint_match
+AADT_2024_SOURCE,"Source used to populate the current AADT, such as official GDOT, HPMS, direction mirror, or analytical fill.",hpms_2024
+AADT_2024_CONFIDENCE,Confidence level assigned to the current AADT value.,medium
+AADT_2024_FILL_METHOD,Method used to populate the current AADT when a direct official match was not available.,hpms_route_id_milepoint_match
 AADT_YEAR,Traffic year associated with the canonical AADT value.,2024.0
 TRUCK_AADT,"Estimated total truck annual average daily traffic, typically single-unit plus combination trucks.",
 TRUCK_PCT,Truck share of total AADT expressed as a proportion of total traffic.,
 PCT_SADT,Single-unit truck percentage of AADT (SINGLE_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,4.2
 PCT_CADT,Combination-unit truck percentage of AADT (COMBO_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,8.1
 HWY_DES,"Highway design class derived from NUM_LANES + divided/undivided determination. Divided (D) when MEDIAN_TYPE != 1, Interstate, or HPMS access-control 1-3 with 4+ lanes. Texas RAPTOR alignment column.",4D
-FUTURE_AADT,Canonical future AADT field retained for compatibility and synchronized to the 2044 projection.,6930.0
-FUTURE_AADT_2044,Final projected 2044 annual average daily traffic for the segment after official matches and gap-filling.,6930.0
+FUTURE_AADT_2044,Projected 2044 annual average daily traffic for the segment after official matches and gap-filling.,6930.0
 FUTURE_AADT_2044_OFFICIAL,Official GDOT-matched 2044 future AADT before any modeled fill methods are applied.,
-FUTURE_AADT_2044_SOURCE,"Source used to populate FUTURE_AADT_2044: official_exact, hpms_2024, direction_mirror, analytical_gap_fill, nearest_neighbor, projection_cagr_segment, projection_cagr_aggregate, or missing.",projection_cagr_aggregate
+FUTURE_AADT_2044_SOURCE,"Source used to populate FUTURE_AADT_2044: official_exact, hpms_2024, direction_mirror, projection_official_implied, or missing.",projection_official_implied
 FUTURE_AADT_2044_CONFIDENCE,Confidence level assigned to the final FUTURE_AADT_2044 value.,low
-FUTURE_AADT_2044_FILL_METHOD,Method used to populate FUTURE_AADT_2044 when a direct official match was not available.,nearest_covered_segment_same_route
+FUTURE_AADT_2044_FILL_METHOD,"Method used to populate FUTURE_AADT_2044 when a direct official match was not available: hpms_route_id_milepoint_match, inc_to_dec_direction_mirror, official_implied_county_system, official_implied_district_system, official_implied_system_statewide, or official_implied_statewide.",official_implied_statewide
 future_aadt_covered,Boolean flag showing whether the segment has any populated future AADT value after processing.,1
 VMT,"Vehicle miles traveled from the matched 2024 traffic record, retained under the legacy field name VMT.",
 TruckVMT,"Truck vehicle miles traveled from the matched 2024 traffic record, retained under the legacy field name TruckVMT.",
@@ -117,12 +94,9 @@ DISTRICT_NAME,Short GDOT district office name for DISTRICT.,Jesup
 DISTRICT_LABEL,Full human-readable GDOT district label including district number and office name.,District 5 - Jesup
 SYSTEM_CODE_LABEL,Human-readable label for the GDOT roadway system code.,State Highway Route
 FUNCTION_TYPE_LABEL,Human-readable label for the GDOT route function code.,Main Line
-PARSED_FUNCTION_TYPE_LABEL,Human-readable label for the function type parsed from ROUTE_ID.,Main Line
-F_SYSTEM_LABEL,Human-readable label for the FHWA functional system classification.,Minor Arterial
-FUNCTIONAL_CLASS_LABEL,Human-readable label for the functional class alias field.,
+FUNCTIONAL_CLASS_LABEL,Human-readable label for the FHWA functional classification.,Minor Arterial
 FACILITY_TYPE_LABEL,Human-readable label for the facility type code.,Two-Way (non-restricted)
-NHS_LABEL,Human-readable label for the National Highway System code.,
-NHS_IND_LABEL,Human-readable label for the NHS indicator alias field.,
+NHS_IND_LABEL,Human-readable label for the National Highway System indicator.,
 OWNERSHIP_LABEL,Human-readable label for the roadway ownership code.,State DOT
 STRAHNET_LABEL,Human-readable label for the STRAHNET code.,
 MEDIAN_TYPE_LABEL,Human-readable label for the median type code.,
@@ -130,9 +104,7 @@ SHOULDER_TYPE_LABEL,Human-readable label for the shoulder type code.,
 SURFACE_TYPE_LABEL,Human-readable label for the pavement surface type code.,
 URBAN_CODE_LABEL,Human-readable label for the urban area code.,
 DIRECTION_LABEL,Human-readable label for the route calibration direction.,Increasing
-PARSED_DIRECTION_LABEL,Human-readable label for the direction parsed from ROUTE_ID.,Increasing
 ROUTE_DIRECTION_LABEL,Human-readable label for the stored route direction field.,Increasing
-PARSED_SYSTEM_CODE_LABEL,Human-readable label for the system code parsed from ROUTE_ID.,State Highway Route
 ROUTE_TYPE_LABEL,Human-readable label for the route system type parsed from ROUTE_ID.,State Highway Route
 ROUTE_TYPE_GDOT_LABEL,Human-readable label for the derived GDOT route subtype.,State Route Mainline
 SEC_EVAC,Boolean flag indicating the segment overlaps a GDOT-designated hurricane evacuation route.,True

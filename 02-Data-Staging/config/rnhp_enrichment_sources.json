@@ -16,9 +16,8 @@
       "local_geojson": "01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_off_system.geojson",
       "match_key": "spatial",
       "route_id_field": "RNH_ROUTE_ID",
-      "from_field": "FROM_MILEPOINT_STATEWIDE",
-      "to_field": "TO_MILEPOINT_STATEWIDE",
-      "active_filter": "RECORD_STATUS_CD = 'ACTV'"
+      "active_filter": "RECORD_STATUS_CD = 'ACTV'",
+      "note": "Layer 9 has no FROM/TO_MILEPOINT_STATEWIDE fields — all records use spatial matching"
     }
   },
   "query_batch_size": 500

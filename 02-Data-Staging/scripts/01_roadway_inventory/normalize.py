@@ -22,8 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
-import zipfile
 from pathlib import Path
 
 import geopandas as gpd
@@ -101,6 +99,39 @@ COUNTY_ALL_MIN_SHARE = 0.01
 COUNTY_ALL_DELIMITER = ", "
 
 ROUTE_MERGE_KEYS = ["ROUTE_ID", "BeginPoint", "EndPoint"]
+
+# Columns dropped from final output — duplicates or source-internal fields
+# that are only needed during pipeline processing.
+COLUMNS_TO_DROP_FROM_OUTPUT = [
+    # Source metadata (not meaningful after segmentation)
+    "START_M",
+    "END_M",
+    "RouteId",
+    "StateID",
+    "BeginDate",
+    "Comments",
+    "Shape_Length",
+    # Exact duplicates kept under canonical names
+    "BeginPoint",           # == FROM_MILEPOINT
+    "EndPoint",             # == TO_MILEPOINT
+    "GDOT_District",        # == DISTRICT
+    "AADT_2024",            # == AADT  (metadata fields AADT_2024_* are kept)
+    "FUTURE_AADT",          # == FUTURE_AADT_2044
+    # Source columns superseded by synchronized aliases
+    "F_SYSTEM",             # == FUNCTIONAL_CLASS
+    "THROUGH_LANES",        # == NUM_LANES
+    "NHS",                  # == NHS_IND
+    "URBAN_ID",             # == URBAN_CODE
+    # Parsed intermediate fields (copies of final ROUTE_* columns)
+    "PARSED_SYSTEM_CODE",
+    "PARSED_ROUTE_NUMBER",
+    "PARSED_SUFFIX",
+    "PARSED_DIRECTION",
+    "PARSED_COUNTY_CODE",
+    "PARSED_FUNCTION_TYPE",
+    # Legacy source fields superseded by enriched columns
+    "COUNTY",
+]
 
 ROUTE_ATTRIBUTE_LAYERS = {
     "COUNTY_ID": ("COUNTY_IDVn", "COUNTY_ID"),
@@ -250,20 +281,11 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf["FUNCTION_TYPE_LABEL"] = get_or_empty_series(gdf, "FUNCTION_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["function_type"])
     )
-    gdf["PARSED_FUNCTION_TYPE_LABEL"] = get_or_empty_series(gdf, "PARSED_FUNCTION_TYPE").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["function_type"])
-    )
-    gdf["F_SYSTEM_LABEL"] = get_or_empty_series(gdf, "F_SYSTEM").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["functional_class"])
-    )
     gdf["FUNCTIONAL_CLASS_LABEL"] = get_or_empty_series(gdf, "FUNCTIONAL_CLASS").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["functional_class"])
     )
     gdf["FACILITY_TYPE_LABEL"] = get_or_empty_series(gdf, "FACILITY_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["facility_type"])
-    )
-    gdf["NHS_LABEL"] = get_or_empty_series(gdf, "NHS").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["nhs"])
     )
     gdf["NHS_IND_LABEL"] = get_or_empty_series(gdf, "NHS_IND").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["nhs"])
@@ -290,14 +312,8 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf["DIRECTION_LABEL"] = get_or_empty_series(gdf, "DIRECTION").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
     )
-    gdf["PARSED_DIRECTION_LABEL"] = get_or_empty_series(gdf, "PARSED_DIRECTION").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
     gdf["ROUTE_DIRECTION_LABEL"] = get_or_empty_series(gdf, "ROUTE_DIRECTION").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
-    gdf["PARSED_SYSTEM_CODE_LABEL"] = get_or_empty_series(gdf, "PARSED_SYSTEM_CODE").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
     )
     gdf["ROUTE_TYPE_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
@@ -630,8 +646,6 @@ def build_segment_row(
     row = route_row.drop(labels=["geometry"]).to_dict()
     row["FROM_MILEPOINT"] = segment_start
     row["TO_MILEPOINT"] = segment_end
-    row["BeginPoint"] = segment_start
-    row["EndPoint"] = segment_end
     row["geometry"] = geometry
 
     row["AADT"] = np.nan
@@ -1133,14 +1147,13 @@ def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Apply the same multi-source fill chain to FUTURE_AADT_2044.
+    """Apply direction-mirror fill to FUTURE_AADT_2044.
 
     Fill order:
     1. GDOT official (already set in build_segment_row)
     2. HPMS future_aadt (via hpms_enrichment, if wired)
     3. Direction mirror (INC→DEC)
-    4. Interpolation between adjacent covered segments
-    5. Nearest-neighbor on same route (capped at 20 miles)
+    4. Official implied growth-rate projection (in apply_future_aadt_official_growth_projection)
     """
 
     filled = gdf.copy()
@@ -1203,89 +1216,6 @@ def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     logger.info("Future AADT direction mirror: filled %d DEC segments", mirror_count)
 
-    # --- Interpolation (state-system only) ---
-    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-    eligible = filled[filled["SYSTEM_CODE"].astype(str) == "1"].copy()
-    interp_count = 0
-    if not eligible.empty:
-        eligible = eligible.sort_values(by=["ROUTE_ID", "FROM_MILEPOINT"])
-        eligible["source_index"] = eligible.index
-        for route_id, route_group in eligible.groupby("ROUTE_ID", sort=False):
-            route_group = route_group.reset_index(drop=True)
-            route_group["_covered"] = route_group["future_aadt_covered"].fillna(False).astype(bool)
-            route_group["_run_id"] = route_group["_covered"].ne(route_group["_covered"].shift()).cumsum()
-            for _, run_group in route_group.groupby("_run_id", sort=False):
-                if bool(run_group["_covered"].iloc[0]):
-                    continue
-                run_start = int(run_group.index.min())
-                run_end = int(run_group.index.max())
-                if run_start == 0 or run_end >= len(route_group) - 1:
-                    continue
-                prev_row = route_group.iloc[run_start - 1]
-                next_row = route_group.iloc[run_end + 1]
-                if not (bool(prev_row["_covered"]) and bool(next_row["_covered"])):
-                    continue
-                run_miles = float(run_group["segment_length_mi"].sum()) if "segment_length_mi" in run_group.columns else 999
-                if run_miles > AADT_2024_GAP_FILL_MAX_INTERPOLATION_MILES:
-                    continue
-                prev_val = prev_row["FUTURE_AADT_2044"]
-                next_val = next_row["FUTURE_AADT_2044"]
-                if pd.isna(prev_val) or pd.isna(next_val):
-                    continue
-                anchor_start = float(prev_row["TO_MILEPOINT"])
-                anchor_end = float(next_row["FROM_MILEPOINT"])
-                anchor_span = anchor_end - anchor_start
-                for run_row in run_group.itertuples(index=False):
-                    midpoint = (float(run_row.FROM_MILEPOINT) + float(run_row.TO_MILEPOINT)) / 2.0
-                    if anchor_span > MILEPOINT_TOLERANCE:
-                        ratio = max(0.0, min(1.0, (midpoint - anchor_start) / anchor_span))
-                    else:
-                        ratio = 0.5
-                    interp_val = int(round(float(prev_val) + (float(next_val) - float(prev_val)) * ratio))
-                    seg_idx = run_row.source_index
-                    filled.at[seg_idx, "FUTURE_AADT_2044"] = interp_val
-                    filled.at[seg_idx, "FUTURE_AADT_2044_SOURCE"] = "analytical_gap_fill"
-                    filled.at[seg_idx, "FUTURE_AADT_2044_CONFIDENCE"] = "medium"
-                    filled.at[seg_idx, "FUTURE_AADT_2044_FILL_METHOD"] = "interpolate_between_adjacent"
-                    filled.at[seg_idx, "future_aadt_covered"] = True
-                    interp_count += 1
-
-    logger.info("Future AADT interpolation: filled %d segments", interp_count)
-
-    # --- Nearest-neighbor (capped at 20 miles) ---
-    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-    uncovered = filled[~filled["future_aadt_covered"]]
-    covered = filled[filled["future_aadt_covered"]]
-    nn_lookup: dict[str, list[tuple[float, float]]] = {}
-    for idx, row in covered.iterrows():
-        rid = str(row["ROUTE_ID"])
-        mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
-        val = row["FUTURE_AADT_2044"]
-        if pd.notna(val):
-            nn_lookup.setdefault(rid, []).append((mid, float(val)))
-    nn_count = 0
-    for idx, row in uncovered.iterrows():
-        rid = str(row["ROUTE_ID"])
-        candidates = nn_lookup.get(rid)
-        if not candidates:
-            continue
-        seg_mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
-        best_dist, best_val = float("inf"), None
-        for cand_mid, cand_val in candidates:
-            dist = abs(seg_mid - cand_mid)
-            if dist < best_dist:
-                best_dist = dist
-                best_val = cand_val
-        if best_val is not None and best_dist <= NEAREST_NEIGHBOR_MAX_DISTANCE_MI:
-            filled.at[idx, "FUTURE_AADT_2044"] = int(best_val)
-            filled.at[idx, "FUTURE_AADT_2044_SOURCE"] = "nearest_neighbor"
-            filled.at[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "low"
-            filled.at[idx, "FUTURE_AADT_2044_FILL_METHOD"] = "nearest_covered_segment_same_route"
-            filled.at[idx, "future_aadt_covered"] = True
-            nn_count += 1
-
-    logger.info("Future AADT nearest-neighbor: filled %d segments", nn_count)
-
     # Sync FUTURE_AADT alias
     filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
     filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
@@ -1293,8 +1223,8 @@ def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return filled
 
 
-def apply_future_aadt_cagr_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Project missing FUTURE_AADT_2044 values from matched historical AADT growth."""
+def apply_future_aadt_official_growth_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Project missing FUTURE_AADT_2044 values from official implied growth rates."""
 
     filled = gdf.copy()
 
@@ -1327,264 +1257,32 @@ def apply_future_aadt_cagr_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
 
     missing_future_mask = filled["FUTURE_AADT_2044"].isna() & filled["AADT_2024"].notna()
     if not missing_future_mask.any():
-        logger.info("Future AADT CAGR projection: no eligible FUTURE_AADT_2044 gaps remain")
+        logger.info("Future AADT official growth projection: no eligible FUTURE_AADT_2044 gaps remain")
         filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
         filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
         return filled
 
-    history_source = filled.loc[
-        filled["AADT_2024"].notna(),
-        ["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT", "AADT_2024", "COUNTY_ID", "DISTRICT", "SYSTEM_CODE"],
-    ].copy()
-    history_source = history_source.dropna(subset=["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT"])
-    if history_source.empty:
-        logger.warning("Future AADT CAGR projection: no segments with AADT_2024 available for projection")
-        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
-        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-        return filled
-
-    history_source["route_key"] = history_source["ROUTE_ID"].astype(str).str.strip()
-    history_source["from_mp"] = pd.to_numeric(history_source["FROM_MILEPOINT"], errors="coerce")
-    history_source["to_mp"] = pd.to_numeric(history_source["TO_MILEPOINT"], errors="coerce")
-    history_source["segment_index"] = history_source.index
-    history_source = history_source.dropna(subset=["from_mp", "to_mp"])
-
-    historical_zip_candidates = sorted(RAW_DIR.rglob("Traffic_Historical.zip"), key=lambda path: str(path).casefold())
-    if not historical_zip_candidates:
-        logger.warning("Future AADT CAGR projection: Traffic_Historical.zip not found under %s", RAW_DIR)
-        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
-        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-        return filled
-
-    historical_zip_path = historical_zip_candidates[0]
-
-    def _find_column(columns: pd.Index, candidates: list[str]) -> str | None:
-        column_lookup = {str(column).strip().upper(): str(column) for column in columns}
-        for candidate in candidates:
-            if candidate in column_lookup:
-                return column_lookup[candidate]
-        return None
-
-    def _resolve_historical_shapefile(archive: zipfile.ZipFile, year: int) -> str | None:
-        folder_candidates = [
-            f"2010_thr_2023_Published_Traffic/{year}_Published_AADT/",
-            f"2010_thr_2023_Published_Traffic/{year}_Published_Traffic/",
-        ]
-        preferred_name = f"Traffic_Data_GA_{year}.shp"
-        for folder in folder_candidates:
-            candidate_path = f"{folder}{preferred_name}"
-            try:
-                archive.getinfo(candidate_path)
-                return candidate_path
-            except KeyError:
-                continue
-
-        for folder in folder_candidates:
-            matching = sorted(
-                entry.filename
-                for entry in archive.infolist()
-                if entry.filename.startswith(folder)
-                and entry.filename.lower().endswith(".shp")
-                and "tc_location" not in entry.filename.lower()
-            )
-            if matching:
-                return matching[0]
-        return None
-
-    historical_frames: list[pd.DataFrame] = []
-    with zipfile.ZipFile(historical_zip_path) as archive, tempfile.TemporaryDirectory(prefix="ga_hist_aadt_") as temp_dir:
-        temp_root = Path(temp_dir)
-        for year in range(2010, 2024):
-            shp_member = _resolve_historical_shapefile(archive, year)
-            if shp_member is None:
-                logger.warning("Future AADT CAGR projection: missing historical traffic shapefile for %s", year)
-                continue
-
-            stem = Path(shp_member).with_suffix("")
-            related_members = [
-                entry.filename
-                for entry in archive.infolist()
-                if Path(entry.filename).with_suffix("") == stem
-            ]
-            if not related_members:
-                logger.warning("Future AADT CAGR projection: no extractable members found for %s", shp_member)
-                continue
-
-            for member in related_members:
-                archive.extract(member, path=temp_root)
-
-            shp_path = temp_root / shp_member
-            try:
-                historical_gdf = gpd.read_file(shp_path)
-            except Exception as exc:
-                logger.warning(
-                    "Future AADT CAGR projection: failed to read %s for %s (%s)",
-                    shp_member,
-                    year,
-                    exc,
-                )
-                continue
-
-            route_col = _find_column(historical_gdf.columns, ["ROUTE_ID", "ROUTEID", "ROUTE_ID_1"])
-            begin_col = _find_column(historical_gdf.columns, ["BEGIN_POIN", "BEGINPOINT", "BEGINPOIN", "FROM_MILEPO", "FROMMP"])
-            end_col = _find_column(historical_gdf.columns, ["END_POINT", "ENDPOINT", "TO_MILEPOIN", "TOMILEPOIN", "TOMP"])
-            aadt_col = _find_column(historical_gdf.columns, ["AADT_VN", "AADTROUND", "AADT", "AADT_ROUND"])
-            if route_col is None or begin_col is None or end_col is None or aadt_col is None:
-                logger.warning(
-                    "Future AADT CAGR projection: required columns missing in %s for %s",
-                    shp_member,
-                    year,
-                )
-                continue
-
-            historical_df = historical_gdf[[route_col, begin_col, end_col, aadt_col]].copy()
-            historical_df.columns = ["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT", "AADT"]
-            historical_df["ROUTE_ID"] = historical_df["ROUTE_ID"].astype(str).str.strip()
-            historical_df["FROM_MILEPOINT"] = pd.to_numeric(historical_df["FROM_MILEPOINT"], errors="coerce")
-            historical_df["TO_MILEPOINT"] = pd.to_numeric(historical_df["TO_MILEPOINT"], errors="coerce")
-            historical_df["AADT"] = pd.to_numeric(historical_df["AADT"], errors="coerce")
-            historical_df["YEAR"] = year
-            historical_df = historical_df.dropna(subset=["ROUTE_ID", "FROM_MILEPOINT", "TO_MILEPOINT", "AADT"])
-            historical_df = historical_df.loc[historical_df["AADT"] > 0].copy()
-            if historical_df.empty:
-                continue
-            historical_frames.append(historical_df)
-
-    if not historical_frames:
-        logger.warning(
-            "Future AADT CAGR projection: no readable historical AADT records loaded from %s",
-            historical_zip_path,
-        )
-        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
-        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-        return filled
-
-    historical_all = pd.concat(historical_frames, ignore_index=True)
-    historical_all["route_key"] = historical_all["ROUTE_ID"].astype(str).str.strip()
-
-    current_by_route = {
-        route_id: route_group.loc[:, ["segment_index", "from_mp", "to_mp"]].reset_index(drop=True)
-        for route_id, route_group in history_source.groupby("route_key", sort=False)
-    }
-
-    matched_records: list[dict[str, float | int]] = []
-    for route_id, historical_group in historical_all.groupby("route_key", sort=False):
-        current_group = current_by_route.get(route_id)
-        if current_group is None or current_group.empty:
-            continue
-
-        segment_from = current_group["from_mp"].to_numpy(dtype="float64")
-        segment_to = current_group["to_mp"].to_numpy(dtype="float64")
-        _norm_from = np.minimum(segment_from, segment_to)
-        _norm_to = np.maximum(segment_from, segment_to)
-        segment_from = _norm_from
-        segment_to = _norm_to
-        segment_index = current_group["segment_index"].to_numpy(dtype="int64")
-        overlap_accumulator: dict[tuple[int, int], list[float]] = {}
-
-        for hist_row in historical_group.itertuples(index=False):
-            hist_from = min(float(hist_row.FROM_MILEPOINT), float(hist_row.TO_MILEPOINT))
-            hist_to = max(float(hist_row.FROM_MILEPOINT), float(hist_row.TO_MILEPOINT))
-            overlap = np.minimum(segment_to, hist_to) - np.maximum(segment_from, hist_from)
-            matched_mask = overlap > MILEPOINT_TOLERANCE
-            if not matched_mask.any():
-                continue
-            for seg_idx, overlap_len in zip(segment_index[matched_mask], overlap[matched_mask]):
-                key = (int(seg_idx), int(hist_row.YEAR))
-                stats = overlap_accumulator.setdefault(key, [0.0, 0.0])
-                stats[0] += float(hist_row.AADT) * float(overlap_len)
-                stats[1] += float(overlap_len)
-
-        for (seg_idx, year), (weighted_sum, total_overlap) in overlap_accumulator.items():
-            if total_overlap <= 0:
-                continue
-            matched_records.append(
-                {
-                    "segment_index": seg_idx,
-                    "YEAR": year,
-                    "AADT": weighted_sum / total_overlap,
-                }
-            )
-
-    if not matched_records:
-        logger.warning("Future AADT CAGR projection: no historical route/milepoint overlaps matched current segments")
-        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
-        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-        return filled
-
-    historical_observations = pd.DataFrame(matched_records)
-    historical_observations = (
-        historical_observations.groupby(["segment_index", "YEAR"], as_index=False)["AADT"].mean()
-    )
-
-    current_observations = history_source.loc[:, ["segment_index", "AADT_2024"]].copy()
-    current_observations["YEAR"] = 2024
-    current_observations = current_observations.rename(columns={"AADT_2024": "AADT"})
-    current_observations = current_observations.dropna(subset=["AADT"])
-    current_observations = current_observations.loc[current_observations["AADT"] > 0].copy()
-
-    all_observations = pd.concat(
-        [historical_observations.loc[:, ["segment_index", "YEAR", "AADT"]], current_observations],
-        ignore_index=True,
-    )
-    all_observations = (
-        all_observations.sort_values(["segment_index", "YEAR"])
-        .drop_duplicates(subset=["segment_index", "YEAR"], keep="last")
-        .reset_index(drop=True)
-    )
-
-    segment_growth_records: list[dict[str, float | int]] = []
-    historical_year_counts = historical_observations.groupby("segment_index")["YEAR"].nunique()
-    for seg_idx, segment_obs in all_observations.groupby("segment_index", sort=False):
-        historical_year_count = int(historical_year_counts.get(seg_idx, 0))
-        if historical_year_count < 1:
-            continue
-
-        segment_obs = segment_obs.loc[segment_obs["AADT"] > 0].sort_values("YEAR")
-        if len(segment_obs) < 2:
-            continue
-
-        first_row = segment_obs.iloc[0]
-        last_row = segment_obs.iloc[-1]
-        year_span = int(last_row["YEAR"]) - int(first_row["YEAR"])
-        if year_span <= 0:
-            continue
-
-        growth_rate = (float(last_row["AADT"]) / float(first_row["AADT"])) ** (1.0 / year_span) - 1.0
-        growth_rate = float(np.clip(growth_rate, -0.03, 0.05))
-        segment_growth_records.append(
-            {
-                "segment_index": int(seg_idx),
-                "growth_rate": growth_rate,
-                "first_year": int(first_row["YEAR"]),
-                "last_year": int(last_row["YEAR"]),
-                "historical_year_count": historical_year_count,
-            }
-        )
-
-    if not segment_growth_records:
-        logger.warning("Future AADT CAGR projection: no segment-level CAGR values could be computed")
-        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
-        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-        return filled
-
-    segment_growth = pd.DataFrame(segment_growth_records).set_index("segment_index")
-
-    # --- Official implied CAGR from known FUTURE_AADT_2044 / AADT_2024 pairs ---
-    # These are the rates GDOT/HPMS actually used for their projections.
-    # Use them as the primary aggregate fallback (better signal than historical
-    # trends alone, since they reflect the official planning assumptions).
+    projection_horizon_years = 20
+    official_source_mask = filled["FUTURE_AADT_2044_SOURCE"].isin(["official_exact", "hpms_2024"])
     official_pairs = filled[
-        filled["FUTURE_AADT_2044"].notna()
+        official_source_mask
+        & filled["FUTURE_AADT_2044"].notna()
         & filled["AADT_2024"].notna()
         & (filled["AADT_2024"] > 0)
         & (filled["FUTURE_AADT_2044"] > 0)
     ].copy()
     official_pairs["implied_cagr"] = (
-        (official_pairs["FUTURE_AADT_2044"] / official_pairs["AADT_2024"]) ** (1.0 / 20) - 1.0
+        (official_pairs["FUTURE_AADT_2044"] / official_pairs["AADT_2024"]) ** (1.0 / projection_horizon_years)
+        - 1.0
     )
     official_pairs["implied_cagr"] = official_pairs["implied_cagr"].clip(-0.03, 0.05)
     official_pairs["SYSTEM_CODE"] = official_pairs["SYSTEM_CODE"].astype("string")
+
+    if official_pairs.empty:
+        logger.warning("Future AADT official growth projection: no official FUTURE_AADT_2044/AADT_2024 pairs available")
+        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
+        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+        return filled
 
     official_county_system_rates = (
         official_pairs.dropna(subset=["COUNTY_ID", "SYSTEM_CODE"])
@@ -1610,10 +1308,13 @@ def apply_future_aadt_cagr_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
         official_statewide_rate * 100,
     )
 
-    segment_fill_count = 0
-    aggregate_fill_count = 0
+    fill_counts = {
+        "official_implied_county_system": 0,
+        "official_implied_district_system": 0,
+        "official_implied_system_statewide": 0,
+        "official_implied_statewide": 0,
+    }
     used_growth_rates: list[float] = []
-    projection_horizon_years = 20
 
     for idx in filled.index[missing_future_mask]:
         aadt_2024 = filled.at[idx, "AADT_2024"]
@@ -1621,65 +1322,53 @@ def apply_future_aadt_cagr_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
             continue
 
         growth_rate = np.nan
-        source = None
-        confidence = None
         method = None
 
-        if idx in segment_growth.index:
-            growth_rate = float(segment_growth.at[idx, "growth_rate"])
-            source = "projection_cagr_segment"
-            confidence = "medium"
-            method = "segment_cagr"
-            segment_fill_count += 1
+        county_id = filled.at[idx, "COUNTY_ID"]
+        district = filled.at[idx, "DISTRICT"]
+        system_code = filled.at[idx, "SYSTEM_CODE"]
+
+        county_key = (county_id, system_code)
+        district_key = (district, system_code)
+        if pd.notna(county_id) and pd.notna(system_code) and county_key in official_county_system_rates.index:
+            growth_rate = float(official_county_system_rates.loc[county_key])
+            method = "official_implied_county_system"
+        elif pd.notna(district) and pd.notna(system_code) and district_key in official_district_system_rates.index:
+            growth_rate = float(official_district_system_rates.loc[district_key])
+            method = "official_implied_district_system"
+        elif pd.notna(system_code) and system_code in official_system_rates.index:
+            growth_rate = float(official_system_rates.loc[system_code])
+            method = "official_implied_system_statewide"
         else:
-            # Aggregate fallback uses official implied CAGR from known
-            # FUTURE_AADT_2044/AADT_2024 pairs — these reflect GDOT's
-            # actual planning assumptions rather than raw historical trends.
-            county_id = filled.at[idx, "COUNTY_ID"]
-            district = filled.at[idx, "DISTRICT"]
-            system_code = filled.at[idx, "SYSTEM_CODE"]
+            growth_rate = official_statewide_rate
+            method = "official_implied_statewide"
 
-            county_key = (county_id, system_code)
-            district_key = (district, system_code)
-            if pd.notna(county_id) and pd.notna(system_code) and county_key in official_county_system_rates.index:
-                growth_rate = float(official_county_system_rates.loc[county_key])
-                method = "official_implied_county_system"
-            elif pd.notna(district) and pd.notna(system_code) and district_key in official_district_system_rates.index:
-                growth_rate = float(official_district_system_rates.loc[district_key])
-                method = "official_implied_district_system"
-            elif pd.notna(system_code) and system_code in official_system_rates.index:
-                growth_rate = float(official_system_rates.loc[system_code])
-                method = "official_implied_system_statewide"
-            else:
-                growth_rate = official_statewide_rate
-                method = "official_implied_statewide"
-
-            source = "projection_cagr_aggregate"
-            confidence = "low"
-            aggregate_fill_count += 1
 
         if pd.isna(growth_rate):
             continue
 
         projected_aadt = int(round(float(aadt_2024) * ((1.0 + float(growth_rate)) ** projection_horizon_years)))
         filled.loc[idx, "FUTURE_AADT_2044"] = projected_aadt
-        filled.loc[idx, "FUTURE_AADT_2044_SOURCE"] = source
-        filled.loc[idx, "FUTURE_AADT_2044_CONFIDENCE"] = confidence
+        filled.loc[idx, "FUTURE_AADT_2044_SOURCE"] = "projection_official_implied"
+        filled.loc[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "low"
         filled.loc[idx, "FUTURE_AADT_2044_FILL_METHOD"] = method
         filled.loc[idx, "future_aadt_covered"] = True
+        fill_counts[method] += 1
         used_growth_rates.append(float(growth_rate))
 
     if used_growth_rates:
         logger.info(
-            "Future AADT CAGR projection: filled %d segments (%d segment-level, %d aggregate); median growth=%.4f, mean growth=%.4f",
+            "Future AADT official growth projection: filled %d segments (county+system=%d, district+system=%d, system=%d, statewide=%d); median growth=%.4f, mean growth=%.4f",
             len(used_growth_rates),
-            segment_fill_count,
-            aggregate_fill_count,
+            fill_counts["official_implied_county_system"],
+            fill_counts["official_implied_district_system"],
+            fill_counts["official_implied_system_statewide"],
+            fill_counts["official_implied_statewide"],
             float(pd.Series(used_growth_rates).median()),
             float(pd.Series(used_growth_rates).mean()),
         )
     else:
-        logger.info("Future AADT CAGR projection: no FUTURE_AADT_2044 gaps were filled")
+        logger.info("Future AADT official growth projection: no FUTURE_AADT_2044 gaps were filled")
 
     filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
     filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
@@ -1694,14 +1383,9 @@ def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
         "current_aadt_official_segments": int(gdf["AADT_2024_OFFICIAL"].notna().sum())
         if "AADT_2024_OFFICIAL" in gdf.columns
         else int(gdf["AADT"].notna().sum()),
-        "current_aadt_segments": int(gdf["AADT_2024"].notna().sum())
-        if "AADT_2024" in gdf.columns
-        else int(gdf["AADT"].notna().sum()),
+        "current_aadt_segments": int(gdf["AADT"].notna().sum()),
         "current_aadt_miles": float(
-            gdf.loc[
-                gdf["AADT_2024"].notna() if "AADT_2024" in gdf.columns else gdf["AADT"].notna(),
-                "segment_length_mi",
-            ].sum()
+            gdf.loc[gdf["AADT"].notna(), "segment_length_mi"].sum()
         ),
         "future_aadt_2044_segments": int(gdf["FUTURE_AADT_2044"].notna().sum())
         if "FUTURE_AADT_2044" in gdf.columns
@@ -2811,7 +2495,7 @@ def main() -> None:
     segmented = apply_state_system_current_aadt_gap_fill(segmented)
     segmented = apply_nearest_neighbor_aadt(segmented)
     segmented = apply_future_aadt_fill_chain(segmented)
-    segmented = apply_future_aadt_cagr_projection(segmented)
+    segmented = apply_future_aadt_official_growth_projection(segmented)
     segmented = derive_texas_alignment_columns(segmented)
     segmented = add_decoded_label_columns(segmented)
     segmented = add_county_all_from_geometry(segmented, county_boundaries_for_backfill)
@@ -2819,9 +2503,15 @@ def main() -> None:
 
     logger.info("Final segment count: %d", len(segmented))
     logger.info("Current AADT official coverage: %d segments", segmented["AADT_2024_OFFICIAL"].notna().sum())
-    logger.info("Current AADT final coverage: %d segments", segmented["AADT_2024"].notna().sum())
+    logger.info("Current AADT final coverage: %d segments", segmented["AADT"].notna().sum())
     if "FUTURE_AADT_2044" in segmented.columns:
         logger.info("Future AADT 2044 coverage: %d segments", segmented["FUTURE_AADT_2044"].notna().sum())
+
+    # Drop duplicate / source-internal columns before output
+    cols_to_drop = [c for c in COLUMNS_TO_DROP_FROM_OUTPUT if c in segmented.columns]
+    if cols_to_drop:
+        segmented = segmented.drop(columns=cols_to_drop)
+        logger.info("Dropped %d duplicate/internal columns from output: %s", len(cols_to_drop), ", ".join(cols_to_drop))
 
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"

@@ -25,9 +25,9 @@ SQLITE_TEMP_DIR = PROJECT_ROOT / ".tmp" / "sqlite_runtime"
 
 INDEX_COLUMNS = [
     "ROUTE_ID",
-    "GDOT_District",
+    "DISTRICT",
     "COUNTY_ID",
-    "F_SYSTEM",
+    "FUNCTIONAL_CLASS",
     "SYSTEM_CODE",
     "unique_id",
 ]
@@ -84,11 +84,11 @@ def create_segments_table(db_path: Path, df: pd.DataFrame) -> None:
                 logger.warning("  Column %s not found, skipping index", col)
 
         # Create composite index for common query patterns
-        available_composite = [c for c in ["GDOT_District", "SYSTEM_CODE"] if c in df.columns]
+        available_composite = [c for c in ["DISTRICT", "SYSTEM_CODE"] if c in df.columns]
         if len(available_composite) == 2:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_segments_district_system "
-                "ON segments (GDOT_District, SYSTEM_CODE)"
+                "ON segments (DISTRICT, SYSTEM_CODE)"
             )
 
         conn.commit()
@@ -117,8 +117,8 @@ def create_load_summary(db_path: Path, df: pd.DataFrame) -> None:
         )
 
         # District distribution if available
-        if "GDOT_District" in df.columns:
-            dist_counts = df["GDOT_District"].value_counts().to_dict()
+        if "DISTRICT" in df.columns:
+            dist_counts = df["DISTRICT"].value_counts().to_dict()
             summary["district_distribution"] = json.dumps(
                 {str(k): int(v) for k, v in dist_counts.items()}
             )

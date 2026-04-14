@@ -1,6 +1,6 @@
 """Enrich Georgia roadway segments with hurricane evacuation route flags.
 
-Downloads are cached under 01-Data-Sources/evacuation_routes/.
+Downloads are cached under 02-Data-Staging/spatial/.
 
 Source layers (GDOT EOC Response):
 - Layer 7: GDOT Hurricane Evacuation Routes (268 polylines)
@@ -26,10 +26,10 @@ LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-EVAC_DIR = PROJECT_ROOT / "01-Data-Sources" / "evacuation_routes"
+SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
 
-EVAC_ROUTES_GEOJSON = EVAC_DIR / "ga_evac_routes.geojson"
-CONTRAFLOW_ROUTES_GEOJSON = EVAC_DIR / "ga_contraflow_routes.geojson"
+EVAC_ROUTES_GEOJSON = SPATIAL_DIR / "ga_evac_routes.geojson"
+CONTRAFLOW_ROUTES_GEOJSON = SPATIAL_DIR / "ga_contraflow_routes.geojson"
 
 EOC_SERVICE_URL = (
     "https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer"
@@ -51,6 +51,13 @@ ENRICHMENT_COLUMNS = [
 #   - 200 m eliminates 97.6% of Local/Other false positives while keeping all
 #     meaningful Interstate/US/State Route overlaps
 MIN_OVERLAP_M = 200.0
+
+# Buffer distance in meters applied to evacuation route polylines before
+# measuring overlap.  Evacuation routes and roadway segments are digitized
+# from different source geometries; a 30 m corridor accounts for positional
+# offset so that collinear roads register measurable intersection length
+# instead of zero-length point contacts.
+ROUTE_BUFFER_M = 30.0
 
 
 def _download_geojson(url: str, dest: Path) -> None:
@@ -101,8 +108,12 @@ def _spatial_overlay(
 ) -> dict[int, list[str]]:
     """Return segment indices that overlap the overlay, with route names.
 
-    Reprojects the overlay to match the segments' CRS, runs a spatial join,
-    then measures actual intersection length to filter by MIN_OVERLAP_M.
+    Reprojects the overlay to match the segments' CRS, buffers the overlay
+    polylines into corridor polygons (ROUTE_BUFFER_M), then spatial-joins
+    and measures how much of each road segment falls inside the corridor.
+    The buffer is necessary because the evacuation routes and roadway
+    segments are digitized from different source geometries — without it,
+    polyline-to-polyline intersection returns zero-length point contacts.
     """
     if overlay.empty:
         return {}
@@ -116,14 +127,25 @@ def _spatial_overlay(
     if overlay.crs != seg_crs:
         overlay = overlay.to_crs(seg_crs)
 
+    # Buffer routes into corridor polygons for measurable intersection
+    overlay_buffered = overlay.copy()
+    overlay_buffered["geometry"] = overlay_buffered.geometry.buffer(ROUTE_BUFFER_M)
+
     LOGGER.info(
-        "Running evacuation spatial join: %d segments x %d overlay features",
-        len(segments), len(overlay),
+        "Running evacuation spatial join: %d segments x %d overlay features "
+        "(buffered %d m)",
+        len(segments), len(overlay), ROUTE_BUFFER_M,
     )
+
+    name_cols = [name_field] if name_field and name_field in overlay.columns else []
+    join_cols = ["geometry"] + name_cols
+    # Carry name fields from the original overlay onto the buffered version
+    for col in name_cols:
+        overlay_buffered[col] = overlay[col].values
 
     joined = gpd.sjoin(
         segments[["geometry"]],
-        overlay[["geometry"] + ([name_field] if name_field and name_field in overlay.columns else [])],
+        overlay_buffered[join_cols],
         how="inner",
         predicate="intersects",
     )
@@ -132,16 +154,17 @@ def _spatial_overlay(
         LOGGER.info("Spatial join produced no matches")
         return {}
 
-    # Measure actual overlap length per match and filter by MIN_OVERLAP_M
+    # Measure how much of each road segment falls inside the buffered corridor
     results: dict[int, list[str]] = {}
+    buffered_geoms = overlay_buffered.geometry
     for seg_idx, group in joined.groupby(joined.index):
         seg_geom = segments.loc[seg_idx, "geometry"]
         names: list[str] = []
         has_valid_overlap = False
         for _, row in group.iterrows():
-            ovl_geom = overlay.loc[row["index_right"], "geometry"]
+            corridor = buffered_geoms.iloc[row["index_right"]]
             try:
-                overlap_len = seg_geom.intersection(ovl_geom).length
+                overlap_len = seg_geom.intersection(corridor).length
             except Exception:
                 overlap_len = 0.0
             if overlap_len >= MIN_OVERLAP_M:

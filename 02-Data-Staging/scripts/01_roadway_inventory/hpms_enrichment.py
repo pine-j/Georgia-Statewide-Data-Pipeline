@@ -433,7 +433,7 @@ def write_hpms_enrichment_summary(gdf: pd.DataFrame) -> None:
             for k, v in gdf["SIGNED_ROUTE_VERIFY_SOURCE"].value_counts(dropna=False).items()
         } if "SIGNED_ROUTE_VERIFY_SOURCE" in gdf.columns else {},
         "gap_fill_coverage": gap_fill_coverage,
-        "final_aadt_coverage": int(gdf["AADT_2024"].notna().sum()) if "AADT_2024" in gdf.columns else 0,
+        "final_aadt_coverage": int(gdf["AADT"].notna().sum()) if "AADT" in gdf.columns else 0,
         "final_aadt_source_counts": {
             str(k): int(v)
             for k, v in gdf["AADT_2024_SOURCE"].value_counts(dropna=False).items()

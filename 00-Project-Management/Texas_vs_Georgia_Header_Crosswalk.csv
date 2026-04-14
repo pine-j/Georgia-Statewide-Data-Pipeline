@@ -8,7 +8,7 @@ DI,DIRECTION,DIRECTION,Proxy,Proxy,Present,"ROUTE_DIRECTION is also available in
 CO,COUNTY_ID,COUNTY_CODE,Exact-ish,Exact-ish,Present,"Georgia normalizes county into COUNTY_CODE and COUNTY_NAME in final output."
 NUM_LANES,THROUGH_LANES,NUM_LANES,Derived,Derived,Present,"NUM_LANES is the normalized final lane field after ETL sync."
 ADT_CUR,AADTRound,AADT,Derived,Derived,Present,"AADT is the canonical current traffic field in Georgia final output."
-AADT_DESGN,Future_AADT,FUTURE_AADT_2044,Proxy,Proxy,Present,"FUTURE_AADT_2044 now has near-complete coverage via six-tier fill chain including CAGR growth-rate projection from 14 years of historical GDOT traffic data."
+AADT_DESGN,Future_AADT,FUTURE_AADT_2044,Proxy,Proxy,Present,"FUTURE_AADT_2044 has near-complete coverage: GDOT official + HPMS + direction mirror for ~22% of segments, then official implied growth projection (~1.17% annual) fills the rest."
 K_FAC,K_Factor,K_FACTOR,Exact-ish,Exact-ish,Present,"Direct traffic-factor analogue exists."
 D_FAC,D_Factor,D_FACTOR,Exact-ish,Exact-ish,Present,"Direct traffic-factor analogue exists."
 TRK_DHV_PCT,,,Gap,Gap,Missing,"No direct Georgia equivalent has been identified in the staged schema."

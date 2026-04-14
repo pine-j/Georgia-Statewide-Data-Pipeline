@@ -29,7 +29,7 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   FUNCTIONAL_CLASS: { label: "Functional Class", description: "Federal Highway Administration functional classification" },
   functional_class_viz: { label: "Functional Class (Display)", description: "Simplified functional class used for map display" },
   AADT: { label: "AADT", description: "Annual Average Daily Traffic — the average number of vehicles per day over a full year (2024)" },
-  FUTURE_AADT: { label: "Future AADT (2044)", description: "Projected annual average daily traffic for the year 2044" },
+  FUTURE_AADT_2044: { label: "Future AADT (2044)", description: "Projected annual average daily traffic for the year 2044" },
   TRUCK_AADT: { label: "Truck AADT", description: "Annual average daily truck traffic count (2024)" },
   PCT_SADT: { label: "% Single-Unit AADT", description: "Percentage of AADT attributable to single-unit trucks" },
   PCT_CADT: { label: "% Combo-Unit AADT", description: "Percentage of AADT attributable to combination (multi-unit) trucks" },
@@ -56,8 +56,8 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   SEC_EVAC_CONTRAFLOW: { label: "Contraflow Route", description: "Whether this segment is on a GDOT hurricane evacuation contraflow corridor" },
   SEC_EVAC_ROUTE_NAME: { label: "Evacuation Route Name", description: "Name(s) of the evacuation route(s) overlapping this segment" },
   TRUCK_PCT: { label: "Truck %", description: "Percentage of total traffic that is trucks" },
-  BEGIN_POINT: { label: "Begin Milepoint", description: "Starting milepoint of the segment along the route" },
-  END_POINT: { label: "End Milepoint", description: "Ending milepoint of the segment along the route" },
+  FROM_MILEPOINT: { label: "Begin Milepoint", description: "Starting milepoint of the segment along the route" },
+  TO_MILEPOINT: { label: "End Milepoint", description: "Ending milepoint of the segment along the route" },
   SINGLE_UNIT_AADT_2024: { label: "Single-Unit Truck AADT", description: "Annual average daily count of single-unit trucks (2024)" },
   COMBO_UNIT_AADT_2024: { label: "Combo-Unit Truck AADT", description: "Annual average daily count of combination trucks (2024)" },
   URBAN_CODE: { label: "Urban Area Code", description: "Census urban area code for the segment location" },
@@ -97,14 +97,38 @@ const HIDDEN_KEYS = new Set([
   // Duplicate traffic columns
   "SINGLE_UNIT_AADT_2024",
   "COMBO_UNIT_AADT_2024",
+  "AADT_2024",
+  "FUTURE_AADT",
   "CURRENT_ADT",
   "ADT",
+  // Source / intermediate columns dropped from pipeline output
+  "START_M",
+  "END_M",
+  "RouteId",
+  "StateID",
+  "BeginDate",
+  "Comments",
+  "Shape_Length",
+  "BeginPoint",
+  "EndPoint",
+  "GDOT_District",
+  "F_SYSTEM",
+  "THROUGH_LANES",
+  "NHS",
+  "URBAN_ID",
+  "COUNTY",
+  "PARSED_SYSTEM_CODE",
+  "PARSED_ROUTE_NUMBER",
+  "PARSED_SUFFIX",
+  "PARSED_DIRECTION",
+  "PARSED_COUNTY_CODE",
+  "PARSED_FUNCTION_TYPE",
 ]);
 
 /** Ordered list of attribute keys we want to show first. Unlisted keys appear after. */
 const DISPLAY_ORDER: string[] = [
   "AADT",
-  "FUTURE_AADT",
+  "FUTURE_AADT_2044",
   "TRUCK_AADT",
   "TRUCK_PCT",
   "PCT_SADT",
@@ -129,8 +153,8 @@ const DISPLAY_ORDER: string[] = [
   "SEC_EVAC_CONTRAFLOW",
   "SEC_EVAC_ROUTE_NAME",
   "LENGTH_MILES",
-  "BEGIN_POINT",
-  "END_POINT",
+  "FROM_MILEPOINT",
+  "TO_MILEPOINT",
   "URBAN_CODE",
 ];
 
@@ -234,7 +258,7 @@ interface AttributeSection {
 const SECTIONS: AttributeSection[] = [
   {
     title: "Traffic",
-    keys: new Set(["AADT", "FUTURE_AADT", "TRUCK_AADT", "TRUCK_PCT", "PCT_SADT", "PCT_CADT", "K_FACTOR", "D_FACTOR", "VMT"]),
+    keys: new Set(["AADT", "FUTURE_AADT_2044", "TRUCK_AADT", "TRUCK_PCT", "PCT_SADT", "PCT_CADT", "K_FACTOR", "D_FACTOR", "VMT"]),
   },
   {
     title: "Road Characteristics",
@@ -246,7 +270,7 @@ const SECTIONS: AttributeSection[] = [
   },
   {
     title: "Segment Geometry",
-    keys: new Set(["LENGTH_MILES", "BEGIN_POINT", "END_POINT"]),
+    keys: new Set(["LENGTH_MILES", "FROM_MILEPOINT", "TO_MILEPOINT"]),
   },
 ];
 

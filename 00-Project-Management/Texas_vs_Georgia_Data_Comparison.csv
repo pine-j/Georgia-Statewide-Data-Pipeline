@@ -8,7 +8,7 @@ DI,Texas direction indicator,"DIRECTION, ROUTE_DIRECTION",DIRECTION,Proxy,Presen
 CO,Texas county code / county grouping field,"COUNTY, COUNTY_ID",COUNTY_CODE,Exact-ish,Present,Georgia final output normalizes county into COUNTY_CODE and COUNTY_NAME
 NUM_LANES,Texas lane count,THROUGH_LANES,NUM_LANES,Derived,Present,NUM_LANES is the normalized final-output lane field
 ADT_CUR,Texas current AADT,AADTRound,AADT,Derived,Present,AADT is the canonical current traffic field in the Georgia final output
-AADT_DESGN,Texas design / future AADT,Future_AADT,FUTURE_AADT_2044,Proxy,Present,FUTURE_AADT_2044 now has near-complete coverage via six-tier fill chain including CAGR growth-rate projection from historical GDOT traffic data
+AADT_DESGN,Texas design / future AADT,Future_AADT,FUTURE_AADT_2044,Proxy,Present,FUTURE_AADT_2044 has near-complete coverage: GDOT official + HPMS + direction mirror for ~22% then official implied growth projection (~1.17% annual) fills the rest
 K_FAC,Texas K-factor,K_Factor,K_FACTOR,Exact-ish,Present,Direct traffic-factor analogue exists
 D_FAC,Texas directional factor,D_Factor,D_FACTOR,Exact-ish,Present,Direct traffic-factor analogue exists
 TRK_DHV_PCT,Texas truck design-hour percent,No confirmed Georgia raw header,No confirmed Georgia final-output column,Gap,Missing,Phase-1 docs still list no direct Georgia equivalent

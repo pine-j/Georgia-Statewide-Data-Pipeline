@@ -228,23 +228,17 @@ def apply_speed_zone_enrichment(
 def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Normalize SpeedZone OffSystem into a spatially-joinable GeoDataFrame.
 
-    Records with a usable ROUTE_ID (>= 13 chars) and valid milepoints get
-    ``match_method = "milepoint"``; all others get ``match_method = "spatial"``.
+    Layer 9 has no FROM/TO_MILEPOINT_STATEWIDE fields, so all records use
+    spatial matching.  The ``match_method`` column is always ``"spatial"``.
     """
 
     if gdf.empty:
         return gpd.GeoDataFrame(columns=[
-            "ROUTE_ID_BASE", "FROM_MP", "TO_MP",
             "SPEED_LIMIT", "IS_SCHOOL_ZONE", "match_method", "geometry",
         ])
 
-    spec = LAYER_CONFIG["speed_zone_off_system"]
     df = gdf.copy()
     df.columns = [c.strip().upper() if isinstance(c, str) else c for c in df.columns]
-
-    route_id_field = spec["route_id_field"].upper()
-    from_field = spec["from_field"].upper()
-    to_field = spec["to_field"].upper()
 
     active_col = "RECORD_STATUS_CD"
     if active_col in df.columns:
@@ -253,20 +247,6 @@ def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
         LOGGER.info("Filtered to active off-system speed zones: %d -> %d", before, len(df))
 
     result = gpd.GeoDataFrame(geometry=df.geometry, crs=df.crs)
-
-    raw_route_id = (
-        df[route_id_field].astype(str).str.strip().str.upper()
-        if route_id_field in df.columns
-        else pd.Series([""] * len(df), index=df.index)
-    )
-    result["ROUTE_ID_BASE"] = raw_route_id.str[:13]
-
-    result["FROM_MP"] = (
-        df[from_field].map(_round_milepoint) if from_field in df.columns else None
-    )
-    result["TO_MP"] = (
-        df[to_field].map(_round_milepoint) if to_field in df.columns else None
-    )
 
     result["SPEED_LIMIT"] = pd.to_numeric(
         df["SPEED_LIMIT_CD"].astype(str).str.strip(), errors="coerce"
@@ -278,18 +258,9 @@ def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
     )
 
     result = result.dropna(subset=["SPEED_LIMIT"])
-
-    has_route = result["ROUTE_ID_BASE"].str.len() >= 13
-    has_mp = result["FROM_MP"].notna() & result["TO_MP"].notna()
     result["match_method"] = "spatial"
-    result.loc[has_route & has_mp, "match_method"] = "milepoint"
 
-    mp_count = int((result["match_method"] == "milepoint").sum())
-    sp_count = int((result["match_method"] == "spatial").sum())
-    LOGGER.info(
-        "Off-system speed zones normalized: %d milepoint-matchable, %d spatial-only",
-        mp_count, sp_count,
-    )
+    LOGGER.info("Off-system speed zones normalized: %d records (all spatial)", len(result))
 
     return result
 
@@ -371,7 +342,12 @@ def apply_off_system_speed_zone_enrichment(
     gdf: gpd.GeoDataFrame,
     refresh: bool = False,
 ) -> gpd.GeoDataFrame:
-    """Apply SpeedZone OffSystem data to segments not already speed-enriched."""
+    """Apply SpeedZone OffSystem data to segments not already speed-enriched.
+
+    Layer 9 has no milepoint fields, so all matching is spatial.  Only
+    non-state-highway segments (``PARSED_SYSTEM_CODE != "1"``) without an
+    existing ``SPEED_LIMIT`` are candidates.
+    """
 
     enriched = gdf.copy()
 
@@ -387,32 +363,11 @@ def apply_off_system_speed_zone_enrichment(
         return enriched
 
     already_filled = enriched["SPEED_LIMIT"].notna()
-
-    # --- Phase 1: milepoint-matchable records (small subset with ROUTE_ID) ---
-    mp_zones = off_system[off_system["match_method"] == "milepoint"]
-    if not mp_zones.empty:
-        mp_lookup = _build_speed_zone_lookup(
-            mp_zones[["ROUTE_ID_BASE", "FROM_MP", "TO_MP", "SPEED_LIMIT", "IS_SCHOOL_ZONE"]]
-        )
-        mp_candidates = enriched.index[~already_filled]
-        mp_match_count = 0
-        for idx in mp_candidates:
-            row = enriched.loc[idx]
-            match = _match_speed_zone(row, mp_lookup)
-            if match is not None:
-                enriched.at[idx, "SPEED_LIMIT"] = match["SPEED_LIMIT"]
-                enriched.at[idx, "IS_SCHOOL_ZONE"] = match.get("IS_SCHOOL_ZONE", False)
-                enriched.at[idx, "SPEED_LIMIT_SOURCE"] = "gdot_speed_zone_off_system"
-                mp_match_count += 1
-        LOGGER.info("Off-system milepoint matches: %d segments", mp_match_count)
-        already_filled = enriched["SPEED_LIMIT"].notna()
-
-    # --- Phase 2: spatial matching for unfilled non-state-highway segments ---
     off_system_mask = enriched["PARSED_SYSTEM_CODE"].astype(str) != "1"
     unfilled_mask = ~already_filled & off_system_mask
     unfilled_segments = enriched.loc[unfilled_mask]
-    if unfilled_segments.empty or off_system[off_system["match_method"] == "spatial"].empty:
-        LOGGER.info("No unfilled segments or spatial zones to match — skipping spatial phase")
+    if unfilled_segments.empty:
+        LOGGER.info("No unfilled off-system segments to match — skipping off-system enrichment")
         return enriched
 
     spatial_matches = _spatial_match_off_system(unfilled_segments, off_system)

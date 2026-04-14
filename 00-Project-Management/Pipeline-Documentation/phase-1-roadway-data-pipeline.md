@@ -52,7 +52,7 @@ GDOT EOC Evacuation -> Flag: SEC_EVAC from spatial overlay with hurricane evacua
 Route Classification -> Derive: ROUTE_FAMILY, ROUTE_TYPE_GDOT, HWY_NAME from ROUTE_ID structure + verification
          |
          v
-CAGR Growth Projection -> Fill: FUTURE_AADT_2044 gaps from historical AADT trends (2010-2023) + official implied rates
+Official Growth Projection -> Fill: FUTURE_AADT_2044 gaps using GDOT's implied growth rate (~1.17% annual) from known official pairs
          |
          v
 Texas RAPTOR Alignment -> Derive: PCT_SADT, PCT_CADT, HWY_DES for downstream RAPTOR scoring compatibility
@@ -500,12 +500,15 @@ Speed limit distribution:
 Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9`
 
 This layer contains 81,778 speed zone features for county roads, city streets,
-and other non-state-highway roads. Two matching strategies are used:
+and other non-state-highway roads. Unlike OnSystem, layer 9 has no
+`FROM/TO_MILEPOINT_STATEWIDE` fields, so all matching is spatial:
 
-- **Phase 1 — Milepoint matching** (~1,468 records with `RNH_ROUTE_ID`): same route-base + milepoint overlap logic as OnSystem. Applied to any unfilled segment regardless of system code.
-- **Phase 2 — Spatial matching** (~80,310 records without `ROUTE_ID`): geometry-based `sjoin(predicate="intersects")` against unfilled non-state-highway segments. When multiple zones intersect a segment, the one with the longest geometric overlap is selected. Zero-overlap touches are rejected.
+- Geometry-based `sjoin(predicate="intersects")` against unfilled non-state-highway segments (`PARSED_SYSTEM_CODE != 1`)
+- When multiple zones intersect a segment, the one with the longest geometric overlap is selected
+- Point-geometry zones are matched by intersection proximity (using segment length as overlap score)
+- Zero-overlap touches are rejected
 
-Both phases only fill segments that do not already have a `SPEED_LIMIT` from the OnSystem pass. Source is tagged as `gdot_speed_zone_off_system`.
+Only fills segments that do not already have a `SPEED_LIMIT` from the OnSystem pass. Source is tagged as `gdot_speed_zone_off_system`.
 
 Current enrichment fields:
 
@@ -533,16 +536,14 @@ AADT gap-fill priority chain (each step only fills segments not yet covered):
 
 Final 2024 AADT coverage: 245,778 / 245,863 segments (99.97%).
 
-Future AADT 2044 fill chain uses a multi-source pattern followed by growth-rate projection:
+Future AADT 2044 fill chain:
 
-1. **GDOT official** — direct FUTURE_AADT from GDOT traffic GDB
-2. **HPMS future_aadt** — FHWA HPMS future AADT values
-3. **Direction mirror** — INC→DEC copy
-4. **Interpolation** — linear interpolation on state highways
-5. **Nearest-neighbor** — nearest covered segment on same route (20-mile cap)
-6. **CAGR projection** — compound annual growth rate applied to AADT_2024 to project 2044 values for remaining gaps. Segment-level CAGR is computed from 14 years of historical GDOT traffic data (2010-2023) matched by ROUTE_ID + milepoint overlap. Where segment-level history is unavailable, the aggregate fallback uses the official implied CAGR derived from known FUTURE_AADT_2044/AADT_2024 pairs (statewide median ~1.17%), grouped by county+system code, district+system code, or system code. Growth rates are clamped to -3% to +5% per year.
+1. **GDOT official** — direct FUTURE_AADT from GDOT traffic GDB, confidence `high`
+2. **HPMS future_aadt** — FHWA HPMS future AADT values, confidence `medium`
+3. **Direction mirror** — INC→DEC copy for divided highways, confidence `high`
+4. **Official implied growth projection** — applies GDOT's own implied growth rate to AADT_2024 for all remaining gaps. The rate is back-derived from the ~53K segments where GDOT/HPMS provides both AADT_2024 and FUTURE_AADT_2044 (statewide median ~1.17% annual). Grouped by county+system code, district+system code, system code, or statewide median. Formula: `FUTURE_AADT_2044 = AADT_2024 × (1 + rate)^20`. Confidence `low`.
 
-Steps 1-5 provide direct or proximate values. Step 6 extends coverage to nearly all remaining segments using growth-rate projection, achieving near-complete Future AADT 2044 coverage wherever AADT_2024 exists.
+Steps 1-3 provide direct or proximate official values. Step 4 extends coverage to nearly all remaining segments, achieving near-complete Future AADT 2044 coverage wherever AADT_2024 exists.
 
 HPMS signed-route enrichment:
 
@@ -668,7 +669,7 @@ with:
 
 - `FUTURE_AADT_2044` — canonical 20-year projection AADT
 - `FUTURE_AADT_2044_OFFICIAL` — direct GDOT traffic match only, never overwritten
-- `FUTURE_AADT_2044_SOURCE` — `official_exact`, `hpms_2024`, `direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`, `projection_cagr_segment`, `projection_cagr_aggregate`, or `missing`
+- `FUTURE_AADT_2044_SOURCE` — `official_exact`, `hpms_2024`, `direction_mirror`, `projection_official_implied`, or `missing`
 - `FUTURE_AADT_2044_CONFIDENCE` — `high`, `medium`, or `low`
 - `FUTURE_AADT_2044_FILL_METHOD` — method used for non-official values
 - `future_aadt_covered` — boolean: has any FUTURE_AADT_2044
@@ -845,8 +846,8 @@ Key validation: HPMS AADT values are 99.7% identical to GDOT official values whe
 
 ### Future AADT 2044 coverage
 
-- Official + gap-fill coverage (steps 1-5): `53,215` of `245,863` segments (`21.64%`)
-- **CAGR projection (step 6) extends coverage to near-complete** — projects FUTURE_AADT_2044 for all remaining segments that have AADT_2024, using compound annual growth rates from 14 years of historical GDOT traffic data (2010-2023) with official implied rates (~1.17% statewide median) as the aggregate fallback
+- Direct coverage (GDOT official + HPMS + direction mirror): `53,215` of `245,863` segments (`21.64%`)
+- **Official implied growth projection (step 4) extends coverage to near-complete** — applies GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to AADT_2024 for all remaining segments
 
 ### State-system null county and district diagnosis
 
@@ -1005,7 +1006,7 @@ Official posted speed limits are enriched from GDOT GPAS SpeedZone permits
 from `rnhp.dot.ga.gov`:
 
 - GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits (state highways)
-- GPAS/9 `SpeedZone OffSystem` — 81,778 features (county roads, city streets; ~1,468 with ROUTE_ID, ~80,310 spatially matched)
+- GPAS/9 `SpeedZone OffSystem` — 81,778 features (county roads, city streets; all spatially matched — layer has no milepoint fields)
 
 Current enrichment coverage:
 
@@ -1113,7 +1114,7 @@ AADT source distribution:
 
 The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
 
-Future AADT 2044 official + gap-fill coverage is `53,215` of `245,863` segments (`21.64%`). The CAGR projection step extends this to near-complete coverage by applying compound annual growth rates (from 14 years of historical GDOT traffic data, with official implied rates as fallback) to AADT_2024 for all remaining segments.
+Future AADT 2044 direct coverage (GDOT official + HPMS + direction mirror) is `53,215` of `245,863` segments (`21.64%`). The official implied growth projection extends this to near-complete coverage by applying GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to AADT_2024 for all remaining segments.
 
 ### 2. Historical AADT removed from output
 
@@ -1173,7 +1174,7 @@ Closed with Phase 1:
 
 - statewide staged roadway ETL with 245,863 segments and 133 columns
 - 2024 AADT coverage at 99.97% (`245,778` segments) via five-tier fill chain
-- Future AADT 2044 coverage extended to near-complete via six-tier fill chain including CAGR growth-rate projection (official + gap-fill: `53,215` segments; CAGR projection fills remaining segments with AADT_2024)
+- Future AADT 2044 coverage extended to near-complete via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with AADT_2024
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
 - HPMS gap-fill for 13 GDOT roadway attributes

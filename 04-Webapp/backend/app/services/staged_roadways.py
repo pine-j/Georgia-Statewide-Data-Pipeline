@@ -589,7 +589,7 @@ def get_staged_roadway_features(
     query = " ".join(
         [
             "SELECT",
-            "RouteId AS route_id,",
+            "ROUTE_ID AS route_id,",
             "HWY_NAME AS hwy_name,",
             "COUNTY_CODE AS county_code,",
             "DISTRICT AS district_id,",
