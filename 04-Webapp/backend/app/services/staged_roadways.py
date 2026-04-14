@@ -684,6 +684,9 @@ def get_staged_roadway_features(
                     facility_type_label=_normalize_text(
                         getattr(row, "facility_type_label", None)
                     ),
+                    sec_evac=_normalize_text(
+                        getattr(row, "sec_evac", None)
+                    ),
                 ),
             )
         )

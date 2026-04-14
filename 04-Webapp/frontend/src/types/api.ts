@@ -74,6 +74,7 @@ export interface RoadwayFeatureProperties {
   surface_type_label?: string | null;
   ownership_label?: string | null;
   facility_type_label?: string | null;
+  sec_evac?: string | null;
 }
 
 export interface RoadwayFeature {

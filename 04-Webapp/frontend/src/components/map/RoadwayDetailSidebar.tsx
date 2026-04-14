@@ -52,6 +52,9 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   DISTRICT_LABEL: { label: "District Name", description: "GDOT district name and number" },
   LENGTH_MILES: { label: "Length (Miles)", description: "Segment length in miles" },
   HPMS_ACCESS_CONTROL: { label: "Access Control", description: "HPMS access control type (full, partial, or no control)" },
+  SEC_EVAC: { label: "Evacuation Route", description: "Whether this segment is on a GDOT-designated hurricane evacuation route" },
+  SEC_EVAC_CONTRAFLOW: { label: "Contraflow Route", description: "Whether this segment is on a GDOT hurricane evacuation contraflow corridor" },
+  SEC_EVAC_ROUTE_NAME: { label: "Evacuation Route Name", description: "Name(s) of the evacuation route(s) overlapping this segment" },
   TRUCK_PCT: { label: "Truck %", description: "Percentage of total traffic that is trucks" },
   BEGIN_POINT: { label: "Begin Milepoint", description: "Starting milepoint of the segment along the route" },
   END_POINT: { label: "End Milepoint", description: "Ending milepoint of the segment along the route" },
@@ -122,6 +125,9 @@ const DISPLAY_ORDER: string[] = [
   "system_code_label",
   "direction_label",
   "HPMS_ACCESS_CONTROL",
+  "SEC_EVAC",
+  "SEC_EVAC_CONTRAFLOW",
+  "SEC_EVAC_ROUTE_NAME",
   "LENGTH_MILES",
   "BEGIN_POINT",
   "END_POINT",
@@ -232,7 +238,7 @@ const SECTIONS: AttributeSection[] = [
   },
   {
     title: "Road Characteristics",
-    keys: new Set(["FUNCTIONAL_CLASS", "functional_class_viz", "NUM_LANES", "SPEED_LIMIT", "HWY_DES", "ROUTE_FAMILY", "median_type_label", "surface_type_label", "facility_type_label", "nhs_ind_label", "HPMS_ACCESS_CONTROL"]),
+    keys: new Set(["FUNCTIONAL_CLASS", "functional_class_viz", "NUM_LANES", "SPEED_LIMIT", "HWY_DES", "ROUTE_FAMILY", "median_type_label", "surface_type_label", "facility_type_label", "nhs_ind_label", "HPMS_ACCESS_CONTROL", "SEC_EVAC", "SEC_EVAC_CONTRAFLOW", "SEC_EVAC_ROUTE_NAME"]),
   },
   {
     title: "Administration",
@@ -284,7 +290,8 @@ export function RoadwayDetailSidebar({ detail, isLoading, hasError, onClose }: R
   return (
     <Box
       sx={{
-        width: 380,
+        width: { xs: "100%", lg: 380 },
+        maxWidth: "100%",
         height: "100%",
         display: "flex",
         flexDirection: "column",

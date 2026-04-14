@@ -16,7 +16,7 @@ AADT_TRUCKS,,TRUCK_AADT,Derived,Derived,Present,"Final-output TRUCK_AADT exists.
 PCT_SADT,Single_Unit_AADT,PCT_SADT,Proxy,Derived,Present,"SINGLE_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py."
 PCT_CADT,Combo_Unit_AADT,PCT_CADT,Proxy,Derived,Present,"COMBO_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py."
 DVMT,VMT,VMT,Proxy,Proxy,Present,"VMT exists in final output, but we should confirm whether it is equivalent enough to Texas DVMT for crash-rate calculations."
-SEC_EVAC,,,Gap,Gap,Missing,"No confirmed Georgia evacuation-route field exists in the current staged schema."
+SEC_EVAC,,SEC_EVAC,Derived,Derived,Present,"Spatial overlay of GDOT EOC hurricane evacuation routes (268 features) and contraflow routes (12 features) against the staged roadway network. Flags segments where overlap exceeds 200 m."
 NHFN,NHS,NHS_IND,Proxy,Proxy,Present,"STRAHNET is also present in final output and may be a better freight-network proxy in some use cases."
 SEC_TRUNK,,,No equivalent,No equivalent,Not applicable,"Georgia does not have a state trunk-system classification. No equivalent exists in GDOT data."
 MED_TYPE,MEDIAN_TYPE,MEDIAN_TYPE,Exact-ish,Exact-ish,Present,"Direct field exists, but underlying source coverage is sparse."

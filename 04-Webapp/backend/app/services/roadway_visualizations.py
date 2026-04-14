@@ -139,6 +139,7 @@ THEMATIC_PROPERTY_SQL: dict[str, str] = {
     "surface_type_label": "SURFACE_TYPE_LABEL",
     "ownership_label": "OWNERSHIP_LABEL",
     "facility_type_label": "FACILITY_TYPE_LABEL",
+    "sec_evac": "CASE WHEN CAST(SEC_EVAC AS INTEGER) = 1 THEN 'Evacuation Route' WHEN CAST(SEC_EVAC_CONTRAFLOW AS INTEGER) = 1 THEN 'Contraflow Route' ELSE NULL END",
 }
 
 
@@ -488,6 +489,20 @@ THEMATIC_FIELD_CONFIGS: dict[str, dict[str, Any]] = {
                 ("City or Municipal", "City or Municipal", "#bdd7e7"),
                 ("Federal Agency", "Federal Agency", "#08519c"),
                 ("Other", "Other", "#969696"),
+            ]
+        ),
+    },
+    "SEC_EVAC": {
+        "id": "sec_evac",
+        "label": "Evacuation Route",
+        "description": "GDOT-designated hurricane evacuation routes and contraflow corridors.",
+        "kind": "categorical",
+        "implementation_status": "staged",
+        "property_name": "sec_evac",
+        "legend_items": _categorical_legend(
+            [
+                ("Evacuation Route", "Evacuation Route", "#d32f2f"),
+                ("Contraflow Route", "Contraflow Route", "#f57c00"),
             ]
         ),
     },

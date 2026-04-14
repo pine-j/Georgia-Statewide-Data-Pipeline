@@ -45,10 +45,12 @@ ENRICHMENT_COLUMNS = [
 ]
 
 # Minimum overlap length in meters to count as a match.
-# Higher than rnhp_enrichment (which uses 0.0) because evacuation routes are
-# long statewide corridors — a 50 m floor filters slivers and point-touches
-# without missing legitimate overlaps.
-MIN_OVERLAP_M = 50.0
+# Set at 200 m based on validation against the staged network:
+#   - Local/Other segments have median overlap of only 32 m (intersection crossings)
+#   - State-system routes have median overlap of 190-441 m (genuine collinear overlap)
+#   - 200 m eliminates 97.6% of Local/Other false positives while keeping all
+#     meaningful Interstate/US/State Route overlaps
+MIN_OVERLAP_M = 200.0
 
 
 def _download_geojson(url: str, dest: Path) -> None:

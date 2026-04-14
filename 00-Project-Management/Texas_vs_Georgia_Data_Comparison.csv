@@ -16,7 +16,7 @@ AADT_TRUCKS,Texas truck AADT,"Single_Unit_AADT + Combo_Unit_AADT, TRUCK_AADT",TR
 PCT_SADT,Texas single-unit truck percent,Single_Unit_AADT,PCT_SADT,Derived,Present,SINGLE_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py
 PCT_CADT,Texas combination-truck percent,Combo_Unit_AADT,PCT_CADT,Derived,Present,COMBO_UNIT_AADT_2024 / AADT x 100. Materialized in normalize.py
 DVMT,Texas daily vehicle miles traveled,VMT,VMT,Proxy,Present,VMT exists in the final output but needs confirmation that it is equivalent enough to Texas DVMT for crash-rate use
-SEC_EVAC,Texas evacuation-route flag,No confirmed Georgia raw header,No confirmed Georgia final-output column,Gap,Missing,No confirmed Georgia evacuation-route field exists in the current staged schema
+SEC_EVAC,Texas evacuation-route flag,,SEC_EVAC,Derived,Present,Spatial overlay of GDOT EOC hurricane evacuation routes (268 features) and contraflow routes (12 features). Flags segments where overlap exceeds 200 m.
 NHFN,Texas national highway freight-network flag,"NHS, STRAHNET",NHS_IND,Proxy,Present,STRAHNET is also present in final output and may be a better freight proxy in some cases
 SEC_TRUNK,Texas state trunk-system flag,No Georgia raw header,No Georgia final-output column,No equivalent,Not applicable,Georgia does not have a state trunk-system classification
 MED_TYPE,Texas median-type field,MEDIAN_TYPE,MEDIAN_TYPE,Exact-ish,Present,Direct field exists but underlying coverage is sparse

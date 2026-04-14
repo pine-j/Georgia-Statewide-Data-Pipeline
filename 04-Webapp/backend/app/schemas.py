@@ -84,6 +84,7 @@ class RoadwayFeatureProperties(BaseModel):
     surface_type_label: str | None = None
     ownership_label: str | None = None
     facility_type_label: str | None = None
+    sec_evac: str | None = None
 
 
 class RoadwayFeature(BaseModel):
