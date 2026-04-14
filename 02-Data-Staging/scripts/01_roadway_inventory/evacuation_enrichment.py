@@ -7,16 +7,19 @@ Source layers (GDOT EOC Response):
 - Layer 8: GDOT Hurricane Evacuation Routes - Contraflow Route (12 polylines)
 
 Adds columns:
-- SEC_EVAC: Boolean flag — True when the segment overlaps an evacuation route
-- SEC_EVAC_CONTRAFLOW: Boolean flag — True when the segment overlaps a contraflow route
+- SEC_EVAC: Boolean flag - True when the segment overlaps an evacuation route
+- SEC_EVAC_CONTRAFLOW: Boolean flag - True when the segment overlaps a contraflow route
 - SEC_EVAC_ROUTE_NAME: Evacuation route name(s) matched to the segment
 - SEC_EVAC_SOURCE: Source attribution for the evacuation flag
+- SEC_EVAC_OVERLAP_M: Maximum accepted overlap length in meters
+- SEC_EVAC_OVERLAP_RATIO: Maximum accepted overlap ratio
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import geopandas as gpd
@@ -42,6 +45,8 @@ ENRICHMENT_COLUMNS = [
     "SEC_EVAC_CONTRAFLOW",
     "SEC_EVAC_ROUTE_NAME",
     "SEC_EVAC_SOURCE",
+    "SEC_EVAC_OVERLAP_M",
+    "SEC_EVAC_OVERLAP_RATIO",
 ]
 
 # Minimum overlap length in meters to count as a match.
@@ -51,9 +56,12 @@ ENRICHMENT_COLUMNS = [
 #   - 200 m eliminates 97.6% of Local/Other false positives while keeping all
 #     meaningful Interstate/US/State Route overlaps
 MIN_OVERLAP_M = 200.0
+MIN_OVERLAP_RATIO = 0.25
+MEGA_SEGMENT_LENGTH_M = 10_000.0
+MEGA_SEGMENT_MIN_RATIO = 0.50
 
 # Buffer distance in meters applied to evacuation route polylines before
-# measuring overlap.  Evacuation routes and roadway segments are digitized
+# measuring overlap. Evacuation routes and roadway segments are digitized
 # from different source geometries; a 30 m corridor accounts for positional
 # offset so that collinear roads register measurable intersection length
 # instead of zero-length point contacts.
@@ -101,83 +109,264 @@ def _load_contraflow_routes(refresh: bool = False) -> gpd.GeoDataFrame:
     return gdf
 
 
-def _spatial_overlay(
+def _parse_expected_family(route_name: str) -> str | None:
+    """Infer roadway family from an evacuation route name.
+
+    Returns a family string when the name clearly belongs to a signed
+    route system, or ``None`` when the name is ambiguous / unparseable.
+    """
+    if not isinstance(route_name, str):
+        return None
+
+    normalized = re.sub(r"\s+", " ", route_name).strip().lower()
+    if not normalized:
+        return None
+    if normalized.startswith(("i ", "i-", "interstate")):
+        return "Interstate"
+    if normalized.startswith(("us ", "us-")):
+        return "US Route"
+    if normalized.startswith(("sr ", "sr-", "state route")):
+        return "State Route"
+    return None
+
+
+# Families that belong to the signed state road system.  A segment in
+# any of these families may carry a concurrent route designation that
+# differs from the evacuation route name — e.g., a segment classified
+# "US Route" can physically follow an SR corridor.  Only "Local/Other"
+# segments (not part of the signed system) are rejected by the family
+# filter.
+_STATE_SYSTEM_FAMILIES = frozenset({
+    "interstate", "us route", "u.s. route", "state route",
+})
+
+
+def _overlay_matches(
     segments: gpd.GeoDataFrame,
     overlay: gpd.GeoDataFrame,
     name_field: str | None,
-) -> dict[int, list[str]]:
-    """Return segment indices that overlap the overlay, with route names.
-
-    Reprojects the overlay to match the segments' CRS, buffers the overlay
-    polylines into corridor polygons (ROUTE_BUFFER_M), then spatial-joins
-    and measures how much of each road segment falls inside the corridor.
-    The buffer is necessary because the evacuation routes and roadway
-    segments are digitized from different source geometries — without it,
-    polyline-to-polyline intersection returns zero-length point contacts.
-    """
+    *,
+    overlay_label: str,
+    interstate_only: bool = False,
+    enforce_route_family: bool = False,
+) -> dict[int, dict[str, object]]:
+    """Return matched segments with route names and overlap diagnostics."""
     if overlay.empty:
+        LOGGER.info(
+            "%s overlay matched 0 segments; 0 candidates rejected by ratio "
+            "filter, 0 rejected by route-family filter, 0 mega-segment "
+            "candidates encountered, 0 rejected",
+            overlay_label,
+        )
         return {}
 
     seg_crs = segments.crs
     if seg_crs is None:
-        LOGGER.warning("Segments have no CRS — cannot run spatial overlay")
+        LOGGER.warning("Segments have no CRS - cannot run spatial overlay")
         return {}
 
-    # Reproject overlay to match segments
+    eligible_segments = segments
+    if interstate_only:
+        if "ROUTE_FAMILY" not in segments.columns:
+            LOGGER.warning(
+                "Segments are missing ROUTE_FAMILY - cannot restrict %s overlay "
+                "to Interstate segments",
+                overlay_label.lower(),
+            )
+            return {}
+        eligible_segments = segments.loc[segments["ROUTE_FAMILY"] == "Interstate"]
+        LOGGER.info(
+            "Running %s spatial join: %d Interstate segments (of %d total) x "
+            "%d overlay features (buffered %.0f m)",
+            overlay_label.lower(), len(eligible_segments), len(segments),
+            len(overlay), ROUTE_BUFFER_M,
+        )
+    else:
+        LOGGER.info(
+            "Running %s spatial join: %d segments x %d overlay features "
+            "(buffered %.0f m)",
+            overlay_label.lower(), len(eligible_segments), len(overlay),
+            ROUTE_BUFFER_M,
+        )
+
+    if eligible_segments.empty:
+        LOGGER.info(
+            "%s overlay matched 0 segments; 0 candidates rejected by ratio "
+            "filter, 0 rejected by route-family filter, 0 mega-segment "
+            "candidates encountered, 0 rejected",
+            overlay_label,
+        )
+        return {}
+
     if overlay.crs != seg_crs:
         overlay = overlay.to_crs(seg_crs)
 
-    # Buffer routes into corridor polygons for measurable intersection
     overlay_buffered = overlay.copy()
     overlay_buffered["geometry"] = overlay_buffered.geometry.buffer(ROUTE_BUFFER_M)
 
-    LOGGER.info(
-        "Running evacuation spatial join: %d segments x %d overlay features "
-        "(buffered %d m)",
-        len(segments), len(overlay), ROUTE_BUFFER_M,
-    )
-
     name_cols = [name_field] if name_field and name_field in overlay.columns else []
     join_cols = ["geometry"] + name_cols
-    # Carry name fields from the original overlay onto the buffered version
     for col in name_cols:
         overlay_buffered[col] = overlay[col].values
 
     joined = gpd.sjoin(
-        segments[["geometry"]],
+        eligible_segments[["geometry"]],
         overlay_buffered[join_cols],
         how="inner",
         predicate="intersects",
     )
 
     if joined.empty:
-        LOGGER.info("Spatial join produced no matches")
+        LOGGER.info(
+            "%s overlay matched 0 segments; 0 candidates rejected by ratio "
+            "filter, 0 rejected by route-family filter, 0 mega-segment "
+            "candidates encountered, 0 rejected",
+            overlay_label,
+        )
         return {}
 
-    # Measure how much of each road segment falls inside the buffered corridor
-    results: dict[int, list[str]] = {}
+    results: dict[int, dict[str, object]] = {}
     buffered_geoms = overlay_buffered.geometry
+    ratio_rejected = 0
+    route_family_rejected = 0
+    mega_candidates = 0
+    mega_rejected = 0
+
     for seg_idx, group in joined.groupby(joined.index):
         seg_geom = segments.loc[seg_idx, "geometry"]
+
+        segment_length_raw = (
+            segments.loc[seg_idx, "segment_length_m"]
+            if "segment_length_m" in segments.columns
+            else None
+        )
+        try:
+            segment_length_m = float(segment_length_raw)
+        except (TypeError, ValueError):
+            segment_length_m = 0.0
+        if segment_length_m <= 0:
+            segment_length_m = float(seg_geom.length)
+
+        segment_family_raw = (
+            segments.loc[seg_idx, "ROUTE_FAMILY"]
+            if "ROUTE_FAMILY" in segments.columns
+            else None
+        )
+        segment_family = (
+            str(segment_family_raw).strip() if pd.notna(segment_family_raw) else None
+        )
+
         names: list[str] = []
+        max_overlap_m = 0.0
+        max_overlap_ratio = 0.0
         has_valid_overlap = False
+        is_mega_segment = segment_length_m > MEGA_SEGMENT_LENGTH_M
+
         for _, row in group.iterrows():
+            if is_mega_segment:
+                mega_candidates += 1
+
+            route_name = row[name_field] if name_field and name_field in row.index else None
+            if enforce_route_family and pd.notna(route_name):
+                expected_family = _parse_expected_family(str(route_name))
+                if expected_family is not None:
+                    seg_fam_lower = segment_family.lower() if segment_family else ""
+                    # State-system segments (Interstate / US Route / State Route)
+                    # may carry concurrent designations, so only reject
+                    # Local/Other segments that don't belong to the signed
+                    # route system.
+                    if seg_fam_lower not in _STATE_SYSTEM_FAMILIES:
+                        route_family_rejected += 1
+                        continue
+
             corridor = buffered_geoms.iloc[row["index_right"]]
             try:
-                overlap_len = seg_geom.intersection(corridor).length
+                overlap_len = float(seg_geom.intersection(corridor).length)
             except Exception:
                 overlap_len = 0.0
-            if overlap_len >= MIN_OVERLAP_M:
-                has_valid_overlap = True
-                if name_field and name_field in row.index:
-                    val = row[name_field]
-                    if pd.notna(val) and str(val).strip():
-                        names.append(str(val).strip())
-        if has_valid_overlap:
-            results[seg_idx] = names
 
-    LOGGER.info("Spatial overlay matched %d segments", len(results))
+            overlap_ratio = 0.0
+            if segment_length_m > 0:
+                overlap_ratio = overlap_len / segment_length_m
+
+            min_ratio = (
+                MEGA_SEGMENT_MIN_RATIO if is_mega_segment else MIN_OVERLAP_RATIO
+            )
+            if overlap_len < MIN_OVERLAP_M or overlap_ratio < min_ratio:
+                ratio_rejected += 1
+                if is_mega_segment:
+                    mega_rejected += 1
+                continue
+
+            has_valid_overlap = True
+            max_overlap_m = max(max_overlap_m, overlap_len)
+            max_overlap_ratio = max(max_overlap_ratio, overlap_ratio)
+            if name_field and name_field in row.index:
+                val = row[name_field]
+                if pd.notna(val) and str(val).strip():
+                    names.append(str(val).strip())
+
+        if has_valid_overlap:
+            results[seg_idx] = {
+                "names": names,
+                "overlap_m": max_overlap_m,
+                "overlap_ratio": max_overlap_ratio,
+            }
+
+    LOGGER.info(
+        "%s overlay matched %d segments; %d candidates rejected by ratio filter, "
+        "%d rejected by route-family filter, %d mega-segment candidates "
+        "encountered, %d rejected",
+        overlay_label, len(results), ratio_rejected, route_family_rejected,
+        mega_candidates, mega_rejected,
+    )
     return results
+
+
+def _spatial_overlay(
+    segments: gpd.GeoDataFrame,
+    overlay: gpd.GeoDataFrame,
+    name_field: str | None,
+) -> dict[int, dict[str, object]]:
+    """Return segment indices that overlap evacuation routes."""
+    return _overlay_matches(
+        segments,
+        overlay,
+        name_field,
+        overlay_label="Evacuation route",
+        enforce_route_family=True,
+    )
+
+
+def _contraflow_overlay(
+    segments: gpd.GeoDataFrame,
+    overlay: gpd.GeoDataFrame,
+    name_field: str | None,
+) -> dict[int, dict[str, object]]:
+    """Return Interstate segment indices that overlap contraflow routes."""
+    return _overlay_matches(
+        segments,
+        overlay,
+        name_field,
+        overlay_label="Contraflow route",
+        interstate_only=True,
+    )
+
+
+def _update_overlap_diagnostics(
+    enriched: gpd.GeoDataFrame,
+    idx: int,
+    overlap_m: float,
+    overlap_ratio: float,
+) -> None:
+    """Store the strongest overlap metrics seen for a segment."""
+    existing_overlap_m = enriched.at[idx, "SEC_EVAC_OVERLAP_M"]
+    existing_overlap_ratio = enriched.at[idx, "SEC_EVAC_OVERLAP_RATIO"]
+
+    if pd.isna(existing_overlap_m) or float(existing_overlap_m) < overlap_m:
+        enriched.at[idx, "SEC_EVAC_OVERLAP_M"] = overlap_m
+    if pd.isna(existing_overlap_ratio) or float(existing_overlap_ratio) < overlap_ratio:
+        enriched.at[idx, "SEC_EVAC_OVERLAP_RATIO"] = overlap_ratio
 
 
 def apply_evacuation_enrichment(
@@ -191,6 +380,8 @@ def apply_evacuation_enrichment(
     enriched["SEC_EVAC_CONTRAFLOW"] = False
     enriched["SEC_EVAC_ROUTE_NAME"] = None
     enriched["SEC_EVAC_SOURCE"] = None
+    enriched["SEC_EVAC_OVERLAP_M"] = 0.0
+    enriched["SEC_EVAC_OVERLAP_RATIO"] = 0.0
 
     # --- Evacuation routes ---
     try:
@@ -200,24 +391,42 @@ def apply_evacuation_enrichment(
         return enriched
 
     evac_matches = _spatial_overlay(enriched, evac, name_field="ROUTE_NAME")
-    for idx, names in evac_matches.items():
+    for idx, match in evac_matches.items():
+        names = match.get("names", [])
         enriched.at[idx, "SEC_EVAC"] = True
         enriched.at[idx, "SEC_EVAC_SOURCE"] = "gdot_eoc_hurricane_evacuation"
+        _update_overlap_diagnostics(
+            enriched,
+            idx,
+            float(match.get("overlap_m", 0.0)),
+            float(match.get("overlap_ratio", 0.0)),
+        )
         if names:
             enriched.at[idx, "SEC_EVAC_ROUTE_NAME"] = "; ".join(sorted(set(names)))
 
     LOGGER.info("Evacuation route matches: %d segments", len(evac_matches))
 
-    # --- Contraflow routes (optional — failure here does not abort evacuation flags) ---
-    contraflow_matches: dict[int, list[str]] = {}
+    # --- Contraflow routes (optional - failure here does not abort evacuation flags) ---
+    contraflow_matches: dict[int, dict[str, object]] = {}
     try:
         contraflow = _load_contraflow_routes(refresh=refresh)
-        contraflow_matches = _spatial_overlay(enriched, contraflow, name_field="TITLE")
+        contraflow_matches = _contraflow_overlay(
+            enriched,
+            contraflow,
+            name_field="TITLE",
+        )
     except Exception as exc:
         LOGGER.warning("Contraflow route enrichment unavailable: %s", exc)
 
-    for idx, names in contraflow_matches.items():
+    for idx, match in contraflow_matches.items():
+        names = match.get("names", [])
         enriched.at[idx, "SEC_EVAC_CONTRAFLOW"] = True
+        _update_overlap_diagnostics(
+            enriched,
+            idx,
+            float(match.get("overlap_m", 0.0)),
+            float(match.get("overlap_ratio", 0.0)),
+        )
         # Evacuation source takes priority; only set source for contraflow-only segments
         if not enriched.at[idx, "SEC_EVAC"]:
             enriched.at[idx, "SEC_EVAC"] = True

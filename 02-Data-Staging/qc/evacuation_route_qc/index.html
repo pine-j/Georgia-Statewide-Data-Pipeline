@@ -65,19 +65,16 @@
   <div id="map"></div>
   <script>
     const QC_SUMMARY = {
-  "total_evac_flagged": 1345,
-  "total_contraflow_flagged": 228,
+  "total_evac_flagged": 1235,
+  "total_contraflow_flagged": 194,
   "evac_route_family_breakdown": {
-    "Interstate": 200,
-    "Local/Other": 105,
-    "State Route": 208,
-    "U.S. Route": 832
+    "Interstate": 197,
+    "Local/Other": 42,
+    "State Route": 198,
+    "U.S. Route": 798
   },
   "contraflow_route_family_breakdown": {
-    "Interstate": 198,
-    "Local/Other": 7,
-    "State Route": 1,
-    "U.S. Route": 22
+    "Interstate": 194
   }
 };
   </script>
@@ -162,25 +159,33 @@
       const evacFlaggedLayer = L.geoJSON(evacFlaggedData, {
         style: styleFactory({ color: '#d32f2f', weight: 3, opacity: 0.7 }),
         onEachFeature: (feature, layer) => {
-          layer.bindPopup(makePopup(feature.properties, [
-            ['HWY_NAME', 'HWY_NAME'],
-            ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
-            ['AADT', 'AADT'],
-            ['overlap_m', 'overlap_m'],
-            ['COUNTY_NAME', 'COUNTY_NAME'],
-            ['DISTRICT_LABEL', 'DISTRICT_LABEL']
-          ]));
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['AADT', 'AADT'],
+              ['COUNTY_NAME', 'COUNTY_NAME'],
+              ['DISTRICT_LABEL', 'DISTRICT_LABEL']
+            ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
+          );
         }
       });
 
       const contraFlaggedLayer = L.geoJSON(contraFlaggedData, {
         style: styleFactory({ color: '#f57c00', weight: 4, opacity: 0.8 }),
         onEachFeature: (feature, layer) => {
-          layer.bindPopup(makePopup(feature.properties, [
-            ['HWY_NAME', 'HWY_NAME'],
-            ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
-            ['overlap_m', 'overlap_m']
-          ]));
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY']
+            ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
+          );
         }
       });
 

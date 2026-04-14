@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import box
 
 
@@ -16,6 +18,9 @@ CONTRAFLOW_PATH = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Stagi
 ROADWAY_CRS = "EPSG:32617"
 WEB_CRS = "EPSG:4326"
 OVERLAP_THRESHOLD_M = 200.0
+MIN_OVERLAP_RATIO = 0.25
+MEGA_SEGMENT_LENGTH_M = 10_000.0
+MEGA_SEGMENT_MIN_RATIO = 0.50
 MATCH_BUFFER_M = 30.0
 CONTEXT_SAMPLE_SIZE = 5000
 RANDOM_STATE = 42
@@ -26,6 +31,7 @@ ROADWAY_COLUMNS = [
     "AADT",
     "DISTRICT_LABEL",
     "COUNTY_NAME",
+    "segment_length_m",
     "geometry",
 ]
 CONTEXT_COLUMNS = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "geometry"]
@@ -59,45 +65,124 @@ def summarize_route_families(frame: gpd.GeoDataFrame) -> dict[str, int]:
     return {str(key): int(value) for key, value in counts.items()}
 
 
+_STATE_SYSTEM_FAMILIES = frozenset({"interstate", "us route", "u.s. route", "state route"})
+
+
+def _parse_expected_family(route_name: str) -> str | None:
+    """Infer roadway family from an evacuation route name."""
+    if not isinstance(route_name, str):
+        return None
+    normalized = re.sub(r"\s+", " ", route_name).strip().lower()
+    if not normalized:
+        return None
+    if normalized.startswith(("i ", "i-", "interstate")):
+        return "Interstate"
+    if normalized.startswith(("us ", "us-")):
+        return "US Route"
+    if normalized.startswith(("sr ", "sr-", "state route")):
+        return "State Route"
+    return None
+
+
 def flag_matches(
     roads: gpd.GeoDataFrame,
     routes: gpd.GeoDataFrame,
     keep_columns: list[str],
+    *,
+    route_name_field: str | None = None,
+    enforce_route_family: bool = False,
+    interstate_only: bool = False,
 ) -> gpd.GeoDataFrame:
+    eligible = roads
+    if interstate_only and "ROUTE_FAMILY" in roads.columns:
+        eligible = roads.loc[roads["ROUTE_FAMILY"] == "Interstate"]
+    if eligible.empty:
+        empty = roads.iloc[0:0][keep_columns + ["geometry"]].copy()
+        empty["overlap_m"] = pd.Series(dtype="float64")
+        empty["overlap_ratio"] = pd.Series(dtype="float64")
+        return empty
+
     routes_indexed = routes[["geometry"]].copy()
+    if route_name_field and route_name_field in routes.columns:
+        routes_indexed[route_name_field] = routes[route_name_field].values
     routes_indexed = routes_indexed.reset_index(drop=True).rename_axis("route_idx").reset_index()
-    # Buffer routes into corridor polygons for the sjoin — polyline-to-polyline
-    # intersection returns zero-length point contacts, not measurable overlap.
     buffered = routes_indexed.copy()
     buffered["geometry"] = buffered.geometry.buffer(MATCH_BUFFER_M)
     candidates = gpd.sjoin(
-        roads,
-        buffered[["route_idx", "geometry"]],
+        eligible,
+        buffered[["route_idx", "geometry"] + ([route_name_field] if route_name_field and route_name_field in buffered.columns else [])],
         how="inner",
         predicate="intersects",
     )
 
     if candidates.empty:
-        return roads.iloc[0:0][keep_columns + ["geometry"]].assign(overlap_m=[])
+        empty = roads.iloc[0:0][keep_columns + ["geometry"]].copy()
+        empty["overlap_m"] = pd.Series(dtype="float64")
+        empty["overlap_ratio"] = pd.Series(dtype="float64")
+        return empty
 
-    # Measure overlap against the BUFFERED corridor (not the raw polyline)
     buffered_geoms = buffered.set_index("route_idx").geometry
-    candidates["overlap_m"] = candidates.apply(
-        lambda row: float(row.geometry.intersection(buffered_geoms.loc[row["route_idx"]]).length),
-        axis=1,
-    )
-    candidates = candidates[candidates["overlap_m"] >= OVERLAP_THRESHOLD_M].copy()
+    accepted_rows = []
+    for seg_idx, group in candidates.groupby(candidates.index):
+        seg_geom = eligible.loc[seg_idx, "geometry"]
+        seg_length = (
+            float(eligible.loc[seg_idx, "segment_length_m"])
+            if "segment_length_m" in eligible.columns and pd.notna(eligible.loc[seg_idx, "segment_length_m"])
+            else float(seg_geom.length)
+        )
+        if seg_length <= 0:
+            seg_length = float(seg_geom.length)
 
-    if candidates.empty:
-        return roads.iloc[0:0][keep_columns + ["geometry"]].assign(overlap_m=[])
+        seg_family = None
+        if "ROUTE_FAMILY" in eligible.columns:
+            raw = eligible.loc[seg_idx, "ROUTE_FAMILY"]
+            seg_family = str(raw).strip() if pd.notna(raw) else None
 
-    aggregated = (
-        candidates.groupby("unique_id", as_index=False)
-        .agg({"overlap_m": "sum"})
-        .rename(columns={"overlap_m": "overlap_m"})
-    )
-    flagged = roads.merge(aggregated, on="unique_id", how="inner")
-    return flagged[keep_columns + ["overlap_m", "geometry"]].sort_values("unique_id").reset_index(drop=True)
+        best_overlap_m = 0.0
+        best_overlap_ratio = 0.0
+        for _, row in group.iterrows():
+            if enforce_route_family and route_name_field and route_name_field in row.index:
+                rn = row[route_name_field]
+                if pd.notna(rn):
+                    expected = _parse_expected_family(str(rn))
+                    if expected is not None:
+                        seg_fam_lower = seg_family.lower() if seg_family else ""
+                        if seg_fam_lower not in _STATE_SYSTEM_FAMILIES:
+                            continue
+
+            corridor = buffered_geoms.loc[row["route_idx"]]
+            try:
+                overlap_len = float(seg_geom.intersection(corridor).length)
+            except Exception:
+                overlap_len = 0.0
+
+            overlap_ratio = overlap_len / seg_length if seg_length > 0 else 0.0
+            is_mega = seg_length > MEGA_SEGMENT_LENGTH_M
+            min_ratio = MEGA_SEGMENT_MIN_RATIO if is_mega else MIN_OVERLAP_RATIO
+            if overlap_len < OVERLAP_THRESHOLD_M or overlap_ratio < min_ratio:
+                continue
+
+            best_overlap_m = max(best_overlap_m, overlap_len)
+            best_overlap_ratio = max(best_overlap_ratio, overlap_ratio)
+
+        if best_overlap_m > 0:
+            uid = eligible.loc[seg_idx, "unique_id"]
+            accepted_rows.append({
+                "unique_id": uid,
+                "overlap_m": best_overlap_m,
+                "overlap_ratio": best_overlap_ratio,
+            })
+
+    if not accepted_rows:
+        empty = roads.iloc[0:0][keep_columns + ["geometry"]].copy()
+        empty["overlap_m"] = pd.Series(dtype="float64")
+        empty["overlap_ratio"] = pd.Series(dtype="float64")
+        return empty
+
+    accepted_df = pd.DataFrame(accepted_rows)
+    flagged = eligible.merge(accepted_df, on="unique_id", how="inner")
+    out_cols = [c for c in keep_columns if c in flagged.columns] + ["overlap_m", "overlap_ratio", "geometry"]
+    return flagged[out_cols].sort_values("unique_id").reset_index(drop=True)
 
 
 def build_context_layer(
@@ -271,25 +356,33 @@ def html_template(summary: dict[str, object]) -> str:
       const evacFlaggedLayer = L.geoJSON(evacFlaggedData, {{
         style: styleFactory({{ color: '#d32f2f', weight: 3, opacity: 0.7 }}),
         onEachFeature: (feature, layer) => {{
-          layer.bindPopup(makePopup(feature.properties, [
-            ['HWY_NAME', 'HWY_NAME'],
-            ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
-            ['AADT', 'AADT'],
-            ['overlap_m', 'overlap_m'],
-            ['COUNTY_NAME', 'COUNTY_NAME'],
-            ['DISTRICT_LABEL', 'DISTRICT_LABEL']
-          ]));
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['AADT', 'AADT'],
+              ['COUNTY_NAME', 'COUNTY_NAME'],
+              ['DISTRICT_LABEL', 'DISTRICT_LABEL']
+            ]) + `<div><strong>Overlap:</strong> ${{overlapM}} (${{ratio}})</div>`
+          );
         }}
       }});
 
       const contraFlaggedLayer = L.geoJSON(contraFlaggedData, {{
         style: styleFactory({{ color: '#f57c00', weight: 4, opacity: 0.8 }}),
         onEachFeature: (feature, layer) => {{
-          layer.bindPopup(makePopup(feature.properties, [
-            ['HWY_NAME', 'HWY_NAME'],
-            ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
-            ['overlap_m', 'overlap_m']
-          ]));
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY']
+            ]) + `<div><strong>Overlap:</strong> ${{overlapM}} (${{ratio}})</div>`
+          );
         }}
       }});
 
@@ -344,11 +437,15 @@ def main() -> None:
         roads,
         evac_routes,
         ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"],
+        route_name_field="ROUTE_NAME",
+        enforce_route_family=True,
     )
     contraflow_flagged = flag_matches(
         roads,
         contraflow_routes,
         ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"],
+        route_name_field="TITLE",
+        interstate_only=True,
     )
 
     flagged_ids = set(evac_flagged["unique_id"]).union(set(contraflow_flagged["unique_id"]))
