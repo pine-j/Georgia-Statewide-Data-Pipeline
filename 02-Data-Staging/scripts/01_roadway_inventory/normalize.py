@@ -1681,7 +1681,7 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
         "by_aadt_2024_source": _group_current_aadt_coverage(audit, ["AADT_2024_SOURCE"]),
         "by_function_type": _group_current_aadt_coverage(
             audit,
-            ["PARSED_FUNCTION_TYPE", "PARSED_FUNCTION_TYPE_LABEL"],
+            ["FUNCTION_TYPE", "FUNCTION_TYPE_LABEL"],
         ),
         "top_counties_by_uncovered_segments": _group_current_aadt_coverage(
             audit,
@@ -1705,8 +1705,8 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
         "SYSTEM_CODE_LABEL",
         "ROUTE_FAMILY",
         "ROUTE_FAMILY_DETAIL",
-        "PARSED_FUNCTION_TYPE",
-        "PARSED_FUNCTION_TYPE_LABEL",
+        "FUNCTION_TYPE",
+        "FUNCTION_TYPE_LABEL",
         "FUNCTIONAL_CLASS",
         "FUNCTIONAL_CLASS_LABEL",
         "FROM_MILEPOINT",

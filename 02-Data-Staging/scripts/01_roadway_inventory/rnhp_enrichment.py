@@ -238,7 +238,12 @@ def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
         ])
 
     df = gdf.copy()
+    geom_col = df.geometry.name
     df.columns = [c.strip().upper() if isinstance(c, str) else c for c in df.columns]
+    # Restore geometry column name after uppercasing
+    if geom_col.upper() in df.columns and geom_col.upper() != geom_col:
+        df = df.rename(columns={geom_col.upper(): geom_col})
+    df = df.set_geometry(geom_col)
 
     active_col = "RECORD_STATUS_CD"
     if active_col in df.columns:
