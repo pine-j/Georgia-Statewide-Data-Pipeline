@@ -17,10 +17,17 @@ CONTRAFLOW_PATH = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Stagi
 
 ROADWAY_CRS = "EPSG:32617"
 WEB_CRS = "EPSG:4326"
-OVERLAP_THRESHOLD_M = 200.0
-MIN_OVERLAP_RATIO = 0.25
+# Tiered overlap thresholds — length-adaptive to avoid filtering out short
+# segments that sit entirely within an evacuation corridor.
+SHORT_SEGMENT_MAX_M = 400.0
+SHORT_SEGMENT_MIN_RATIO = 0.50
+NORMAL_MIN_OVERLAP_M = 150.0
+NORMAL_MIN_RATIO = 0.08
+NORMAL_HIGH_OVERLAP_M = 300.0
+NORMAL_HIGH_OVERLAP_MIN_RATIO = 0.03
 MEGA_SEGMENT_LENGTH_M = 10_000.0
-MEGA_SEGMENT_MIN_RATIO = 0.50
+MEGA_MIN_OVERLAP_M = 500.0
+MEGA_MIN_RATIO = 0.05
 MATCH_BUFFER_M = 30.0
 CONTEXT_SAMPLE_SIZE = 5000
 RANDOM_STATE = 42
@@ -157,9 +164,24 @@ def flag_matches(
                 overlap_len = 0.0
 
             overlap_ratio = overlap_len / seg_length if seg_length > 0 else 0.0
+            is_short = seg_length < SHORT_SEGMENT_MAX_M
             is_mega = seg_length > MEGA_SEGMENT_LENGTH_M
-            min_ratio = MEGA_SEGMENT_MIN_RATIO if is_mega else MIN_OVERLAP_RATIO
-            if overlap_len < OVERLAP_THRESHOLD_M or overlap_ratio < min_ratio:
+            if is_short:
+                accepted = overlap_ratio >= SHORT_SEGMENT_MIN_RATIO
+            elif is_mega:
+                accepted = (
+                    overlap_len >= MEGA_MIN_OVERLAP_M
+                    and overlap_ratio >= MEGA_MIN_RATIO
+                )
+            else:
+                accepted = (
+                    overlap_len >= NORMAL_MIN_OVERLAP_M
+                    and overlap_ratio >= NORMAL_MIN_RATIO
+                ) or (
+                    overlap_len >= NORMAL_HIGH_OVERLAP_M
+                    and overlap_ratio >= NORMAL_HIGH_OVERLAP_MIN_RATIO
+                )
+            if not accepted:
                 continue
 
             best_overlap_m = max(best_overlap_m, overlap_len)
@@ -438,7 +460,7 @@ def main() -> None:
         evac_routes,
         ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"],
         route_name_field="ROUTE_NAME",
-        enforce_route_family=True,
+        enforce_route_family=False,
     )
     contraflow_flagged = flag_matches(
         roads,

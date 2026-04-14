@@ -43,3 +43,6 @@ venv/
 04-Webapp/frontend/node_modules/
 04-Webapp/frontend/dist/
 04-Webapp/backend/__pycache__/
+
+# QC geojson artifacts (large, generated locally)
+02-Data-Staging/qc/**/*.geojson
