@@ -31,6 +31,46 @@ corridor extent with no gaps. Zero corridors fail.
 | Corridors with visible gaps | ~15 |
 | Contraflow | 170 (unchanged) |
 
+## Sub-Agent Architecture
+
+**Codex CLI handles code. Claude Code handles visual QC. They alternate.**
+
+```
+┌─────────────────────────────────────────────────┐
+│ Claude Code (main) — Playwright MCP access      │
+│                                                 │
+│  1. Spawn Codex → implement two-tier acceptance │
+│  2. Run generate_qc_map.py                      │
+│  3. Playwright: iterate all 51 corridors        │
+│     → produce gap report (corridor + bounds)    │
+│  4. Spawn Codex → investigate gaps via Python,  │
+│     identify unique_ids, apply hard-codes/fixes │
+│  5. Run generate_qc_map.py                      │
+│  6. Playwright: re-check failed corridors       │
+│  7. GOTO 4 until zero gaps                      │
+│  8. Final commit                                │
+└─────────────────────────────────────────────────┘
+```
+
+### Why This Split
+
+- **Codex CLI** has Bash access → can run Python scripts against the
+  245K-segment GeoPackage, edit `_evac_corridor_match.py`, run
+  `generate_qc_map.py`. It does the heavy lifting.
+- **Claude Code main** has Playwright MCP → can take screenshots, run JS
+  queries on the QC map, select corridors in the dropdown. It's the
+  verifier and orchestrator.
+- Each Codex invocation starts fresh → no context bloat from screenshots
+  and JS query results accumulating.
+
+### Codex Invocation Pattern
+
+Each Codex sub-agent receives:
+1. This plan document (for context)
+2. A specific task with inputs (e.g., "investigate these gap areas")
+3. File paths and Python executable path
+4. Expected outputs (e.g., "return a list of unique_ids to hard-code")
+
 ## Diagnostic Findings
 
 ### Root Cause A: Attribute-Matched Segments Rejected by Overlap Threshold (33 segments)
@@ -79,54 +119,71 @@ Two SR-135 segments have near-zero overlap despite HWY_NAME matching:
 
 These are digitization offsets. No threshold relaxation helps — hard-code.
 
-### Root Cause D: Local/Other on Corridor Pavement (low priority)
+## Implementation Phases
 
-On SR 76, two city street segments (CS-775, CS-776) sit entirely within the
-corridor. Risk of re-introducing 122+ false positives is too high. **Skip
-unless the iterative loop identifies them as the only remaining gap.**
+### Phase 1: Two-Tier Acceptance (Codex sub-agent)
 
-## Algorithm — Two-Tier Acceptance + Hard-Codes + Iterative Verification
+**Task for Codex:** Modify `_evac_corridor_match.py` to add two-tier
+acceptance logic. See "Algorithm Details" section below for exact code.
 
-### Phase 1: Two-Tier Acceptance in `_per_corridor_evac_overlay()`
+**Inputs:** Path to `_evac_corridor_match.py`, this plan.
+**Outputs:** Modified file with two-tier acceptance + hard-code mechanism.
 
-Add a fast-path for segments whose HWY_NAME matches the corridor patterns.
-These segments carry the corridor's route designation — they ARE the
-corridor. Only need minimal spatial confirmation.
+### Phase 2: Initial QC (Claude Code main)
 
-**Implementation in the inner loop:**
+1. Run `generate_qc_map.py`
+2. Serve QC map on port 8091
+3. Playwright: iterate all 51 corridors, take screenshots
+4. Produce gap report: list of `(corridor_name, gap_bounds_wgs84)`
+
+### Phase 3: Gap Investigation (Codex sub-agent)
+
+**Task for Codex:** For each gap in the report, run Python against the
+base_network.gpkg to identify missing segments.
+
+**Inputs:** Gap report from Phase 2, path to base_network.gpkg.
+**Outputs:** For each gap:
+- List of `unique_id`s that should be flagged
+- Diagnosis: why was each segment missed (overlap too low? geometry offset?
+  Local/Other family?)
+- Recommended fix: algorithm tweak or hard-code
+
+### Phase 4: Apply Fixes (Codex sub-agent)
+
+**Task for Codex:** Apply the fixes from Phase 3:
+- Add unique_ids to `_HARDCODE_OVERRIDES` with comments
+- Adjust algorithm if a systemic fix was identified
+- Run `generate_qc_map.py` to regenerate
+
+**Inputs:** Phase 3 outputs, file paths.
+**Outputs:** Modified files, QC run output.
+
+### Phase 5: Re-Verify (Claude Code main)
+
+Playwright re-checks only the corridors that failed in Phase 2.
+- If all pass → Phase 6
+- If any fail → back to Phase 3 with new gap report
+
+### Phase 6: Final Validation + Commit (Claude Code main)
+
+1. Full Playwright sweep of all 51 corridors (final confirmation)
+2. Automated QC metrics check
+3. Codex review of all changes
+4. Commit on `feature/hybrid-evac-matching`
+
+## Algorithm Details
+
+### New Constants
 
 ```python
-# After computing overlap_len, overlap_ratio, segment_length_m:
-
-# Check if segment's HWY_NAME matches any corridor pattern
-attribute_matched = (
-    pos_idx in corridor_hwy_positions.get(route_name_str, set())
-    or pos_idx in corridor_hpms_positions.get(route_name_str, set())
-)
-
-if attribute_matched:
-    # TIER 1: Relaxed thresholds — they ARE the corridor
-    accepted = _accept_overlap_attribute_matched(
-        overlap_len, overlap_ratio, segment_length_m,
-    )
-    # Skip corridor proximity filter for attribute matches
-    skip_proximity = True
-else:
-    # TIER 2: Standard thresholds for concurrent/unmatched segments
-    accepted = _accept_overlap(
-        overlap_len, overlap_ratio, segment_length_m,
-        overlap_geom, corridor_line_geom, seg_geom, ROUTE_BUFFER_M,
-    )
-    skip_proximity = False
+# Attribute-boosted thresholds (Tier 1)
+ATTR_NORMAL_MIN_OVERLAP_M = 50.0   # was 150.0 for Tier 2
+ATTR_SHORT_MIN_RATIO = 0.30        # was 0.40 for Tier 2
 ```
 
-**New function:**
+### New Function: `_accept_overlap_attribute_matched()`
 
 ```python
-# Attribute-boosted thresholds
-ATTR_NORMAL_MIN_OVERLAP_M = 50.0   # was 150.0
-ATTR_SHORT_MIN_RATIO = 0.30        # was 0.40
-
 def _accept_overlap_attribute_matched(
     overlap_len: float,
     overlap_ratio: float,
@@ -134,187 +191,76 @@ def _accept_overlap_attribute_matched(
 ) -> bool:
     """Relaxed acceptance for segments whose HWY_NAME matches the corridor.
 
-    No ratio minimum for normal/mega segments — attribute match confirms
-    segment identity. No angular alignment check — attribute match
-    already confirms correct road. No proximity filter applied after.
+    No ratio minimum for normal/mega — attribute match confirms identity.
+    No angular alignment check. No proximity filter applied after.
     """
     is_short = segment_length_m < SHORT_SEGMENT_MAX_M
-
     if is_short:
         return overlap_ratio >= ATTR_SHORT_MIN_RATIO
     else:
         return overlap_len >= ATTR_NORMAL_MIN_OVERLAP_M
 ```
 
-**Rationale:**
-- 50m minimum overlap prevents incidental clips
-- No ratio minimum because the segment IS the corridor road
-- No alignment check because attribute match confirms identity
-- No proximity filter because a 500km I-75 segment with 34km overlap IS
-  on the I-75 corridor regardless of what fraction 34km is of 500km
-
-### Phase 2: Hard-Code Override Mechanism
-
-For segments that no threshold can catch (geometry offsets, edge cases
-discovered during the iterative loop):
+### Modified Inner Loop (in `_per_corridor_evac_overlay`)
 
 ```python
-# Hard-coded segment overrides — discovered during Playwright QC iteration.
-# Key: corridor ROUTE_NAME, Value: list of segment unique_ids
+# After computing overlap_len, overlap_ratio:
+
+attribute_matched = (
+    pos_idx in corridor_hwy_positions.get(route_name_str, set())
+    or pos_idx in corridor_hpms_positions.get(route_name_str, set())
+)
+
+if attribute_matched:
+    accepted = _accept_overlap_attribute_matched(
+        overlap_len, overlap_ratio, segment_length_m,
+    )
+    # Skip proximity filter for attribute matches
+else:
+    accepted = _accept_overlap(
+        overlap_len, overlap_ratio, segment_length_m,
+        overlap_geom, corridor_line_geom, seg_geom, ROUTE_BUFFER_M,
+    )
+    if accepted:
+        inside_ratio = overlap_len / float(seg_geom.length) if seg_geom.length > 0 else 0.0
+        if inside_ratio < MIN_INSIDE_CORRIDOR_RATIO:
+            accepted = False
+
+# Label match method (after acceptance, not before)
+if accepted:
+    if attribute_matched:
+        method = "hpms+spatial" if pos_idx in corridor_hpms_positions.get(route_name_str, set()) else "hwy_name+spatial"
+    else:
+        method = "concurrent+spatial"
+    ...
+```
+
+### Hard-Code Override Dict
+
+```python
 _HARDCODE_OVERRIDES: dict[str, list[str]] = {
-    # Populated during Phase 4 iterative QC
+    # Format: "ROUTE_NAME": ["unique_id_1", "unique_id_2"]
+    # Each entry has a comment explaining why it's hard-coded.
+    #
+    # Populated during iterative Playwright QC (Phase 3-5).
 }
 
-# In _METHOD_PRECEDENCE, add:
-"hardcode": 0  # lowest precedence — any real spatial match overrides
+_METHOD_PRECEDENCE = {
+    "hwy_name+spatial": 4,
+    "hpms+spatial": 3,
+    "concurrent+spatial": 2,
+    "spatial_only": 1,
+    "hardcode": 0,
+}
 ```
 
-**At the start of each corridor loop:**
+## Constraints
 
-```python
-if route_name_str in _HARDCODE_OVERRIDES:
-    for uid in _HARDCODE_OVERRIDES[route_name_str]:
-        mask = segments["unique_id"] == uid
-        if mask.any():
-            idx = segments.index[mask][0]
-            if idx not in results:
-                _merge_result(results, idx, route_name_str,
-                              "hardcode", 0.0, 0.0)
-                corridor_match_count += 1
-```
-
-### Phase 3: Implement and Run Initial QC
-
-1. Add `_accept_overlap_attribute_matched()` to `_evac_corridor_match.py`
-2. Modify `_per_corridor_evac_overlay()` to use two-tier acceptance
-3. Add `_HARDCODE_OVERRIDES` dict (initially empty)
-4. Run `generate_qc_map.py` — expect total ~1,560
-5. Commit
-
-### Phase 4: Iterative Playwright Verification Loop
-
-This is the core of the plan. Repeat until all corridors pass:
-
-```
-WHILE any corridor has visible gaps:
-    FOR each corridor in dropdown:
-        1. Select corridor in dropdown filter
-        2. Take screenshot
-        3. Check: does red span the FULL extent of blue?
-        
-        IF gap found:
-            4. Zoom into gap area
-            5. Run JS to query roadway segments in gap bounds:
-               
-               // Get map bounds around the gap
-               const b = map.getBounds();
-               // Query the base network for segments in this area
-               // (load from roadway GeoPackage via Python)
-            
-            6. Run Python to identify specific segments in the gap:
-               
-               python -c "
-               import geopandas as gpd
-               roads = gpd.read_file('base_network.gpkg',
-                   layer='roadway_segments',
-                   bbox=(minx, miny, maxx, maxy))
-               # Filter to state-system segments
-               # Print unique_id, HWY_NAME, ROUTE_FAMILY
-               "
-            
-            7. Determine fix:
-               a. If segment has HWY_NAME matching corridor AND overlap > 0:
-                  → Algorithm should catch it with Tier 1. Debug why it didn't.
-               b. If segment has HWY_NAME matching but overlap = 0 (geometry offset):
-                  → Add to _HARDCODE_OVERRIDES
-               c. If segment has DIFFERENT HWY_NAME (concurrent designation)
-                  AND was rejected by Tier 2 thresholds:
-                  → Consider lowering Tier 2 thresholds for this corridor
-                  → Or add to _HARDCODE_OVERRIDES if edge case
-               d. If segment is Local/Other sitting entirely on corridor:
-                  → Add to _HARDCODE_OVERRIDES (safest — no systemic risk)
-            
-            8. Apply fix (algorithm tweak or hard-code)
-            9. Re-run generate_qc_map.py
-            10. Re-check THIS corridor
-        
-        IF no gap:
-            Mark corridor as PASSED
-    
-    Commit after each batch of fixes
-```
-
-**Playwright JS for gap investigation:**
-
-```javascript
-// After selecting corridor and zooming to gap area:
-
-// 1. Get bounds of the visible gap
-const b = map.getBounds();
-const sw = b.getSouthWest();
-const ne = b.getNorthEast();
-console.log(`Gap bounds: ${sw.lng},${sw.lat},${ne.lng},${ne.lat}`);
-
-// 2. Count flagged segments in current view
-let flaggedInView = 0;
-evacFlaggedLayer.eachLayer(layer => {
-  const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
-  if (name.includes(CURRENT_CORRIDOR) && b.contains(layer.getBounds().getCenter())) {
-    flaggedInView++;
-  }
-});
-console.log(`Flagged segments in gap area: ${flaggedInView}`);
-
-// 3. Check if official route passes through this area
-let routeInView = false;
-evacRoutesLayer.eachLayer(layer => {
-  if (layer.feature.properties.ROUTE_NAME === CURRENT_CORRIDOR
-      && b.intersects(layer.getBounds())) {
-    routeInView = true;
-  }
-});
-console.log(`Official route in gap: ${routeInView}`);
-```
-
-**Python for segment identification in gap area:**
-
-```python
-# After getting gap bounds from Playwright (in EPSG:4326)
-import geopandas as gpd
-from shapely.geometry import box
-
-# Convert bounds from WGS84 to UTM
-gap_box_4326 = box(min_lon, min_lat, max_lon, max_lat)
-gap_gdf = gpd.GeoDataFrame(geometry=[gap_box_4326], crs="EPSG:4326").to_crs("EPSG:32617")
-gap_box_utm = gap_gdf.geometry[0]
-
-roads = gpd.read_file("base_network.gpkg", layer="roadway_segments",
-    columns=["unique_id", "HWY_NAME", "ROUTE_FAMILY", "segment_length_m", "geometry"])
-roads_in_gap = roads[roads.geometry.intersects(gap_box_utm)]
-
-# Show state-system segments not already flagged
-for _, seg in roads_in_gap.iterrows():
-    print(f"{seg['unique_id']}  {seg['HWY_NAME']}  {seg['ROUTE_FAMILY']}  {seg['segment_length_m']:.0f}m")
-```
-
-### Phase 5: Final Validation
-
-After the iterative loop completes with zero gaps:
-
-1. **Full statewide screenshot** — red everywhere blue is
-2. **Automated QC metrics** — total count, contraflow unchanged at 170
-3. **Per-corridor JS count query** — every corridor has >= 1 match
-4. **Codex review** of all algorithm changes and hard-codes
-5. **Final commit** on `feature/hybrid-evac-matching`
-
-## Acceptance Criteria
-
-- [ ] Every named corridor in the dropdown shows red spanning full blue extent
-- [ ] Zero corridors with visible gaps (verified by Playwright screenshot)
-- [ ] Contraflow count unchanged at 170
-- [ ] Zero Local/Other false positives (except hard-coded specific segments)
-- [ ] Every hard-coded segment has a comment explaining why it's there
-- [ ] `run_automated_qc()` passes
+- Do not modify contraflow matching logic
+- Do not change Tier 2 (standard) thresholds — only add Tier 1 fast-path
+- Hard-codes must have comments explaining the reason
+- Python executable: `/c/Users/adith/AppData/Local/Programs/Python/Python313/python.exe`
+- Commit on `feature/hybrid-evac-matching`. Do not push. No AI/Claude attribution.
 
 ## Files to Modify
 
@@ -327,10 +273,10 @@ After the iterative loop completes with zero gaps:
 - No changes to `generate_qc_map.py` (corridor filter already works)
 - No changes to `evacuation_enrichment.py` (calls the shared module)
 
-## Constraints
+## Key Data References
 
-- Do not modify contraflow matching logic
-- Do not change Tier 2 (standard) thresholds — only add Tier 1 fast-path
-- Hard-codes must have comments explaining the reason
-- Python executable: `/c/Users/adith/AppData/Local/Programs/Python/Python313/python.exe`
-- Commit on `feature/hybrid-evac-matching`. Do not push. No AI/Claude attribution.
+- Roadway segments: `02-Data-Staging/spatial/base_network.gpkg` (layer `roadway_segments`, 245,863 rows)
+- Evac routes: `02-Data-Staging/spatial/ga_evac_routes.geojson` (268 features, 52 named + 36 null)
+- QC map output: `02-Data-Staging/qc/evacuation_route_qc/`
+- QC map URL: `http://localhost:8091/index.html`
+- Python: `/c/Users/adith/AppData/Local/Programs/Python/Python313/python.exe`
