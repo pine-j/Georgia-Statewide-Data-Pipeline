@@ -691,6 +691,7 @@ def html_template(summary: dict[str, object]) -> str:
       corridorControl.addTo(map);
 
       window.filterByCorridor = function(corridorName) {{
+        // Filter flagged segments (red)
         evacFlaggedLayer.eachLayer(layer => {{
           const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
           const visible = !corridorName || name.includes(corridorName);
@@ -701,11 +702,47 @@ def html_template(summary: dict[str, object]) -> str:
           }}
         }});
 
+        // Filter official evac routes (blue)
+        evacRoutesLayer.eachLayer(layer => {{
+          const rn = layer.feature.properties.ROUTE_NAME || '';
+          const visible = !corridorName || rn === corridorName;
+          if (visible) {{
+            layer.setStyle({{ opacity: 0.8, weight: 4 }});
+          }} else {{
+            layer.setStyle({{ opacity: 0, weight: 0 }});
+          }}
+        }});
+
+        // Filter contraflow routes (purple) — hide when filtering
+        contraRoutesLayer.eachLayer(layer => {{
+          if (corridorName) {{
+            layer.setStyle({{ opacity: 0, weight: 0 }});
+          }} else {{
+            layer.setStyle({{ opacity: 0.8, weight: 5 }});
+          }}
+        }});
+
+        // Filter contraflow flagged segments (orange) — hide when filtering
+        contraFlaggedLayer.eachLayer(layer => {{
+          if (corridorName) {{
+            layer.setStyle({{ opacity: 0, weight: 0 }});
+          }} else {{
+            layer.setStyle({{ opacity: 0.8, weight: 4 }});
+          }}
+        }});
+
         if (corridorName) {{
           const cbounds = L.latLngBounds();
           evacFlaggedLayer.eachLayer(layer => {{
             const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
             if (name.includes(corridorName)) {{
+              cbounds.extend(layer.getBounds());
+            }}
+          }});
+          // Also include the official route bounds
+          evacRoutesLayer.eachLayer(layer => {{
+            const rn = layer.feature.properties.ROUTE_NAME || '';
+            if (rn === corridorName) {{
               cbounds.extend(layer.getBounds());
             }}
           }});
