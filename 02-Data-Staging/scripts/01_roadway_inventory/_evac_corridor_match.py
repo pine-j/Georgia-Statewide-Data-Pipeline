@@ -421,13 +421,10 @@ def _per_corridor_evac_overlay(
                     continue
 
                 # 5. Label match method (diagnostic only — not used for filtering)
-                if pos_idx in corridor_hwy_positions.get(route_name_str, set()):
-                    if route_name_str in _MANUAL_NAME_MAP:
-                        method = "hpms+spatial"
-                    else:
-                        method = "hwy_name+spatial"
-                elif pos_idx in corridor_hpms_positions.get(route_name_str, set()):
+                if pos_idx in corridor_hpms_positions.get(route_name_str, set()):
                     method = "hpms+spatial"
+                elif pos_idx in corridor_hwy_positions.get(route_name_str, set()):
+                    method = "hwy_name+spatial"
                 else:
                     method = "concurrent+spatial"
 
@@ -470,7 +467,7 @@ def _per_corridor_evac_overlay(
             else:
                 residual = feat_geom
 
-            if residual is None or residual.is_empty or residual.length < 100:
+            if residual is None or residual.is_empty or residual.length <= 100:
                 continue
 
             residual_buffer = residual.buffer(ROUTE_BUFFER_M)
