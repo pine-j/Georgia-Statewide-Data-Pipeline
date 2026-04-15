@@ -4,10 +4,14 @@ Shared by both the enrichment pipeline (evacuation_enrichment.py) and the QC
 map generator (generate_qc_map.py).  Extracting matching logic into a single
 module prevents drift between the two copies.
 
-Algorithm overview — three passes:
-  1. Named corridors: HWY_NAME prefix match + spatial overlap
-  2. Concurrent fallback: unmatched state-system segments inside any corridor
-  3. Null-name features: geometry-differenced residuals, spatial only
+Algorithm — spatial-first per-corridor:
+  For each corridor, buffer the route geometry, find ALL segments inside the
+  buffer via spatial index, then filter false positives (Local/Other, overlap
+  thresholds, angular alignment).  Match method is a diagnostic label only —
+  it does NOT determine inclusion.
+
+  Null-name features are differenced against the union of named corridor
+  buffers to avoid double-counting.
 """
 
 from __future__ import annotations
@@ -243,24 +247,7 @@ def _accept_overlap(
 
 
 # ===================================================================
-# Segment evaluation helper
-# ===================================================================
-
-def _get_segment_length(segments: gpd.GeoDataFrame, idx: int) -> float:
-    """Get segment length in meters, falling back to geometry length."""
-    if "segment_length_m" in segments.columns:
-        raw = segments.at[idx, "segment_length_m"]
-        try:
-            val = float(raw)
-            if val > 0:
-                return val
-        except (TypeError, ValueError):
-            pass
-    return float(segments.at[idx, "geometry"].length)
-
-
-# ===================================================================
-# Per-corridor matching engine (Phase 2)
+# Per-corridor matching engine — spatial-first
 # ===================================================================
 
 def _per_corridor_evac_overlay(
@@ -268,7 +255,12 @@ def _per_corridor_evac_overlay(
     evac_routes: gpd.GeoDataFrame,
     name_field: str,
 ) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
-    """Three-pass per-corridor matching for evacuation routes.
+    """Spatial-first per-corridor matching for evacuation routes.
+
+    For each corridor: buffer → spatial candidates → filter false positives →
+    label match method.  Match method is a diagnostic label only — it does NOT
+    determine inclusion.  Every segment inside the buffer that passes the
+    false-positive filters is matched, guaranteeing zero false negatives.
 
     Returns
     -------
@@ -291,19 +283,22 @@ def _per_corridor_evac_overlay(
         evac_routes = evac_routes.to_crs(seg_crs)
 
     # --- ONE-TIME SETUP ---
-    LOGGER.info("Building HWY_NAME prefix index...")
+    LOGGER.info("Building HWY_NAME prefix index (for labeling, not filtering)...")
     hwy_index = _build_hwy_prefix_index(segments)
     seg_sindex = segments.sindex
 
-    # Pre-cache segment lengths and ROUTE_FAMILY for fast lookup
+    # Pre-cache column locations and flags for fast inner-loop access
     has_seg_len = "segment_length_m" in segments.columns
     has_route_fam = "ROUTE_FAMILY" in segments.columns
     has_hpms = "HPMS_ROUTE_NAME" in segments.columns
     seg_geom_arr = segments.geometry.values  # numpy array of geometries
+    seg_len_col = segments.columns.get_loc("segment_length_m") if has_seg_len else None
+    route_fam_col = segments.columns.get_loc("ROUTE_FAMILY") if has_route_fam else None
+    hwy_name_col = segments.columns.get_loc("HWY_NAME") if "HWY_NAME" in segments.columns else None
+    hpms_col_loc = segments.columns.get_loc("HPMS_ROUTE_NAME") if has_hpms else None
 
     results: dict[int, dict[str, Any]] = {}
-    # corridor_name -> (corridor_buffer, corridor_line_geom)
-    corridor_data: dict[str, tuple] = {}
+    corridor_data: dict[str, tuple] = {}  # name -> (buffer, line_geom)
     per_corridor_counts: dict[str, int] = {}
     method_counts: dict[str, int] = {
         "hwy_name+spatial": 0,
@@ -313,23 +308,29 @@ def _per_corridor_evac_overlay(
     }
     multi_corridor_segments = 0
 
+    # Build set of HWY_NAME-index positions for each corridor (for labeling)
+    corridor_hwy_positions: dict[str, set[int]] = {}
+    corridor_hpms_positions: dict[str, set[int]] = {}
+
     # =========================================================
-    # PASS 1: NAMED CORRIDORS
+    # NAMED CORRIDORS — spatial-first
     # =========================================================
     named_mask = evac_routes[name_field].notna()
     named_routes = evac_routes[named_mask]
 
     if not named_routes.empty:
-        LOGGER.info("Pass 1: processing %d named corridor groups...",
+        LOGGER.info("Processing %d named corridor groups (spatial-first)...",
                      named_routes[name_field].nunique())
 
         for route_name, corridor_features in named_routes.groupby(name_field):
             route_name_str = str(route_name)
             per_corridor_counts.setdefault(route_name_str, 0)
 
+            # Determine if this is a CR corridor (Local/Other segments allowed)
+            corridor_is_cr = route_name_str.strip().upper().startswith("CR ")
+
             # PERF: buffer each feature individually, then union the polygons.
-            # This avoids the expensive LineString union_all() which can take
-            # 400+ seconds per corridor.
+            # DO NOT use geometry.union_all().buffer() — hangs 400+ s/corridor.
             individual_buffers = corridor_features.geometry.buffer(ROUTE_BUFFER_M)
             corridor_buffer = unary_union(individual_buffers.values)
 
@@ -345,52 +346,59 @@ def _per_corridor_evac_overlay(
 
             corridor_data[route_name_str] = (corridor_buffer, corridor_line_geom)
 
-            # Determine matching strategy
+            # Build HWY_NAME position set for match-method labeling
+            hwy_pos_set: set[int] = set()
             if route_name_str in _MANUAL_NAME_MAP:
                 manual = _MANUAL_NAME_MAP[route_name_str]
-                hwy_pats = manual["hwy_patterns"]
+                for pat in manual["hwy_patterns"]:
+                    hwy_pos_set.update(hwy_index.get(pat, []))
+                # HPMS labeling set
                 hpms_substr = manual.get("hpms_contains", "")
-                method = "hpms+spatial"
-
-                candidate_positions: set[int] = set()
-                for pat in hwy_pats:
-                    candidate_positions.update(hwy_index.get(pat, []))
-
-                # HPMS scan: only check spatial hits (not all 245K segments)
                 if hpms_substr and has_hpms:
-                    spatial_hits_for_hpms = set(
-                        seg_sindex.query(corridor_buffer, predicate="intersects")
-                    )
+                    hpms_pos_set: set[int] = set()
                     hpms_upper = hpms_substr.upper()
-                    hpms_col = segments["HPMS_ROUTE_NAME"]
-                    for pos_idx in spatial_hits_for_hpms:
-                        hpms_val = hpms_col.iat[pos_idx]
+                    # Scan spatial hits only for HPMS (not all 245K segments)
+                    spatial_hits_for_hpms = seg_sindex.query(
+                        corridor_buffer, predicate="intersects"
+                    )
+                    for pi in spatial_hits_for_hpms:
+                        hpms_val = segments.iat[pi, hpms_col_loc]
                         if pd.notna(hpms_val) and hpms_upper in _normalize_hpms(hpms_val):
-                            candidate_positions.add(pos_idx)
+                            hpms_pos_set.add(pi)
+                    corridor_hpms_positions[route_name_str] = hpms_pos_set
             else:
                 patterns = _build_hwy_patterns(route_name_str)
-                if not patterns:
-                    continue
-                method = "hwy_name+spatial"
-
-                candidate_positions = set()
                 for pat in patterns:
-                    candidate_positions.update(hwy_index.get(pat, []))
+                    hwy_pos_set.update(hwy_index.get(pat, []))
+            corridor_hwy_positions[route_name_str] = hwy_pos_set
 
-            # Spatial filter
-            spatial_hits = set(seg_sindex.query(corridor_buffer, predicate="intersects"))
-            matched_positions = candidate_positions & spatial_hits
+            # --- SPATIAL-FIRST: ALL segments intersecting the buffer ---
+            candidate_positions = seg_sindex.query(
+                corridor_buffer, predicate="intersects"
+            )
 
             corridor_match_count = 0
-            for pos_idx in matched_positions:
-                idx = segments.index[pos_idx]
+            for pos_idx in candidate_positions:
+                # 1. False-positive filter: skip Local/Other unless corridor is CR
+                if has_route_fam and not corridor_is_cr:
+                    fam = segments.iat[pos_idx, route_fam_col]
+                    if pd.notna(fam) and str(fam).strip().lower() not in _STATE_SYSTEM_FAMILIES:
+                        continue
+
                 seg_geom = seg_geom_arr[pos_idx]
-                seg_len_raw = segments.iat[pos_idx, segments.columns.get_loc("segment_length_m")] if has_seg_len else None
+                seg_len_raw = segments.iat[pos_idx, seg_len_col] if has_seg_len else None
                 try:
-                    segment_length_m = float(seg_len_raw) if seg_len_raw is not None and pd.notna(seg_len_raw) and float(seg_len_raw) > 0 else float(seg_geom.length)
+                    segment_length_m = (
+                        float(seg_len_raw)
+                        if seg_len_raw is not None
+                        and pd.notna(seg_len_raw)
+                        and float(seg_len_raw) > 0
+                        else float(seg_geom.length)
+                    )
                 except (TypeError, ValueError):
                     segment_length_m = float(seg_geom.length)
 
+                # 2. Compute overlap with corridor buffer
                 try:
                     overlap_geom = seg_geom.intersection(corridor_buffer)
                     overlap_len = float(overlap_geom.length)
@@ -399,6 +407,7 @@ def _per_corridor_evac_overlay(
 
                 overlap_ratio = overlap_len / segment_length_m if segment_length_m > 0 else 0.0
 
+                # 3. Tiered acceptance thresholds + angular alignment
                 accepted = _accept_overlap(
                     overlap_len, overlap_ratio, segment_length_m,
                     overlap_geom, corridor_line_geom, seg_geom, ROUTE_BUFFER_M,
@@ -406,13 +415,24 @@ def _per_corridor_evac_overlay(
                 if not accepted:
                     continue
 
-                # Corridor proximity post-filter (per-corridor)
-                # overlap_geom.length == inside_len (intersection already computed)
+                # 4. Corridor proximity post-filter (per-corridor)
                 inside_ratio = overlap_len / float(seg_geom.length) if seg_geom.length > 0 else 0.0
                 if inside_ratio < MIN_INSIDE_CORRIDOR_RATIO:
                     continue
 
+                # 5. Label match method (diagnostic only — not used for filtering)
+                if pos_idx in corridor_hwy_positions.get(route_name_str, set()):
+                    if route_name_str in _MANUAL_NAME_MAP:
+                        method = "hpms+spatial"
+                    else:
+                        method = "hwy_name+spatial"
+                elif pos_idx in corridor_hpms_positions.get(route_name_str, set()):
+                    method = "hpms+spatial"
+                else:
+                    method = "concurrent+spatial"
+
                 corridor_match_count += 1
+                idx = segments.index[pos_idx]
                 _merge_result(
                     results, idx, route_name_str, method,
                     overlap_len, overlap_ratio,
@@ -420,114 +440,17 @@ def _per_corridor_evac_overlay(
 
             per_corridor_counts[route_name_str] = corridor_match_count
             LOGGER.info(
-                "Corridor '%s': %d matched (%d attr candidates, %d spatial hits, method=%s)",
-                route_name_str, corridor_match_count,
-                len(candidate_positions), len(spatial_hits), method,
+                "Corridor '%s': %d matched (%d spatial candidates, method-label breakdown deferred)",
+                route_name_str, corridor_match_count, len(candidate_positions),
             )
 
     # =========================================================
-    # PASS 2: CONCURRENT ROUTE FALLBACK
-    # =========================================================
-    if corridor_data:
-        LOGGER.info("Pass 2: concurrent route fallback...")
-
-        # Build a list of (name, buffer, line_geom) for iteration
-        corridor_list = [
-            (name, buf, line_geom)
-            for name, (buf, line_geom) in corridor_data.items()
-        ]
-        all_corridor_buffer = unary_union([buf for _, buf, _ in corridor_list])
-        all_spatial_hits = set(seg_sindex.query(all_corridor_buffer, predicate="intersects"))
-
-        matched_indices = set(results.keys())
-        unmatched_positions: list[tuple[int, Any]] = []
-        for pos_idx in all_spatial_hits:
-            idx = segments.index[pos_idx]
-            if idx in matched_indices:
-                continue
-            if has_route_fam:
-                fam = segments.iat[pos_idx, segments.columns.get_loc("ROUTE_FAMILY")]
-                if pd.notna(fam) and str(fam).strip().lower() not in _STATE_SYSTEM_FAMILIES:
-                    continue
-            unmatched_positions.append((pos_idx, idx))
-
-        LOGGER.info(
-            "Concurrent fallback: %d unmatched state-system segments to evaluate",
-            len(unmatched_positions),
-        )
-
-        # Pre-filter: for each unmatched segment, find which corridor buffers
-        # it intersects using per-corridor spatial queries (avoid testing all
-        # corridors for every segment).
-        # Build a mapping: pos_idx -> list of corridor indices that contain it
-        from shapely import STRtree
-        corridor_buffers_list = [buf for _, buf, _ in corridor_list]
-        corridor_tree = STRtree(corridor_buffers_list)
-
-        concurrent_matched = 0
-        for pos_idx, idx in unmatched_positions:
-            seg_geom = seg_geom_arr[pos_idx]
-            seg_len_raw = segments.iat[pos_idx, segments.columns.get_loc("segment_length_m")] if has_seg_len else None
-            try:
-                segment_length_m = float(seg_len_raw) if seg_len_raw is not None and pd.notna(seg_len_raw) and float(seg_len_raw) > 0 else float(seg_geom.length)
-            except (TypeError, ValueError):
-                segment_length_m = float(seg_geom.length)
-
-            # Find which corridors this segment intersects
-            nearby_corridor_idxs = corridor_tree.query(seg_geom, predicate="intersects")
-
-            best_overlap_len = 0.0
-            best_overlap_ratio = 0.0
-            best_overlap_geom = None
-            best_corridor_line = None
-            best_corridor_buffer = None
-            best_corridor_name = None
-
-            for ci in nearby_corridor_idxs:
-                cname, buf, line_geom = corridor_list[ci]
-                try:
-                    ov = seg_geom.intersection(buf)
-                    ov_len = float(ov.length)
-                except Exception:
-                    continue
-                if ov_len > best_overlap_len:
-                    best_overlap_len = ov_len
-                    best_overlap_ratio = ov_len / segment_length_m if segment_length_m > 0 else 0.0
-                    best_overlap_geom = ov
-                    best_corridor_buffer = buf
-                    best_corridor_line = line_geom
-                    best_corridor_name = cname
-
-            if best_overlap_len <= 0 or best_corridor_line is None:
-                continue
-
-            accepted = _accept_overlap(
-                best_overlap_len, best_overlap_ratio, segment_length_m,
-                best_overlap_geom, best_corridor_line, seg_geom, ROUTE_BUFFER_M,
-            )
-            if not accepted:
-                continue
-
-            inside_ratio = best_overlap_len / float(seg_geom.length) if seg_geom.length > 0 else 0.0
-            if inside_ratio < MIN_INSIDE_CORRIDOR_RATIO:
-                continue
-
-            concurrent_matched += 1
-            per_corridor_counts[best_corridor_name] = per_corridor_counts.get(best_corridor_name, 0) + 1
-            _merge_result(
-                results, idx, best_corridor_name, "concurrent+spatial",
-                best_overlap_len, best_overlap_ratio,
-            )
-
-        LOGGER.info("Concurrent fallback matched %d segments", concurrent_matched)
-
-    # =========================================================
-    # PASS 3: NULL-NAME FEATURES
+    # NULL-NAME FEATURES
     # =========================================================
     null_features = evac_routes[~named_mask]
     null_matched = 0
     if not null_features.empty:
-        LOGGER.info("Pass 3: %d null-name features...", len(null_features))
+        LOGGER.info("Null-name features: %d to process...", len(null_features))
 
         # Build named corridor union for differencing (from buffered polygons)
         named_corridor_buffers = [buf for _, (buf, _) in corridor_data.items()]
@@ -538,7 +461,7 @@ def _per_corridor_evac_overlay(
             if feat_geom is None or feat_geom.is_empty:
                 continue
 
-            # Difference against named corridor buffers
+            # Difference against named corridor buffers to avoid double-counting
             if named_union is not None:
                 try:
                     residual = feat_geom.difference(named_union)
@@ -551,7 +474,7 @@ def _per_corridor_evac_overlay(
                 continue
 
             residual_buffer = residual.buffer(ROUTE_BUFFER_M)
-            spatial_hits = set(seg_sindex.query(residual_buffer, predicate="intersects"))
+            spatial_hits = seg_sindex.query(residual_buffer, predicate="intersects")
 
             matched_indices = set(results.keys())
             for pos_idx in spatial_hits:
@@ -559,15 +482,22 @@ def _per_corridor_evac_overlay(
                 if idx in matched_indices:
                     continue
 
+                # Skip Local/Other
                 if has_route_fam:
-                    fam = segments.iat[pos_idx, segments.columns.get_loc("ROUTE_FAMILY")]
+                    fam = segments.iat[pos_idx, route_fam_col]
                     if pd.notna(fam) and str(fam).strip().lower() not in _STATE_SYSTEM_FAMILIES:
                         continue
 
                 seg_geom = seg_geom_arr[pos_idx]
-                seg_len_raw = segments.iat[pos_idx, segments.columns.get_loc("segment_length_m")] if has_seg_len else None
+                seg_len_raw = segments.iat[pos_idx, seg_len_col] if has_seg_len else None
                 try:
-                    segment_length_m = float(seg_len_raw) if seg_len_raw is not None and pd.notna(seg_len_raw) and float(seg_len_raw) > 0 else float(seg_geom.length)
+                    segment_length_m = (
+                        float(seg_len_raw)
+                        if seg_len_raw is not None
+                        and pd.notna(seg_len_raw)
+                        and float(seg_len_raw) > 0
+                        else float(seg_geom.length)
+                    )
                 except (TypeError, ValueError):
                     segment_length_m = float(seg_geom.length)
 

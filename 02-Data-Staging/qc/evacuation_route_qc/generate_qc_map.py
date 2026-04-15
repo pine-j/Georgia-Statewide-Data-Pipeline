@@ -658,6 +658,71 @@ def html_template(summary: dict[str, object]) -> str:
       }} else {{
         map.setView([32.5, -83.5], 7);
       }}
+
+      // --- Per-corridor dropdown filter ---
+      const corridorControl = L.control({{ position: 'topleft' }});
+      corridorControl.onAdd = function() {{
+        const div = L.DomUtil.create('div', 'info-box');
+        div.style.marginTop = '60px';
+        const label = L.DomUtil.create('div', '', div);
+        label.innerHTML = '<strong style="font-size:13px">Filter by Corridor</strong>';
+        const select = L.DomUtil.create('select', '', div);
+        select.id = 'corridor-filter';
+        select.style.cssText = 'width:100%;margin-top:4px;padding:3px;font-size:13px';
+        select.innerHTML = '<option value="">All corridors</option>';
+
+        const corridorNames = new Set();
+        evacFlaggedLayer.eachLayer(layer => {{
+          const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME;
+          if (name) {{
+            name.split('; ').forEach(n => corridorNames.add(n));
+          }}
+        }});
+        [...corridorNames].sort().forEach(name => {{
+          select.innerHTML += `<option value="${{name}}">${{name}}</option>`;
+        }});
+
+        select.onchange = function() {{
+          filterByCorridor(this.value);
+        }};
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+      }};
+      corridorControl.addTo(map);
+
+      window.filterByCorridor = function(corridorName) {{
+        evacFlaggedLayer.eachLayer(layer => {{
+          const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
+          const visible = !corridorName || name.includes(corridorName);
+          if (visible) {{
+            layer.setStyle({{ opacity: 0.7, weight: 3 }});
+          }} else {{
+            layer.setStyle({{ opacity: 0, weight: 0 }});
+          }}
+        }});
+
+        if (corridorName) {{
+          const cbounds = L.latLngBounds();
+          evacFlaggedLayer.eachLayer(layer => {{
+            const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
+            if (name.includes(corridorName)) {{
+              cbounds.extend(layer.getBounds());
+            }}
+          }});
+          if (cbounds.isValid()) {{
+            map.fitBounds(cbounds.pad(0.1));
+          }}
+          document.querySelector('.title-banner').textContent =
+            `GDOT Evacuation Route QC — ${{corridorName}}`;
+          contextLayer.remove();
+        }} else {{
+          const allBounds = evacRoutesLayer.getBounds();
+          if (allBounds.isValid()) map.fitBounds(allBounds.pad(0.08));
+          document.querySelector('.title-banner').textContent =
+            'GDOT Evacuation Route QC Map';
+          contextLayer.addTo(map);
+        }}
+      }};
     }}).catch((error) => {{
       console.error(error);
       alert(`Failed to load one or more QC layers: ${{error.message}}`);
@@ -707,7 +772,8 @@ def main() -> None:
 
         # Clip mega-segment geometries to the corridor so the QC map shows
         # only the portion running along evacuation routes.
-        evac_corridor = evac_routes.geometry.buffer(_CORRIDOR_BUFFER_M).union_all()
+        from shapely.ops import unary_union as _unary_union
+        evac_corridor = _unary_union(evac_routes.geometry.buffer(_CORRIDOR_BUFFER_M).values)
         mega_mask = evac_flagged.geometry.length > MEGA_SEGMENT_LENGTH_M
         if mega_mask.any():
             clipped = evac_flagged.loc[mega_mask, "geometry"].intersection(evac_corridor)
