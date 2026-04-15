@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -145,13 +146,19 @@ export function FiltersPanel({
               size="small"
               value={selectedVisualizationId}
               onChange={(event) => onVisualizationChange(event.target.value)}
-              SelectProps={{ native: true }}
+              SelectProps={{
+                MenuProps: {
+                  PaperProps: {
+                    sx: { maxHeight: "80vh" },
+                  },
+                },
+              }}
               fullWidth
             >
               {thematicOptions.map((option) => (
-                <option key={option.id} value={option.id}>
+                <MenuItem key={option.id} value={option.id}>
                   {option.label}
-                </option>
+                </MenuItem>
               ))}
             </TextField>
 
