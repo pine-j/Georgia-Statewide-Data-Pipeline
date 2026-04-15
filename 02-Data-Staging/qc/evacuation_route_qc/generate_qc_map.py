@@ -589,7 +589,7 @@ def html_template(summary: dict[str, object]) -> str:
       }});
 
       const evacRoutesLayer = L.geoJSON(evacRoutesData, {{
-        style: styleFactory({{ color: '#2196F3', weight: 4, opacity: 0.8 }}),
+        style: styleFactory({{ color: '#2196F3', weight: 3, opacity: 0.6 }}),
         onEachFeature: (feature, layer) => {{
           layer.bindPopup(makePopup(feature.properties, [['ROUTE_NAME', 'ROUTE_NAME']]));
         }}
@@ -603,7 +603,7 @@ def html_template(summary: dict[str, object]) -> str:
       }});
 
       const evacFlaggedLayer = L.geoJSON(evacFlaggedData, {{
-        style: styleFactory({{ color: '#d32f2f', weight: 3, opacity: 0.7 }}),
+        style: styleFactory({{ color: '#d32f2f', weight: 5, opacity: 0.9 }}),
         onEachFeature: (feature, layer) => {{
           const p = feature.properties;
           const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
@@ -696,7 +696,7 @@ def html_template(summary: dict[str, object]) -> str:
           const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
           const visible = !corridorName || name.includes(corridorName);
           if (visible) {{
-            layer.setStyle({{ opacity: 0.7, weight: 3 }});
+            layer.setStyle({{ opacity: 0.9, weight: 5 }});
           }} else {{
             layer.setStyle({{ opacity: 0, weight: 0 }});
           }}
@@ -707,7 +707,7 @@ def html_template(summary: dict[str, object]) -> str:
           const rn = layer.feature.properties.ROUTE_NAME || '';
           const visible = !corridorName || rn === corridorName;
           if (visible) {{
-            layer.setStyle({{ opacity: 0.8, weight: 4 }});
+            layer.setStyle({{ opacity: 0.6, weight: 3 }});
           }} else {{
             layer.setStyle({{ opacity: 0, weight: 0 }});
           }}
