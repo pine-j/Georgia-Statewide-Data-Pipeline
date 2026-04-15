@@ -43,6 +43,13 @@ MEGA_MIN_RATIO = 0.50
 MAX_ALIGNMENT_ANGLE_DEG = 30.0
 MIN_INSIDE_CORRIDOR_RATIO = 0.10
 
+# Gap-filling thresholds — used to allow Local/Other segments in gaps between
+# matched state-system segments.  High ratio ensures only segments running
+# along the corridor are included (not cross-streets).
+GAP_FILL_MIN_OVERLAP_RATIO = 0.50
+GAP_FILL_SAMPLE_INTERVAL_M = 200.0
+GAP_FILL_TOLERANCE_M = 60.0
+
 # Attribute-boosted thresholds (Tier 1) — relaxed for segments whose HWY_NAME
 # matches the corridor designation, confirming identity via attribute.
 ATTR_NORMAL_MIN_OVERLAP_M = 50.0   # was 150.0 for Tier 2
@@ -80,6 +87,7 @@ _METHOD_PRECEDENCE = {
     "concurrent+spatial": 2,
     "spatial_only": 1,
     "hardcode": 0,
+    "gap_fill": 0,
 }
 
 # Hard-code overrides: segments that must be flagged regardless of thresholds.
@@ -350,6 +358,7 @@ def _per_corridor_evac_overlay(
         "concurrent+spatial": 0,
         "spatial_only": 0,
         "hardcode": 0,
+        "gap_fill": 0,
     }
     multi_corridor_segments = 0
 
@@ -543,6 +552,63 @@ def _per_corridor_evac_overlay(
                             missing_uid, route_name_str,
                         )
 
+            # --- GAP-FILLING PASS: allow Local/Other in gap areas ---
+            # Sample points along the corridor; where no matched segment covers
+            # them, allow Local/Other segments with high overlap to fill the gap.
+            if corridor_line_geom is not None and corridor_match_count > 0:
+                matched_indices_set = {
+                    segments.index[p] for p in candidate_positions
+                    if segments.index[p] in results
+                    and route_name_str in results[segments.index[p]].get("names", [])
+                }
+                if matched_indices_set:
+                    matched_union = unary_union(
+                        [seg_geom_arr[segments.index.get_loc(i)]
+                         for i in matched_indices_set
+                         if not pd.isna(seg_geom_arr[segments.index.get_loc(i)])]
+                    ).buffer(GAP_FILL_TOLERANCE_M)
+
+                    # Sample corridor line for gap points
+                    total_len = corridor_line_geom.length
+                    gap_points = []
+                    for si in range(int(total_len / GAP_FILL_SAMPLE_INTERVAL_M) + 1):
+                        d = min(si * GAP_FILL_SAMPLE_INTERVAL_M, total_len)
+                        pt = corridor_line_geom.interpolate(d)
+                        if not matched_union.contains(pt):
+                            gap_points.append(pt)
+
+                    if gap_points:
+                        gap_region = unary_union(
+                            [p.buffer(GAP_FILL_TOLERANCE_M) for p in gap_points]
+                        )
+                        gap_fill_count = 0
+                        for pos_idx in candidate_positions:
+                            idx = segments.index[pos_idx]
+                            if idx in results and route_name_str in results[idx].get("names", []):
+                                continue  # already matched
+                            seg_geom = seg_geom_arr[pos_idx]
+                            if not seg_geom.intersects(gap_region):
+                                continue
+                            try:
+                                overlap_geom = seg_geom.intersection(corridor_buffer)
+                                overlap_len = float(overlap_geom.length)
+                            except Exception:
+                                continue
+                            seg_len = float(seg_geom.length) if seg_geom.length > 0 else 1.0
+                            overlap_ratio = overlap_len / seg_len
+                            if overlap_ratio >= GAP_FILL_MIN_OVERLAP_RATIO:
+                                corridor_match_count += 1
+                                gap_fill_count += 1
+                                _merge_result(
+                                    results, idx, route_name_str, "gap_fill",
+                                    overlap_len, overlap_ratio,
+                                )
+                        if gap_fill_count:
+                            LOGGER.info(
+                                "Corridor '%s': gap-fill added %d Local/Other segments",
+                                route_name_str, gap_fill_count,
+                            )
+
             per_corridor_counts[route_name_str] = corridor_match_count
             LOGGER.info(
                 "Corridor '%s': %d matched (%d spatial candidates)",
@@ -658,13 +724,14 @@ def _per_corridor_evac_overlay(
     LOGGER.info(
         "Per-corridor evac overlay total: %d matched segments "
         "(hwy_name+spatial=%d, hpms+spatial=%d, concurrent+spatial=%d, "
-        "spatial_only=%d, hardcode=%d)",
+        "spatial_only=%d, hardcode=%d, gap_fill=%d)",
         len(results),
         method_counts["hwy_name+spatial"],
         method_counts["hpms+spatial"],
         method_counts["concurrent+spatial"],
         method_counts["spatial_only"],
         method_counts.get("hardcode", 0),
+        method_counts.get("gap_fill", 0),
     )
 
     return results, diagnostics
