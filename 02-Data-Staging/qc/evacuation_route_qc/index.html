@@ -65,16 +65,76 @@
   <div id="map"></div>
   <script>
     const QC_SUMMARY = {
-  "total_evac_flagged": 1853,
+  "total_evac_flagged": 1535,
   "total_contraflow_flagged": 170,
   "evac_route_family_breakdown": {
     "Interstate": 265,
-    "Local/Other": 293,
-    "State Route": 238,
-    "U.S. Route": 1057
+    "Local/Other": 9,
+    "State Route": 234,
+    "U.S. Route": 1027
   },
   "contraflow_route_family_breakdown": {
     "Interstate": 170
+  },
+  "evac_match_method_breakdown": {
+    "concurrent+spatial": 829,
+    "hwy_name+spatial": 498,
+    "spatial_only": 193,
+    "hpms+spatial": 15
+  },
+  "per_corridor_counts": {
+    "CR 780": 2,
+    "CR 785": 7,
+    "I 16 Spur": 13,
+    "I 185 North": 13,
+    "I 75": 0,
+    "I 75 North": 233,
+    "I 75 South": 26,
+    "Liberty Expy": 23,
+    "Ocean Hwy": 4,
+    "SR 1 Business": 1,
+    "SR 1/US 27": 116,
+    "SR 11": 5,
+    "SR 111": 17,
+    "SR 133": 8,
+    "SR 135": 1,
+    "SR 144": 17,
+    "SR 15": 15,
+    "SR 17": 0,
+    "SR 196": 5,
+    "SR 21": 28,
+    "SR 21 Business": 13,
+    "SR 241": 2,
+    "SR 25": 9,
+    "SR 26": 166,
+    "SR 27": 12,
+    "SR 3": 94,
+    "SR 30": 90,
+    "SR 300": 17,
+    "SR 300 Connector": 2,
+    "SR 302": 2,
+    "SR 31": 25,
+    "SR 32": 50,
+    "SR 333": 10,
+    "SR 35": 29,
+    "SR 376": 3,
+    "SR 4": 25,
+    "SR 520": 92,
+    "SR 57": 15,
+    "SR 62": 10,
+    "SR 7": 2,
+    "SR 76": 5,
+    "SR 89": 33,
+    "SR 91": 17,
+    "SR 93": 6,
+    "SR 94": 2,
+    "SR 97": 9,
+    "US 19": 18,
+    "US 23": 10,
+    "US 319": 23,
+    "US 341": 4,
+    "US 82": 19,
+    "US 84": 8
   }
 };
   </script>
@@ -99,6 +159,17 @@
       const contraBreakdown = Object.entries(QC_SUMMARY.contraflow_route_family_breakdown)
         .map(([name, count]) => `<li>${name}: ${count}</li>`)
         .join('');
+      const matchMethodBreakdown = QC_SUMMARY.evac_match_method_breakdown
+        ? Object.entries(QC_SUMMARY.evac_match_method_breakdown)
+            .map(([name, count]) => `<li>${name}: ${count}</li>`)
+            .join('')
+        : '';
+      const corridorCounts = QC_SUMMARY.per_corridor_counts
+        ? Object.entries(QC_SUMMARY.per_corridor_counts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => `<li>${name}: ${count}</li>`)
+            .join('')
+        : '';
       div.innerHTML = `
         <h3>QC Summary</h3>
         <div class="metric"><strong>Total evacuation flagged:</strong> ${QC_SUMMARY.total_evac_flagged}</div>
@@ -107,6 +178,10 @@
         <ul>${evacBreakdown || '<li>None</li>'}</ul>
         <div class="breakdown-title">Contraflow by ROUTE_FAMILY</div>
         <ul>${contraBreakdown || '<li>None</li>'}</ul>
+        <div class="breakdown-title">Evac Match Method</div>
+        <ul>${matchMethodBreakdown || '<li>None</li>'}</ul>
+        <div class="breakdown-title">Per-Corridor Counts</div>
+        <ul style="max-height:200px;overflow-y:auto">${corridorCounts || '<li>None</li>'}</ul>
       `;
       return div;
     };
@@ -166,9 +241,11 @@
             makePopup(p, [
               ['HWY_NAME', 'HWY_NAME'],
               ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['Evac Route', 'SEC_EVAC_ROUTE_NAME'],
               ['AADT', 'AADT'],
               ['COUNTY_NAME', 'COUNTY_NAME'],
-              ['DISTRICT_LABEL', 'DISTRICT_LABEL']
+              ['DISTRICT_LABEL', 'DISTRICT_LABEL'],
+              ['Match Method', 'match_method']
             ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
           );
         }

@@ -27,6 +27,8 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
+from _evac_corridor_match import _per_corridor_evac_overlay
+
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -888,28 +890,11 @@ def apply_evacuation_enrichment(
         LOGGER.warning("Evacuation route enrichment unavailable: %s", exc)
         return enriched
 
-    evac_matches = _hybrid_evac_overlay(enriched, evac, name_field="ROUTE_NAME")
-
-    # Corridor proximity post-filter: remove segments where most of their
-    # length runs outside the evacuation corridor.  This catches long segments
-    # that clip a corridor for 300+ m but extend 5-10 km beyond it.
-    MIN_INSIDE_CORRIDOR_RATIO = 0.10
-    if evac_matches:
-        seg_crs = enriched.crs
-        evac_proj = evac.to_crs(seg_crs) if evac.crs != seg_crs else evac
-        evac_corridor = evac_proj.geometry.buffer(ROUTE_BUFFER_M).union_all()
-        matched_idxs = list(evac_matches.keys())
-        matched_geoms = enriched.loc[matched_idxs, "geometry"]
-        inside_lens = matched_geoms.intersection(evac_corridor).length
-        seg_lens = matched_geoms.length
-        inside_ratios = inside_lens / seg_lens.replace(0, 1)
-        remove_idxs = set(inside_ratios[inside_ratios < MIN_INSIDE_CORRIDOR_RATIO].index)
-        if remove_idxs:
-            evac_matches = {k: v for k, v in evac_matches.items() if k not in remove_idxs}
-            LOGGER.info(
-                "Corridor proximity filter removed %d segments (kept %d)",
-                len(remove_idxs), len(evac_matches),
-            )
+    evac_matches, evac_diagnostics = _per_corridor_evac_overlay(
+        enriched, evac, name_field="ROUTE_NAME",
+    )
+    # Corridor proximity post-filter is now applied per-corridor inside
+    # _per_corridor_evac_overlay — no statewide post-filter needed.
 
     for idx, match in evac_matches.items():
         names = match.get("names", [])

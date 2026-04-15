@@ -3,11 +3,23 @@ from __future__ import annotations
 import json
 import math
 import re
+import sys
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString, box
+
+# Add the enrichment scripts directory to sys.path so we can import the
+# shared corridor-matching module.
+_ENRICHMENT_DIR = str(Path(__file__).resolve().parents[2] / "scripts" / "01_roadway_inventory")
+if _ENRICHMENT_DIR not in sys.path:
+    sys.path.insert(0, _ENRICHMENT_DIR)
+from _evac_corridor_match import (
+    _per_corridor_evac_overlay,
+    run_automated_qc,
+    ROUTE_BUFFER_M as _CORRIDOR_BUFFER_M,
+)
 
 
 OUTPUT_DIR = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\qc\evacuation_route_qc")
@@ -523,6 +535,12 @@ def html_template(summary: dict[str, object]) -> str:
             .map(([name, count]) => `<li>${{name}}: ${{count}}</li>`)
             .join('')
         : '';
+      const corridorCounts = QC_SUMMARY.per_corridor_counts
+        ? Object.entries(QC_SUMMARY.per_corridor_counts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => `<li>${{name}}: ${{count}}</li>`)
+            .join('')
+        : '';
       div.innerHTML = `
         <h3>QC Summary</h3>
         <div class="metric"><strong>Total evacuation flagged:</strong> ${{QC_SUMMARY.total_evac_flagged}}</div>
@@ -533,6 +551,8 @@ def html_template(summary: dict[str, object]) -> str:
         <ul>${{contraBreakdown || '<li>None</li>'}}</ul>
         <div class="breakdown-title">Evac Match Method</div>
         <ul>${{matchMethodBreakdown || '<li>None</li>'}}</ul>
+        <div class="breakdown-title">Per-Corridor Counts</div>
+        <ul style="max-height:200px;overflow-y:auto">${{corridorCounts || '<li>None</li>'}}</ul>
       `;
       return div;
     }};
@@ -592,6 +612,7 @@ def html_template(summary: dict[str, object]) -> str:
             makePopup(p, [
               ['HWY_NAME', 'HWY_NAME'],
               ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['Evac Route', 'SEC_EVAC_ROUTE_NAME'],
               ['AADT', 'AADT'],
               ['COUNTY_NAME', 'COUNTY_NAME'],
               ['DISTRICT_LABEL', 'DISTRICT_LABEL'],
@@ -665,81 +686,52 @@ def main() -> None:
 
     evac_keep_cols = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"]
 
-    # Split evac routes: parseable names use attribute+spatial, rest use spatial-only
-    evac_routes["_designations"] = evac_routes["ROUTE_NAME"].apply(
-        lambda n: _parse_route_designations(n) if pd.notna(n) else []
+    # --- Per-corridor evacuation matching via shared module ---
+    evac_matches, evac_diagnostics = _per_corridor_evac_overlay(
+        roads, evac_routes, name_field="ROUTE_NAME",
     )
-    parseable_mask = evac_routes["_designations"].apply(len) > 0
-    evac_parseable = evac_routes[parseable_mask].reset_index(drop=True)
-    evac_unparseable = evac_routes[~parseable_mask].reset_index(drop=True)
-    print(f"Evac split: {len(evac_parseable)} parseable, {len(evac_unparseable)} spatial-only")
 
-    # Attribute-filtered pass for parseable routes (excludes Local/Other)
-    evac_attr_flagged = flag_matches(
-        roads,
-        evac_parseable,
-        evac_keep_cols,
-        route_name_field="ROUTE_NAME",
-        attribute_prefilter=True,
-    )
-    if not evac_attr_flagged.empty:
-        # Determine per-segment match_method based on specific designation
-        all_designations: list[tuple[str, int, str | None]] = []
-        for desigs in evac_parseable["_designations"]:
-            all_designations.extend(desigs)
-        specific_mask = _specific_designation_mask(evac_attr_flagged, all_designations)
-        evac_attr_flagged["match_method"] = "spatial_only"
-        evac_attr_flagged.loc[specific_mask, "match_method"] = "attribute+spatial"
-
-    # Spatial-only for unparseable routes
-    evac_spatial_flagged = flag_matches(
-        roads,
-        evac_unparseable,
-        evac_keep_cols,
-        route_name_field="ROUTE_NAME",
-        enforce_route_family=False,
-    )
-    if not evac_spatial_flagged.empty:
-        evac_spatial_flagged["match_method"] = "spatial_only"
-
-    # Merge results, deduplicating by unique_id (keep stronger overlap)
-    evac_parts = [df for df in [evac_attr_flagged, evac_spatial_flagged] if not df.empty]
-    if evac_parts:
-        evac_flagged = pd.concat(evac_parts, ignore_index=True)
-        evac_flagged = (
-            evac_flagged.sort_values("overlap_m", ascending=False)
-            .drop_duplicates(subset="unique_id", keep="first")
-            .sort_values("unique_id")
-            .reset_index(drop=True)
-        )
-    else:
-        evac_flagged = gpd.GeoDataFrame(
-            columns=evac_keep_cols + ["overlap_m", "overlap_ratio", "match_method", "geometry"]
-        )
-
-    # Corridor proximity post-filter: remove segments where <10% of their
-    # length sits inside the evacuation corridor (catches long segments that
-    # clip a corridor briefly but extend far beyond it).
-    MIN_INSIDE_CORRIDOR_RATIO = 0.10
-    if not evac_flagged.empty:
-        evac_corridor = evac_routes.geometry.buffer(MATCH_BUFFER_M).union_all()
-        inside_lens = evac_flagged.geometry.intersection(evac_corridor).length
-        seg_lens = evac_flagged.geometry.length
-        inside_ratios = inside_lens / seg_lens.replace(0, 1)
-        before = len(evac_flagged)
-        evac_flagged = evac_flagged[inside_ratios >= MIN_INSIDE_CORRIDOR_RATIO].reset_index(drop=True)
-        removed = before - len(evac_flagged)
-        if removed > 0:
-            print(f"Corridor proximity filter removed {removed} segments (kept {len(evac_flagged)})")
+    # Convert results dict to GeoDataFrame for export
+    if evac_matches:
+        rows = []
+        for idx, match in evac_matches.items():
+            row = {col: roads.at[idx, col] for col in evac_keep_cols if col in roads.columns}
+            row["geometry"] = roads.at[idx, "geometry"]
+            row["overlap_m"] = match["overlap_m"]
+            row["overlap_ratio"] = match["overlap_ratio"]
+            row["match_method"] = match["match_method"]
+            row["SEC_EVAC_ROUTE_NAME"] = "; ".join(sorted(set(match["names"]))) if match["names"] else None
+            rows.append(row)
+        evac_flagged = gpd.GeoDataFrame(rows, crs=roads.crs)
+        evac_flagged = evac_flagged.sort_values("unique_id").reset_index(drop=True)
 
         # Clip mega-segment geometries to the corridor so the QC map shows
-        # only the portion running along evacuation routes, not the full
-        # 300+ km line for statewide DEC segments.
+        # only the portion running along evacuation routes.
+        evac_corridor = evac_routes.geometry.buffer(_CORRIDOR_BUFFER_M).union_all()
         mega_mask = evac_flagged.geometry.length > MEGA_SEGMENT_LENGTH_M
         if mega_mask.any():
             clipped = evac_flagged.loc[mega_mask, "geometry"].intersection(evac_corridor)
             evac_flagged.loc[mega_mask, "geometry"] = clipped
             print(f"Clipped {mega_mask.sum()} mega-segment geometries to corridor")
+    else:
+        evac_flagged = gpd.GeoDataFrame(
+            columns=evac_keep_cols + ["overlap_m", "overlap_ratio", "match_method", "SEC_EVAC_ROUTE_NAME", "geometry"]
+        )
+
+    # Print per-corridor diagnostics
+    print(f"\n=== Per-Corridor Diagnostics ===")
+    print(f"Total matched: {evac_diagnostics.get('total_matched', 0)}")
+    print(f"Match methods: {json.dumps(evac_diagnostics.get('match_method_breakdown', {}), indent=2)}")
+    print(f"Multi-corridor segments: {evac_diagnostics.get('multi_corridor_segments', 0)}")
+    print(f"Concurrent fallback: {evac_diagnostics.get('concurrent_fallback_matches', 0)}")
+    print(f"Null-feature matches: {evac_diagnostics.get('null_feature_matches', 0)}")
+    zero_corridors = evac_diagnostics.get("corridors_with_zero_matches", [])
+    if zero_corridors:
+        print(f"ALERT — corridors with zero matches: {', '.join(zero_corridors)}")
+    per_corridor = evac_diagnostics.get("per_corridor_counts", {})
+    low = {k: v for k, v in per_corridor.items() if 0 < v < 3}
+    if low:
+        print(f"WARNING — corridors with <3 matches: {low}")
 
     contraflow_flagged = flag_matches(
         roads,
@@ -787,8 +779,22 @@ def main() -> None:
         "evac_route_family_breakdown": summarize_route_families(evac_flagged),
         "contraflow_route_family_breakdown": summarize_route_families(contraflow_flagged),
         "evac_match_method_breakdown": match_method_breakdown,
+        "per_corridor_counts": evac_diagnostics.get("per_corridor_counts", {}),
     }
     (OUTPUT_DIR / "index.html").write_text(html_template(summary), encoding="utf-8")
+
+    # Run automated QC checks
+    passed, qc_errors, qc_warnings = run_automated_qc(
+        evac_diagnostics, int(len(contraflow_flagged)),
+    )
+    for msg in qc_errors:
+        print(msg)
+    for msg in qc_warnings:
+        print(msg)
+    if passed:
+        print("Automated QC checks PASSED")
+    else:
+        print("Automated QC checks FAILED — review errors above")
 
     report = {
         "evac_routes_official": int(len(evac_routes)),
