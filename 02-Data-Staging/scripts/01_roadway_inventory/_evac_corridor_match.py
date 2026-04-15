@@ -254,8 +254,12 @@ def _accept_overlap(
             and overlap_ratio >= NORMAL_MIN_RATIO
         )
 
-    # Angular alignment (skip for short segments)
-    if accepted and not is_short and overlap_geom is not None:
+    # Angular alignment (skip for short segments, high-overlap segments, and
+    # segments with >=2 km absolute overlap).  High overlap ratio or large
+    # absolute overlap means the segment physically follows the corridor —
+    # the first-to-last azimuth can be misleading on curved or long roads.
+    skip_alignment = is_short or overlap_ratio >= 0.50 or overlap_len >= 2000.0
+    if accepted and not skip_alignment and overlap_geom is not None:
         try:
             route_section = route_geom.intersection(seg_geom.buffer(buffer_m))
         except Exception:
@@ -485,7 +489,7 @@ def _per_corridor_evac_overlay(
                         )
                         if accepted:
                             inside_ratio = overlap_len / float(seg_geom.length) if seg_geom.length > 0 else 0.0
-                            if inside_ratio < MIN_INSIDE_CORRIDOR_RATIO:
+                            if inside_ratio < MIN_INSIDE_CORRIDOR_RATIO and overlap_len < 1000.0:
                                 accepted = False
 
                     if not accepted:
