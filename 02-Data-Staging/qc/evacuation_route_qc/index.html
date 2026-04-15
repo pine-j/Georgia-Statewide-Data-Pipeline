@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GDOT Evacuation Route QC Map</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+    .title-banner {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .info-box {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      line-height: 1.4;
+      min-width: 240px;
+    }
+    .info-box h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+    .info-box .metric {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .info-box .breakdown-title {
+      margin: 10px 0 4px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .info-box ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 12px;
+    }
+    .leaflet-popup-content {
+      min-width: 220px;
+    }
+  </style>
+</head>
+<body>
+  <div class="title-banner">GDOT Evacuation Route QC Map</div>
+  <div id="map"></div>
+  <script>
+    const QC_SUMMARY = {
+  "total_evac_flagged": 1835,
+  "total_contraflow_flagged": 220,
+  "evac_route_family_breakdown": {
+    "Interstate": 261,
+    "Local/Other": 266,
+    "State Route": 240,
+    "U.S. Route": 1068
+  },
+  "contraflow_route_family_breakdown": {
+    "Interstate": 220
+  }
+};
+  </script>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    const map = L.map('map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const infoControl = L.control({ position: 'topright' });
+    infoControl.onAdd = function() {
+      const div = L.DomUtil.create('div', 'info-box');
+      const evacBreakdown = Object.entries(QC_SUMMARY.evac_route_family_breakdown)
+        .map(([name, count]) => `<li>${name}: ${count}</li>`)
+        .join('');
+      const contraBreakdown = Object.entries(QC_SUMMARY.contraflow_route_family_breakdown)
+        .map(([name, count]) => `<li>${name}: ${count}</li>`)
+        .join('');
+      div.innerHTML = `
+        <h3>QC Summary</h3>
+        <div class="metric"><strong>Total evacuation flagged:</strong> ${QC_SUMMARY.total_evac_flagged}</div>
+        <div class="metric"><strong>Total contraflow flagged:</strong> ${QC_SUMMARY.total_contraflow_flagged}</div>
+        <div class="breakdown-title">Evacuation by ROUTE_FAMILY</div>
+        <ul>${evacBreakdown || '<li>None</li>'}</ul>
+        <div class="breakdown-title">Contraflow by ROUTE_FAMILY</div>
+        <ul>${contraBreakdown || '<li>None</li>'}</ul>
+      `;
+      return div;
+    };
+    infoControl.addTo(map);
+
+    function formatValue(value) {
+      if (value === null || value === undefined || value === '') {
+        return 'N/A';
+      }
+      return value;
+    }
+
+    function makePopup(properties, fields) {
+      return fields
+        .map(([label, field]) => `<div><strong>${label}:</strong> ${formatValue(properties[field])}</div>`)
+        .join('');
+    }
+
+    function styleFactory(style) {
+      return function() {
+        return style;
+      };
+    }
+
+    Promise.all([
+      fetch('network_context.geojson').then((r) => r.json()),
+      fetch('evac_routes_official.geojson').then((r) => r.json()),
+      fetch('contraflow_routes_official.geojson').then((r) => r.json()),
+      fetch('network_evac_flagged.geojson').then((r) => r.json()),
+      fetch('network_contraflow_flagged.geojson').then((r) => r.json())
+    ]).then(([contextData, evacRoutesData, contraRoutesData, evacFlaggedData, contraFlaggedData]) => {
+      const contextLayer = L.geoJSON(contextData, {
+        style: styleFactory({ color: '#999999', weight: 1, opacity: 0.4 })
+      });
+
+      const evacRoutesLayer = L.geoJSON(evacRoutesData, {
+        style: styleFactory({ color: '#2196F3', weight: 4, opacity: 0.8 }),
+        onEachFeature: (feature, layer) => {
+          layer.bindPopup(makePopup(feature.properties, [['ROUTE_NAME', 'ROUTE_NAME']]));
+        }
+      });
+
+      const contraRoutesLayer = L.geoJSON(contraRoutesData, {
+        style: styleFactory({ color: '#9C27B0', weight: 5, opacity: 0.8 }),
+        onEachFeature: (feature, layer) => {
+          layer.bindPopup(makePopup(feature.properties, [['TITLE', 'TITLE'], ['DESCRIPTION', 'DESCRIPTION']]));
+        }
+      });
+
+      const evacFlaggedLayer = L.geoJSON(evacFlaggedData, {
+        style: styleFactory({ color: '#d32f2f', weight: 3, opacity: 0.7 }),
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['AADT', 'AADT'],
+              ['COUNTY_NAME', 'COUNTY_NAME'],
+              ['DISTRICT_LABEL', 'DISTRICT_LABEL']
+            ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
+          );
+        }
+      });
+
+      const contraFlaggedLayer = L.geoJSON(contraFlaggedData, {
+        style: styleFactory({ color: '#f57c00', weight: 4, opacity: 0.8 }),
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties;
+          const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
+          const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          layer.bindPopup(
+            makePopup(p, [
+              ['HWY_NAME', 'HWY_NAME'],
+              ['ROUTE_FAMILY', 'ROUTE_FAMILY']
+            ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
+          );
+        }
+      });
+
+      const overlays = {
+        'Road Network (context)': contextLayer,
+        'GDOT Evacuation Routes (official)': evacRoutesLayer,
+        'GDOT Contraflow Routes (official)': contraRoutesLayer,
+        'Flagged Segments (evacuation)': evacFlaggedLayer,
+        'Flagged Segments (contraflow)': contraFlaggedLayer
+      };
+
+      contextLayer.addTo(map);
+      evacRoutesLayer.addTo(map);
+      contraRoutesLayer.addTo(map);
+      evacFlaggedLayer.addTo(map);
+      contraFlaggedLayer.addTo(map);
+
+      L.control.layers(null, overlays, { collapsed: false }).addTo(map);
+      const bounds = evacRoutesLayer.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.08));
+      } else {
+        map.setView([32.5, -83.5], 7);
+      }
+    }).catch((error) => {
+      console.error(error);
+      alert(`Failed to load one or more QC layers: ${error.message}`);
+    });
+  </script>
+</body>
+</html>

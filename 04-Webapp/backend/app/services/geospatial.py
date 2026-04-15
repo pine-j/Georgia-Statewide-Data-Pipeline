@@ -9,19 +9,26 @@ from app.services.staged_roadways import get_staged_roadway_bounds
 def get_state_bounds(
     db: Session | None,
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> list[float] | None:
     data_mode = get_settings().data_mode
 
     if data_mode == "seed":
-        return get_seed_bounds(state_code, district=district, counties=counties)
+        return get_seed_bounds(
+            state_code,
+            district=district,
+            counties=counties,
+            highway_types=highway_types,
+        )
 
     if data_mode == "staged":
         return get_staged_roadway_bounds(
             state_code,
             district=district,
             counties=counties,
+            highway_types=highway_types,
         )
 
     if db is None:
@@ -30,9 +37,13 @@ def get_state_bounds(
     where_clauses = ["state_code = :state_code"]
     params: dict[str, object] = {"state_code": state_code}
 
-    if district is not None:
-        where_clauses.append("district_id = :district")
-        params["district"] = district
+    if district:
+        district_placeholders = []
+        for index, district_id in enumerate(district):
+            param_name = f"district_{index}"
+            district_placeholders.append(f":{param_name}")
+            params[param_name] = district_id
+        where_clauses.append(f"district_id IN ({', '.join(district_placeholders)})")
 
     if counties:
         where_clauses.append("county_name = ANY(:counties)")

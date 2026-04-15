@@ -31,6 +31,7 @@ from shapely import force_2d, line_merge, make_valid
 from shapely.geometry import LineString
 from shapely.ops import substring
 
+from evacuation_enrichment import apply_evacuation_enrichment, write_evacuation_summary
 from hpms_enrichment import apply_hpms_enrichment, write_hpms_enrichment_summary
 from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
 from route_family import classify_route_families
@@ -98,6 +99,39 @@ COUNTY_ALL_MIN_SHARE = 0.01
 COUNTY_ALL_DELIMITER = ", "
 
 ROUTE_MERGE_KEYS = ["ROUTE_ID", "BeginPoint", "EndPoint"]
+
+# Columns dropped from final output — duplicates or source-internal fields
+# that are only needed during pipeline processing.
+COLUMNS_TO_DROP_FROM_OUTPUT = [
+    # Source metadata (not meaningful after segmentation)
+    "START_M",
+    "END_M",
+    "RouteId",
+    "StateID",
+    "BeginDate",
+    "Comments",
+    "Shape_Length",
+    # Exact duplicates kept under canonical names
+    "BeginPoint",           # == FROM_MILEPOINT
+    "EndPoint",             # == TO_MILEPOINT
+    "GDOT_District",        # == DISTRICT
+    "AADT_2024",            # == AADT  (metadata fields AADT_2024_* are kept)
+    "FUTURE_AADT",          # == FUTURE_AADT_2044
+    # Source columns superseded by synchronized aliases
+    "F_SYSTEM",             # == FUNCTIONAL_CLASS
+    "THROUGH_LANES",        # == NUM_LANES
+    "NHS",                  # == NHS_IND
+    "URBAN_ID",             # == URBAN_CODE
+    # Parsed intermediate fields (copies of final ROUTE_* columns)
+    "PARSED_SYSTEM_CODE",
+    "PARSED_ROUTE_NUMBER",
+    "PARSED_SUFFIX",
+    "PARSED_DIRECTION",
+    "PARSED_COUNTY_CODE",
+    "PARSED_FUNCTION_TYPE",
+    # Legacy source fields superseded by enriched columns
+    "COUNTY",
+]
 
 ROUTE_ATTRIBUTE_LAYERS = {
     "COUNTY_ID": ("COUNTY_IDVn", "COUNTY_ID"),
@@ -247,20 +281,11 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf["FUNCTION_TYPE_LABEL"] = get_or_empty_series(gdf, "FUNCTION_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["function_type"])
     )
-    gdf["PARSED_FUNCTION_TYPE_LABEL"] = get_or_empty_series(gdf, "PARSED_FUNCTION_TYPE").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["function_type"])
-    )
-    gdf["F_SYSTEM_LABEL"] = get_or_empty_series(gdf, "F_SYSTEM").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["functional_class"])
-    )
     gdf["FUNCTIONAL_CLASS_LABEL"] = get_or_empty_series(gdf, "FUNCTIONAL_CLASS").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["functional_class"])
     )
     gdf["FACILITY_TYPE_LABEL"] = get_or_empty_series(gdf, "FACILITY_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["facility_type"])
-    )
-    gdf["NHS_LABEL"] = get_or_empty_series(gdf, "NHS").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["nhs"])
     )
     gdf["NHS_IND_LABEL"] = get_or_empty_series(gdf, "NHS_IND").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["nhs"])
@@ -287,14 +312,8 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf["DIRECTION_LABEL"] = get_or_empty_series(gdf, "DIRECTION").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
     )
-    gdf["PARSED_DIRECTION_LABEL"] = get_or_empty_series(gdf, "PARSED_DIRECTION").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
     gdf["ROUTE_DIRECTION_LABEL"] = get_or_empty_series(gdf, "ROUTE_DIRECTION").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
-    gdf["PARSED_SYSTEM_CODE_LABEL"] = get_or_empty_series(gdf, "PARSED_SYSTEM_CODE").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
     )
     gdf["ROUTE_TYPE_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
@@ -627,8 +646,6 @@ def build_segment_row(
     row = route_row.drop(labels=["geometry"]).to_dict()
     row["FROM_MILEPOINT"] = segment_start
     row["TO_MILEPOINT"] = segment_end
-    row["BeginPoint"] = segment_start
-    row["EndPoint"] = segment_end
     row["geometry"] = geometry
 
     row["AADT"] = np.nan
@@ -681,7 +698,7 @@ def build_segment_row(
         row["K_FACTOR"] = current_record.get("K_FACTOR")
         row["D_FACTOR"] = current_record.get("D_FACTOR")
         row["TC_NUMBER"] = current_record.get("TC_NUMBER")
-        row["Traffic_Class"] = current_record.get("TRAFFIC_CLASS_2024")
+        row["TRAFFIC_CLASS_2024"] = current_record.get("TRAFFIC_CLASS_2024")
         if pd.isna(row.get("COUNTY_ID")) and pd.notna(current_record.get("CURRENT_COUNTY_ID")):
             row["COUNTY_ID"] = current_record.get("CURRENT_COUNTY_ID")
         if pd.isna(row.get("GDOT_District")) and pd.notna(current_record.get("CURRENT_GDOT_DISTRICT")):
@@ -806,6 +823,79 @@ def compute_segment_length(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         gdf["segment_length_m"] = np.nan
         gdf["segment_length_mi"] = np.nan
     return gdf
+
+
+def derive_texas_alignment_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Derive Texas RAPTOR alignment columns: PCT_SADT, PCT_CADT, HWY_DES.
+
+    These columns align with the Texas RAPTOR roadway base-layer schema so
+    that downstream RAPTOR scoring modules can consume Georgia data without
+    state-specific branching.
+    """
+    result = gdf.copy()
+
+    # PCT_SADT — single-unit truck % of AADT
+    has_single = result["SINGLE_UNIT_AADT_2024"].notna() & result["AADT"].notna() & (result["AADT"] > 0)
+    result["PCT_SADT"] = np.where(
+        has_single,
+        (result["SINGLE_UNIT_AADT_2024"] / result["AADT"] * 100.0).round(1),
+        np.nan,
+    )
+
+    # PCT_CADT — combination-unit truck % of AADT
+    has_combo = result["COMBO_UNIT_AADT_2024"].notna() & result["AADT"].notna() & (result["AADT"] > 0)
+    result["PCT_CADT"] = np.where(
+        has_combo,
+        (result["COMBO_UNIT_AADT_2024"] / result["AADT"] * 100.0).round(1),
+        np.nan,
+    )
+
+    # HWY_DES — highway design class (e.g. "4D", "2U")
+    lanes = pd.to_numeric(result.get("NUM_LANES"), errors="coerce")
+    median = pd.to_numeric(result.get("MEDIAN_TYPE"), errors="coerce")
+    access = pd.to_numeric(result.get("HPMS_ACCESS_CONTROL"), errors="coerce")
+    family = result.get("ROUTE_FAMILY", pd.Series(dtype="object")).astype("string").str.strip()
+
+    valid_lanes = lanes.notna() & (lanes > 0)
+    divided = (
+        ((median.notna()) & (median != 1))
+        | (family == "Interstate")
+        | ((access.isin([1, 2, 3])) & (lanes >= 4))
+    )
+    suffix = np.where(divided, "D", "U")
+    result["HWY_DES"] = np.where(
+        valid_lanes,
+        np.floor(lanes).astype("Int64").astype(str) + suffix,
+        None,
+    )
+
+    # TRK_DHV_PCT — truck design-hour volume percent
+    # Primary: HPMS pct_dh_single + pct_dh_combination (direct design-hour data)
+    # Fallback: TRUCK_PCT (approximation)
+    hpms_single = pd.to_numeric(result.get("HPMS_PCT_DH_SINGLE"), errors="coerce")
+    hpms_combo = pd.to_numeric(result.get("HPMS_PCT_DH_COMBINATION"), errors="coerce")
+    hpms_dhv = hpms_single.fillna(0) + hpms_combo.fillna(0)
+    has_hpms_dhv = hpms_single.notna() | hpms_combo.notna()
+    truck_pct = pd.to_numeric(result.get("TRUCK_PCT"), errors="coerce")
+    result["TRK_DHV_PCT"] = np.where(
+        has_hpms_dhv,
+        hpms_dhv.round(1),
+        np.where(truck_pct.notna(), truck_pct.round(1), np.nan),
+    )
+
+    pct_sadt_coverage = result["PCT_SADT"].notna().sum()
+    pct_cadt_coverage = result["PCT_CADT"].notna().sum()
+    trk_dhv_pct_coverage = result["TRK_DHV_PCT"].notna().sum()
+    hwy_des_coverage = result["HWY_DES"].notna().sum()
+    total = len(result)
+    logger.info(
+        "Texas alignment columns: PCT_SADT %d/%d (%.1f%%), PCT_CADT %d/%d (%.1f%%), TRK_DHV_PCT %d/%d (%.1f%%), HWY_DES %d/%d (%.1f%%)",
+        pct_sadt_coverage, total, pct_sadt_coverage / total * 100 if total else 0,
+        pct_cadt_coverage, total, pct_cadt_coverage / total * 100 if total else 0,
+        trk_dhv_pct_coverage, total, trk_dhv_pct_coverage / total * 100 if total else 0,
+        hwy_des_coverage, total, hwy_des_coverage / total * 100 if total else 0,
+    )
+    return result
 
 
 def apply_direction_mirror_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -1073,14 +1163,13 @@ def apply_nearest_neighbor_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Apply the same multi-source fill chain to FUTURE_AADT_2044.
+    """Apply direction-mirror fill to FUTURE_AADT_2044.
 
     Fill order:
     1. GDOT official (already set in build_segment_row)
     2. HPMS future_aadt (via hpms_enrichment, if wired)
     3. Direction mirror (INC→DEC)
-    4. Interpolation between adjacent covered segments
-    5. Nearest-neighbor on same route (capped at 20 miles)
+    4. Official implied growth-rate projection (in apply_future_aadt_official_growth_projection)
     """
 
     filled = gdf.copy()
@@ -1143,90 +1232,160 @@ def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     logger.info("Future AADT direction mirror: filled %d DEC segments", mirror_count)
 
-    # --- Interpolation (state-system only) ---
-    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-    eligible = filled[filled["SYSTEM_CODE"].astype(str) == "1"].copy()
-    interp_count = 0
-    if not eligible.empty:
-        eligible = eligible.sort_values(by=["ROUTE_ID", "FROM_MILEPOINT"])
-        eligible["source_index"] = eligible.index
-        for route_id, route_group in eligible.groupby("ROUTE_ID", sort=False):
-            route_group = route_group.reset_index(drop=True)
-            route_group["_covered"] = route_group["future_aadt_covered"].fillna(False).astype(bool)
-            route_group["_run_id"] = route_group["_covered"].ne(route_group["_covered"].shift()).cumsum()
-            for _, run_group in route_group.groupby("_run_id", sort=False):
-                if bool(run_group["_covered"].iloc[0]):
-                    continue
-                run_start = int(run_group.index.min())
-                run_end = int(run_group.index.max())
-                if run_start == 0 or run_end >= len(route_group) - 1:
-                    continue
-                prev_row = route_group.iloc[run_start - 1]
-                next_row = route_group.iloc[run_end + 1]
-                if not (bool(prev_row["_covered"]) and bool(next_row["_covered"])):
-                    continue
-                run_miles = float(run_group["segment_length_mi"].sum()) if "segment_length_mi" in run_group.columns else 999
-                if run_miles > AADT_2024_GAP_FILL_MAX_INTERPOLATION_MILES:
-                    continue
-                prev_val = prev_row["FUTURE_AADT_2044"]
-                next_val = next_row["FUTURE_AADT_2044"]
-                if pd.isna(prev_val) or pd.isna(next_val):
-                    continue
-                anchor_start = float(prev_row["TO_MILEPOINT"])
-                anchor_end = float(next_row["FROM_MILEPOINT"])
-                anchor_span = anchor_end - anchor_start
-                for run_row in run_group.itertuples(index=False):
-                    midpoint = (float(run_row.FROM_MILEPOINT) + float(run_row.TO_MILEPOINT)) / 2.0
-                    if anchor_span > MILEPOINT_TOLERANCE:
-                        ratio = max(0.0, min(1.0, (midpoint - anchor_start) / anchor_span))
-                    else:
-                        ratio = 0.5
-                    interp_val = int(round(float(prev_val) + (float(next_val) - float(prev_val)) * ratio))
-                    seg_idx = run_row.source_index
-                    filled.at[seg_idx, "FUTURE_AADT_2044"] = interp_val
-                    filled.at[seg_idx, "FUTURE_AADT_2044_SOURCE"] = "analytical_gap_fill"
-                    filled.at[seg_idx, "FUTURE_AADT_2044_CONFIDENCE"] = "medium"
-                    filled.at[seg_idx, "FUTURE_AADT_2044_FILL_METHOD"] = "interpolate_between_adjacent"
-                    filled.at[seg_idx, "future_aadt_covered"] = True
-                    interp_count += 1
-
-    logger.info("Future AADT interpolation: filled %d segments", interp_count)
-
-    # --- Nearest-neighbor (capped at 20 miles) ---
-    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
-    uncovered = filled[~filled["future_aadt_covered"]]
-    covered = filled[filled["future_aadt_covered"]]
-    nn_lookup: dict[str, list[tuple[float, float]]] = {}
-    for idx, row in covered.iterrows():
-        rid = str(row["ROUTE_ID"])
-        mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
-        val = row["FUTURE_AADT_2044"]
-        if pd.notna(val):
-            nn_lookup.setdefault(rid, []).append((mid, float(val)))
-    nn_count = 0
-    for idx, row in uncovered.iterrows():
-        rid = str(row["ROUTE_ID"])
-        candidates = nn_lookup.get(rid)
-        if not candidates:
-            continue
-        seg_mid = (float(row.get("FROM_MILEPOINT") or 0) + float(row.get("TO_MILEPOINT") or 0)) / 2
-        best_dist, best_val = float("inf"), None
-        for cand_mid, cand_val in candidates:
-            dist = abs(seg_mid - cand_mid)
-            if dist < best_dist:
-                best_dist = dist
-                best_val = cand_val
-        if best_val is not None and best_dist <= NEAREST_NEIGHBOR_MAX_DISTANCE_MI:
-            filled.at[idx, "FUTURE_AADT_2044"] = int(best_val)
-            filled.at[idx, "FUTURE_AADT_2044_SOURCE"] = "nearest_neighbor"
-            filled.at[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "low"
-            filled.at[idx, "FUTURE_AADT_2044_FILL_METHOD"] = "nearest_covered_segment_same_route"
-            filled.at[idx, "future_aadt_covered"] = True
-            nn_count += 1
-
-    logger.info("Future AADT nearest-neighbor: filled %d segments", nn_count)
-
     # Sync FUTURE_AADT alias
+    filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
+    filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+
+    return filled
+
+
+def apply_future_aadt_official_growth_projection(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Project missing FUTURE_AADT_2044 values from official implied growth rates."""
+
+    filled = gdf.copy()
+
+    for col, default in {
+        "FUTURE_AADT_2044": np.nan,
+        "FUTURE_AADT_2044_SOURCE": "missing",
+        "FUTURE_AADT_2044_CONFIDENCE": None,
+        "FUTURE_AADT_2044_FILL_METHOD": None,
+        "future_aadt_covered": False,
+    }.items():
+        if col not in filled.columns:
+            filled[col] = default
+
+    filled["FUTURE_AADT_2044"] = pd.to_numeric(filled["FUTURE_AADT_2044"], errors="coerce")
+    filled["AADT_2024"] = pd.to_numeric(filled["AADT_2024"], errors="coerce")
+    filled["FROM_MILEPOINT"] = pd.to_numeric(filled["FROM_MILEPOINT"], errors="coerce")
+    filled["TO_MILEPOINT"] = pd.to_numeric(filled["TO_MILEPOINT"], errors="coerce")
+    filled["COUNTY_ID"] = pd.to_numeric(
+        filled.get("COUNTY_ID", pd.Series(index=filled.index, dtype="float64")),
+        errors="coerce",
+    )
+    filled["DISTRICT"] = pd.to_numeric(
+        filled.get("DISTRICT", pd.Series(index=filled.index, dtype="float64")),
+        errors="coerce",
+    )
+    filled["SYSTEM_CODE"] = filled.get(
+        "SYSTEM_CODE",
+        pd.Series(index=filled.index, dtype="object"),
+    ).astype("string")
+
+    missing_future_mask = filled["FUTURE_AADT_2044"].isna() & filled["AADT_2024"].notna()
+    if not missing_future_mask.any():
+        logger.info("Future AADT official growth projection: no eligible FUTURE_AADT_2044 gaps remain")
+        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
+        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+        return filled
+
+    projection_horizon_years = 20
+    official_source_mask = filled["FUTURE_AADT_2044_SOURCE"].isin(["official_exact", "hpms_2024"])
+    official_pairs = filled[
+        official_source_mask
+        & filled["FUTURE_AADT_2044"].notna()
+        & filled["AADT_2024"].notna()
+        & (filled["AADT_2024"] > 0)
+        & (filled["FUTURE_AADT_2044"] > 0)
+    ].copy()
+    official_pairs["implied_cagr"] = (
+        (official_pairs["FUTURE_AADT_2044"] / official_pairs["AADT_2024"]) ** (1.0 / projection_horizon_years)
+        - 1.0
+    )
+    official_pairs["implied_cagr"] = official_pairs["implied_cagr"].clip(-0.03, 0.05)
+    official_pairs["SYSTEM_CODE"] = official_pairs["SYSTEM_CODE"].astype("string")
+
+    if official_pairs.empty:
+        logger.warning("Future AADT official growth projection: no official FUTURE_AADT_2044/AADT_2024 pairs available")
+        filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
+        filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
+        return filled
+
+    official_county_system_rates = (
+        official_pairs.dropna(subset=["COUNTY_ID", "SYSTEM_CODE"])
+        .groupby(["COUNTY_ID", "SYSTEM_CODE"], dropna=False)["implied_cagr"]
+        .median()
+    )
+    official_district_system_rates = (
+        official_pairs.dropna(subset=["DISTRICT", "SYSTEM_CODE"])
+        .groupby(["DISTRICT", "SYSTEM_CODE"], dropna=False)["implied_cagr"]
+        .median()
+    )
+    official_system_rates = (
+        official_pairs.dropna(subset=["SYSTEM_CODE"])
+        .groupby("SYSTEM_CODE", dropna=False)["implied_cagr"]
+        .median()
+    )
+    official_statewide_rate = float(official_pairs["implied_cagr"].median())
+
+    logger.info(
+        "Future AADT official implied rates: %d pairs, statewide median=%.4f (%.2f%%)",
+        len(official_pairs),
+        official_statewide_rate,
+        official_statewide_rate * 100,
+    )
+
+    fill_counts = {
+        "official_implied_county_system": 0,
+        "official_implied_district_system": 0,
+        "official_implied_system_statewide": 0,
+        "official_implied_statewide": 0,
+    }
+    used_growth_rates: list[float] = []
+
+    for idx in filled.index[missing_future_mask]:
+        aadt_2024 = filled.at[idx, "AADT_2024"]
+        if pd.isna(aadt_2024) or float(aadt_2024) <= 0:
+            continue
+
+        growth_rate = np.nan
+        method = None
+
+        county_id = filled.at[idx, "COUNTY_ID"]
+        district = filled.at[idx, "DISTRICT"]
+        system_code = filled.at[idx, "SYSTEM_CODE"]
+
+        county_key = (county_id, system_code)
+        district_key = (district, system_code)
+        if pd.notna(county_id) and pd.notna(system_code) and county_key in official_county_system_rates.index:
+            growth_rate = float(official_county_system_rates.loc[county_key])
+            method = "official_implied_county_system"
+        elif pd.notna(district) and pd.notna(system_code) and district_key in official_district_system_rates.index:
+            growth_rate = float(official_district_system_rates.loc[district_key])
+            method = "official_implied_district_system"
+        elif pd.notna(system_code) and system_code in official_system_rates.index:
+            growth_rate = float(official_system_rates.loc[system_code])
+            method = "official_implied_system_statewide"
+        else:
+            growth_rate = official_statewide_rate
+            method = "official_implied_statewide"
+
+
+        if pd.isna(growth_rate):
+            continue
+
+        projected_aadt = int(round(float(aadt_2024) * ((1.0 + float(growth_rate)) ** projection_horizon_years)))
+        filled.loc[idx, "FUTURE_AADT_2044"] = projected_aadt
+        filled.loc[idx, "FUTURE_AADT_2044_SOURCE"] = "projection_official_implied"
+        filled.loc[idx, "FUTURE_AADT_2044_CONFIDENCE"] = "low"
+        filled.loc[idx, "FUTURE_AADT_2044_FILL_METHOD"] = method
+        filled.loc[idx, "future_aadt_covered"] = True
+        fill_counts[method] += 1
+        used_growth_rates.append(float(growth_rate))
+
+    if used_growth_rates:
+        logger.info(
+            "Future AADT official growth projection: filled %d segments (county+system=%d, district+system=%d, system=%d, statewide=%d); median growth=%.4f, mean growth=%.4f",
+            len(used_growth_rates),
+            fill_counts["official_implied_county_system"],
+            fill_counts["official_implied_district_system"],
+            fill_counts["official_implied_system_statewide"],
+            fill_counts["official_implied_statewide"],
+            float(pd.Series(used_growth_rates).median()),
+            float(pd.Series(used_growth_rates).mean()),
+        )
+    else:
+        logger.info("Future AADT official growth projection: no FUTURE_AADT_2044 gaps were filled")
+
     filled["FUTURE_AADT"] = filled["FUTURE_AADT_2044"]
     filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
 
@@ -1240,14 +1399,9 @@ def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
         "current_aadt_official_segments": int(gdf["AADT_2024_OFFICIAL"].notna().sum())
         if "AADT_2024_OFFICIAL" in gdf.columns
         else int(gdf["AADT"].notna().sum()),
-        "current_aadt_segments": int(gdf["AADT_2024"].notna().sum())
-        if "AADT_2024" in gdf.columns
-        else int(gdf["AADT"].notna().sum()),
+        "current_aadt_segments": int(gdf["AADT"].notna().sum()),
         "current_aadt_miles": float(
-            gdf.loc[
-                gdf["AADT_2024"].notna() if "AADT_2024" in gdf.columns else gdf["AADT"].notna(),
-                "segment_length_mi",
-            ].sum()
+            gdf.loc[gdf["AADT"].notna(), "segment_length_mi"].sum()
         ),
         "future_aadt_2044_segments": int(gdf["FUTURE_AADT_2044"].notna().sum())
         if "FUTURE_AADT_2044" in gdf.columns
@@ -1527,7 +1681,7 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
         "by_aadt_2024_source": _group_current_aadt_coverage(audit, ["AADT_2024_SOURCE"]),
         "by_function_type": _group_current_aadt_coverage(
             audit,
-            ["PARSED_FUNCTION_TYPE", "PARSED_FUNCTION_TYPE_LABEL"],
+            ["FUNCTION_TYPE", "FUNCTION_TYPE_LABEL"],
         ),
         "top_counties_by_uncovered_segments": _group_current_aadt_coverage(
             audit,
@@ -1551,8 +1705,8 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
         "SYSTEM_CODE_LABEL",
         "ROUTE_FAMILY",
         "ROUTE_FAMILY_DETAIL",
-        "PARSED_FUNCTION_TYPE",
-        "PARSED_FUNCTION_TYPE_LABEL",
+        "FUNCTION_TYPE",
+        "FUNCTION_TYPE_LABEL",
         "FUNCTIONAL_CLASS",
         "FUNCTIONAL_CLASS_LABEL",
         "FROM_MILEPOINT",
@@ -2349,6 +2503,7 @@ def main() -> None:
     #    final authority for signed-route family. GPAS can upgrade or confirm
     #    but never downgrade a higher-priority family.
     segmented = apply_signed_route_verification(segmented)
+    segmented = apply_evacuation_enrichment(segmented)
     segmented = sync_derived_alias_fields(segmented)
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
@@ -2356,15 +2511,23 @@ def main() -> None:
     segmented = apply_state_system_current_aadt_gap_fill(segmented)
     segmented = apply_nearest_neighbor_aadt(segmented)
     segmented = apply_future_aadt_fill_chain(segmented)
+    segmented = apply_future_aadt_official_growth_projection(segmented)
+    segmented = derive_texas_alignment_columns(segmented)
     segmented = add_decoded_label_columns(segmented)
     segmented = add_county_all_from_geometry(segmented, county_boundaries_for_backfill)
     segmented = _move_column_after(segmented, "county_all", "COUNTY_NAME")
 
     logger.info("Final segment count: %d", len(segmented))
     logger.info("Current AADT official coverage: %d segments", segmented["AADT_2024_OFFICIAL"].notna().sum())
-    logger.info("Current AADT final coverage: %d segments", segmented["AADT_2024"].notna().sum())
+    logger.info("Current AADT final coverage: %d segments", segmented["AADT"].notna().sum())
     if "FUTURE_AADT_2044" in segmented.columns:
         logger.info("Future AADT 2044 coverage: %d segments", segmented["FUTURE_AADT_2044"].notna().sum())
+
+    # Drop duplicate / source-internal columns before output
+    cols_to_drop = [c for c in COLUMNS_TO_DROP_FROM_OUTPUT if c in segmented.columns]
+    if cols_to_drop:
+        segmented = segmented.drop(columns=cols_to_drop)
+        logger.info("Dropped %d duplicate/internal columns from output: %s", len(cols_to_drop), ", ".join(cols_to_drop))
 
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = TABLES_DIR / "roadway_inventory_cleaned.csv"
@@ -2392,6 +2555,7 @@ def main() -> None:
     write_enrichment_summary(segmented)
     write_hpms_enrichment_summary(segmented)
     write_signed_route_verification_summary(segmented)
+    write_evacuation_summary(segmented)
     logger.info("Normalization complete.")
 
 

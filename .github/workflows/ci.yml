@@ -13,7 +13,45 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
-      - name: Validate project
-        run: echo "CI check passed"
+      - name: Install dependencies
+        run: pip install pandas geopandas numpy pyogrio shapely
+
+      - name: Syntax check pipeline scripts
+        run: |
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/normalize.py
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/hpms_enrichment.py
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/rnhp_enrichment.py
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/evacuation_enrichment.py
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/validate.py
+          python -m py_compile 02-Data-Staging/scripts/01_roadway_inventory/create_db.py
+          python -m py_compile 05-RAPTOR-Integration/states/Georgia/categories/Roadways.py
+
+      - name: Validate data dictionary completeness
+        run: |
+          python -c "
+          import csv, sys
+          with open('00-Project-Management/Pipeline-Documentation/data_dictionary.csv') as f:
+              reader = csv.DictReader(f)
+              rows = list(reader)
+          missing = [r['Column'] for r in rows if not r.get('Description','').strip()]
+          if missing:
+              print(f'ERROR: {len(missing)} columns missing descriptions: {missing}')
+              sys.exit(1)
+          print(f'Data dictionary: {len(rows)} columns, all have descriptions')
+          "
+
+      - name: Validate crosswalk has no unresolved gaps
+        run: |
+          python -c "
+          import csv, sys
+          with open('00-Project-Management/Texas_vs_Georgia_Header_Crosswalk.csv') as f:
+              reader = csv.DictReader(f)
+              rows = list(reader)
+          gaps = [r['Texas Header'] for r in rows if r.get('Current Final Output Status','') in ('Missing','Planned')]
+          if gaps:
+              print(f'ERROR: {len(gaps)} unresolved crosswalk gaps: {gaps}')
+              sys.exit(1)
+          print(f'Crosswalk: {len(rows)} headers, 0 unresolved gaps')
+          "

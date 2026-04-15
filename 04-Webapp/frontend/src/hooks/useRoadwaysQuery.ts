@@ -3,13 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { getRoadways } from "../services/api";
 
 export function useRoadwaysQuery(
-  district: number | null,
+  districts: number[],
   counties: string[],
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: ["roadways", district, counties, enabled],
-    queryFn: () => getRoadways({ district, counties }),
+    queryKey: ["roadways", districts, counties, enabled],
+    queryFn: () => getRoadways({ districts, counties }),
     enabled,
   });
 }

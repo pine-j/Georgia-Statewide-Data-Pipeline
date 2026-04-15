@@ -1,6 +1,11 @@
 import { Box, Chip, LinearProgress, Paper, Stack, Typography } from "@mui/material";
 
-import { BoundsResponse, GeoJsonFeatureCollection, RoadwayFeatureCollection } from "../../types/api";
+import {
+  BoundsResponse,
+  GeoJsonFeatureCollection,
+  RoadwayFeatureCollection,
+  RoadwayVisualizationOption,
+} from "../../types/api";
 import { MapLibreRoadwayMap } from "./MapLibreRoadwayMap";
 
 interface MapPanelProps {
@@ -15,6 +20,9 @@ interface MapPanelProps {
   totalSegments: number;
   progressPercent: number;
   etaSeconds: number | null;
+  selectedVisualization?: RoadwayVisualizationOption;
+  selectedRoadwayId?: string | null;
+  onSegmentClick?: (uniqueId: string) => void;
 }
 
 function formatEta(etaSeconds: number | null): string {
@@ -42,6 +50,9 @@ export function MapPanel({
   totalSegments,
   progressPercent,
   etaSeconds,
+  selectedVisualization,
+  selectedRoadwayId,
+  onSegmentClick,
 }: MapPanelProps) {
   const isShowingProgress = isManifestLoading || isLoading;
   const hasLoadedSegments = loadedSegments > 0;
@@ -66,6 +77,9 @@ export function MapPanel({
           districtBoundaries={districtBoundaries}
           loadToken={loadToken}
           bounds={bounds}
+          selectedVisualization={selectedVisualization}
+          selectedRoadwayId={selectedRoadwayId}
+          onSegmentClick={onSegmentClick}
         />
       </Box>
 

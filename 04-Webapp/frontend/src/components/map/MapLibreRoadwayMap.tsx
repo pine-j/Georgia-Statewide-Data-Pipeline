@@ -2,8 +2,16 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { getRoadwayDetail } from "../../services/api";
-import { GeoJsonFeatureCollection, RoadwayDetail, RoadwayFeatureCollection } from "../../types/api";
+import {
+  GeoJsonFeatureCollection,
+  RoadwayFeatureCollection,
+  RoadwayVisualizationOption,
+} from "../../types/api";
+import {
+  buildRoadwayLineColorExpression,
+  buildRoadwayLineOpacityExpression,
+  buildRoadwayLineSortKeyExpression,
+} from "./roadwayVisualization";
 
 const DISTRICT_SOURCE_ID = "district-boundaries";
 const DISTRICT_FILL_LAYER_ID = "district-boundaries-fill";
@@ -11,9 +19,11 @@ const DISTRICT_LINE_LAYER_ID = "district-boundaries-line";
 const COUNTY_SOURCE_ID = "county-boundaries";
 const COUNTY_LINE_LAYER_ID = "county-boundaries-line";
 const SOURCE_ID = "roadways";
+const HIGHLIGHT_LAYER_ID = "roadways-highlight";
 const CASING_LAYER_ID = "roadways-casing";
 const LINE_LAYER_ID = "roadways-line";
 const HIT_LAYER_ID = "roadways-hit";
+const UNIQUE_ID_PROPERTY_CANDIDATES = ["unique_id", "UNIQUE_ID", "UniqueId"] as const;
 
 interface MapLibreRoadwayMapProps {
   roadwayChunks: RoadwayFeatureCollection[];
@@ -21,116 +31,9 @@ interface MapLibreRoadwayMapProps {
   districtBoundaries?: GeoJsonFeatureCollection;
   loadToken: number;
   bounds?: [number, number, number, number] | null;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function formatPopupValue(value: string | number | boolean | null): string {
-  if (value === null) {
-    return "N/A";
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
-  }
-
-  return String(value);
-}
-
-function displayDistrictLabel(label: string): string {
-  const separatorIndex = label.indexOf(" - ");
-  return separatorIndex >= 0 ? label.slice(separatorIndex + 3) : label;
-}
-
-function formatCountyMeta(county: string, countyAll?: string | null): string {
-  if (!countyAll) {
-    return `${county} County`;
-  }
-
-  const normalizedCountyAll = countyAll.trim();
-  if (!normalizedCountyAll) {
-    return `${county} County`;
-  }
-
-  if (normalizedCountyAll.toLowerCase() === county.trim().toLowerCase()) {
-    return `${county} County`;
-  }
-
-  return `Counties: ${normalizedCountyAll}`;
-}
-
-function buildLoadingPopupHtml(summary: {
-  roadName: string;
-  county: string;
-  districtLabel: string;
-}): string {
-  return `
-    <div class="roadway-popup">
-      <div class="roadway-popup__header">
-        <div class="roadway-popup__title">${escapeHtml(summary.roadName)}</div>
-        <div class="roadway-popup__meta">
-          ${escapeHtml(summary.county)} County | ${escapeHtml(displayDistrictLabel(summary.districtLabel))}
-        </div>
-      </div>
-      <div class="roadway-popup__status">Loading segment details...</div>
-    </div>
-  `.trim();
-}
-
-function buildErrorPopupHtml(summary: {
-  roadName: string;
-  county: string;
-  districtLabel: string;
-}): string {
-  return `
-    <div class="roadway-popup">
-      <div class="roadway-popup__header">
-        <div class="roadway-popup__title">${escapeHtml(summary.roadName)}</div>
-        <div class="roadway-popup__meta">
-          ${escapeHtml(summary.county)} County | ${escapeHtml(displayDistrictLabel(summary.districtLabel))}
-        </div>
-      </div>
-      <div class="roadway-popup__status roadway-popup__status--error">
-        Segment details could not be loaded.
-      </div>
-    </div>
-  `.trim();
-}
-
-function buildRoadwayPopupHtml(detail: RoadwayDetail): string {
-  const countyAll =
-    typeof detail.attributes.county_all === "string" ? detail.attributes.county_all : null;
-  const rows = Object.entries(detail.attributes)
-    .map(
-      ([key, value]) => `
-        <div class="roadway-popup__row">
-          <div class="roadway-popup__key">${escapeHtml(key)}</div>
-          <div class="roadway-popup__value">${escapeHtml(formatPopupValue(value))}</div>
-        </div>
-      `,
-    )
-    .join("");
-
-  return `
-    <div class="roadway-popup">
-      <div class="roadway-popup__header">
-        <div class="roadway-popup__title">${escapeHtml(detail.road_name)}</div>
-        <div class="roadway-popup__meta">
-          ${escapeHtml(formatCountyMeta(detail.county, countyAll))} | ${escapeHtml(displayDistrictLabel(detail.district_label))}
-        </div>
-      </div>
-      <div class="roadway-popup__body">
-        ${rows}
-      </div>
-    </div>
-  `.trim();
+  selectedVisualization?: RoadwayVisualizationOption;
+  selectedRoadwayId?: string | null;
+  onSegmentClick?: (uniqueId: string) => void;
 }
 
 function buildEmptyCollection(): RoadwayFeatureCollection {
@@ -172,30 +75,54 @@ function getGeoJsonSource(
   return source as maplibregl.GeoJSONSource;
 }
 
+function getUniqueIdPropertyName(
+  collection: RoadwayFeatureCollection,
+): (typeof UNIQUE_ID_PROPERTY_CANDIDATES)[number] {
+  const featureProperties = collection.features[0]?.properties;
+
+  if (!featureProperties) {
+    return "unique_id";
+  }
+
+  const propertyName = UNIQUE_ID_PROPERTY_CANDIDATES.find((candidate) =>
+    Object.prototype.hasOwnProperty.call(featureProperties, candidate),
+  );
+
+  return propertyName ?? "unique_id";
+}
+
 export function MapLibreRoadwayMap({
   roadwayChunks,
   countyBoundaries,
   districtBoundaries,
   loadToken,
   bounds,
+  selectedVisualization,
+  selectedRoadwayId,
+  onSegmentClick,
 }: MapLibreRoadwayMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const popupRef = useRef<maplibregl.Popup | null>(null);
   const roadwayChunksRef = useRef<RoadwayFeatureCollection[]>(roadwayChunks);
   const countyBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(countyBoundaries);
   const districtBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(districtBoundaries);
   const boundsRef = useRef(bounds);
   const loadTokenRef = useRef(loadToken);
+  const selectedVisualizationRef = useRef<RoadwayVisualizationOption | undefined>(
+    selectedVisualization,
+  );
   const renderedLoadTokenRef = useRef(loadToken);
-  const detailCacheRef = useRef<Map<string, RoadwayDetail>>(new Map());
-  const detailRequestTokenRef = useRef(0);
+  const selectedRoadwayIdRef = useRef(selectedRoadwayId);
+  const onSegmentClickRef = useRef(onSegmentClick);
 
   roadwayChunksRef.current = roadwayChunks;
   countyBoundariesRef.current = countyBoundaries;
   districtBoundariesRef.current = districtBoundaries;
   boundsRef.current = bounds;
   loadTokenRef.current = loadToken;
+  selectedVisualizationRef.current = selectedVisualization;
+  selectedRoadwayIdRef.current = selectedRoadwayId;
+  onSegmentClickRef.current = onSegmentClick;
 
   const syncBounds = useEffectEvent(() => {
     const map = mapRef.current;
@@ -209,65 +136,17 @@ export function MapLibreRoadwayMap({
     });
   });
 
-  const openRoadwayPopup = useEffectEvent(
-    async (
-      event: maplibregl.MapLayerMouseEvent,
-      properties: {
-        uniqueId: string;
-        roadName: string;
-        county: string;
-        districtLabel: string;
-      },
-    ) => {
-      const map = mapRef.current;
-      const popup = popupRef.current;
-
-      if (!map || !popup) {
-        return;
-      }
-
-      const summary = {
-        roadName: properties.roadName,
-        county: properties.county,
-        districtLabel: properties.districtLabel,
-      };
-
-      popup
-        .setLngLat(event.lngLat)
-        .setHTML(buildLoadingPopupHtml(summary))
-        .addTo(map);
-
-      const cached = detailCacheRef.current.get(properties.uniqueId);
-      if (cached) {
-        popup.setHTML(buildRoadwayPopupHtml(cached));
-        return;
-      }
-
-      detailRequestTokenRef.current += 1;
-      const requestToken = detailRequestTokenRef.current;
-
-      try {
-        const detail = await getRoadwayDetail(properties.uniqueId);
-        detailCacheRef.current.set(properties.uniqueId, detail);
-
-        if (requestToken !== detailRequestTokenRef.current) {
-          return;
-        }
-
-        popup.setHTML(buildRoadwayPopupHtml(detail));
-      } catch {
-        if (requestToken !== detailRequestTokenRef.current) {
-          return;
-        }
-
-        popup.setHTML(buildErrorPopupHtml(summary));
-      }
+  const handleSegmentClick = useEffectEvent(
+    (uniqueId: string) => {
+      onSegmentClickRef.current?.(uniqueId);
     },
   );
 
   const ensureRoadwayLayers = useEffectEvent(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) {
+    const styleLoaded = map?.isStyleLoaded() ?? false;
+
+    if (!map || !styleLoaded) {
       return;
     }
 
@@ -332,6 +211,7 @@ export function MapLibreRoadwayMap({
     }
 
     const nextData = combineRoadwayChunks(roadwayChunksRef.current);
+    const uniqueIdPropertyName = getUniqueIdPropertyName(nextData);
     const source = getRoadwaySource(map);
 
     if (source) {
@@ -370,6 +250,7 @@ export function MapLibreRoadwayMap({
         layout: {
           "line-cap": "round",
           "line-join": "round",
+          "line-sort-key": buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
         },
       });
     }
@@ -380,7 +261,7 @@ export function MapLibreRoadwayMap({
         type: "line",
         source: SOURCE_ID,
         paint: {
-          "line-color": "#1490a7",
+          "line-color": buildRoadwayLineColorExpression(selectedVisualizationRef.current),
           "line-width": [
             "interpolate",
             ["linear"],
@@ -396,13 +277,40 @@ export function MapLibreRoadwayMap({
             17,
             7.2,
           ],
-          "line-opacity": 0.98,
+          "line-opacity": buildRoadwayLineOpacityExpression(selectedVisualizationRef.current),
         },
         layout: {
           "line-cap": "round",
           "line-join": "round",
+          "line-sort-key": buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
         },
       });
+    }
+
+    if (map.getLayer(LINE_LAYER_ID)) {
+      map.setPaintProperty(
+        LINE_LAYER_ID,
+        "line-color",
+        buildRoadwayLineColorExpression(selectedVisualizationRef.current),
+      );
+      map.setPaintProperty(
+        LINE_LAYER_ID,
+        "line-opacity",
+        buildRoadwayLineOpacityExpression(selectedVisualizationRef.current),
+      );
+      map.setLayoutProperty(
+        LINE_LAYER_ID,
+        "line-sort-key",
+        buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+      );
+    }
+
+    if (map.getLayer(CASING_LAYER_ID)) {
+      map.setLayoutProperty(
+        CASING_LAYER_ID,
+        "line-sort-key",
+        buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+      );
     }
 
     if (!map.getLayer(HIT_LAYER_ID)) {
@@ -432,6 +340,7 @@ export function MapLibreRoadwayMap({
         layout: {
           "line-cap": "round",
           "line-join": "round",
+          "line-sort-key": buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
         },
       });
 
@@ -446,34 +355,75 @@ export function MapLibreRoadwayMap({
       map.on("click", HIT_LAYER_ID, (event) => {
         const feature = event.features?.[0];
         const rawProperties = (feature?.properties ?? {}) as Record<string, unknown>;
-        const uniqueId = typeof rawProperties.unique_id === "string" ? rawProperties.unique_id : "";
+        const uniqueIdValue = UNIQUE_ID_PROPERTY_CANDIDATES.map(
+          (candidate) => rawProperties[candidate],
+        ).find((value) => typeof value === "string" && value.length > 0);
+        const uniqueId = typeof uniqueIdValue === "string" ? uniqueIdValue : "";
 
         if (!uniqueId) {
           return;
         }
 
-        void openRoadwayPopup(event, {
-          uniqueId,
-          roadName:
-            typeof rawProperties.road_name === "string"
-              ? rawProperties.road_name
-              : "Roadway segment",
-          county:
-            typeof rawProperties.county === "string"
-              ? rawProperties.county
-              : "Unknown",
-          districtLabel:
-            typeof rawProperties.district_label === "string"
-              ? rawProperties.district_label
-              : "District",
-        });
+        handleSegmentClick(uniqueId);
       });
+    }
+
+    if (map.getLayer(HIT_LAYER_ID)) {
+      map.setLayoutProperty(
+        HIT_LAYER_ID,
+        "line-sort-key",
+        buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+      );
+    }
+
+    if (!map.getLayer(HIGHLIGHT_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: HIGHLIGHT_LAYER_ID,
+          type: "line",
+          source: SOURCE_ID,
+          filter: ["==", uniqueIdPropertyName, "__highlight_unselected__"],
+          paint: {
+            "line-color": "#FFD600",
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              6,
+              8,
+              8,
+              11,
+              12,
+              14,
+              16,
+              17,
+              20,
+            ],
+            "line-opacity": 0.95,
+          },
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+            "line-sort-key": buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+          },
+        },
+        HIT_LAYER_ID,
+      );
+    }
+
+    if (map.getLayer(HIGHLIGHT_LAYER_ID)) {
+      const selectedId = selectedRoadwayIdRef.current;
+      map.setFilter(
+        HIGHLIGHT_LAYER_ID,
+        selectedId
+          ? (["==", uniqueIdPropertyName, selectedId] as maplibregl.FilterSpecification)
+          : (["==", uniqueIdPropertyName, "__highlight_unselected__"] as maplibregl.FilterSpecification),
+      );
     }
 
     if (renderedLoadTokenRef.current !== loadTokenRef.current) {
       renderedLoadTokenRef.current = loadTokenRef.current;
-      detailCacheRef.current.clear();
-      popupRef.current?.remove();
     }
   });
 
@@ -489,13 +439,6 @@ export function MapLibreRoadwayMap({
       zoom: 6.2,
     });
 
-    popupRef.current = new maplibregl.Popup({
-      closeButton: true,
-      closeOnClick: true,
-      maxWidth: "420px",
-      offset: 12,
-    });
-
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
     map.on("load", () => {
@@ -506,7 +449,6 @@ export function MapLibreRoadwayMap({
     mapRef.current = map;
 
     return () => {
-      popupRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
@@ -514,7 +456,15 @@ export function MapLibreRoadwayMap({
 
   useEffect(() => {
     ensureRoadwayLayers();
-  }, [countyBoundaries, districtBoundaries, loadToken, roadwayChunks, ensureRoadwayLayers]);
+  }, [
+    countyBoundaries,
+    districtBoundaries,
+    loadToken,
+    roadwayChunks,
+    selectedVisualization,
+    selectedRoadwayId,
+    ensureRoadwayLayers,
+  ]);
 
   useEffect(() => {
     syncBounds();

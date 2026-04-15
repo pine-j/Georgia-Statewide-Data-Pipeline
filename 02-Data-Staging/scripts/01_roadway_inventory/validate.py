@@ -47,7 +47,7 @@ CRITICAL_COLUMNS = [
     "unique_id",
     "ROUTE_ID",
     "COUNTY_ID",
-    "GDOT_District",
+    "DISTRICT",
     "SYSTEM_CODE",
 ]
 
@@ -57,11 +57,8 @@ DECODED_LABEL_COLUMNS = {
     "DISTRICT_LABEL": "DISTRICT",
     "SYSTEM_CODE_LABEL": "SYSTEM_CODE",
     "FUNCTION_TYPE_LABEL": "FUNCTION_TYPE",
-    "PARSED_FUNCTION_TYPE_LABEL": "PARSED_FUNCTION_TYPE",
-    "F_SYSTEM_LABEL": "F_SYSTEM",
     "FUNCTIONAL_CLASS_LABEL": "FUNCTIONAL_CLASS",
     "FACILITY_TYPE_LABEL": "FACILITY_TYPE",
-    "NHS_LABEL": "NHS",
     "NHS_IND_LABEL": "NHS_IND",
     "OWNERSHIP_LABEL": "OWNERSHIP",
     "STRAHNET_LABEL": "STRAHNET",
@@ -70,9 +67,7 @@ DECODED_LABEL_COLUMNS = {
     "SURFACE_TYPE_LABEL": "SURFACE_TYPE",
     "URBAN_CODE_LABEL": "URBAN_CODE",
     "DIRECTION_LABEL": "DIRECTION",
-    "PARSED_DIRECTION_LABEL": "PARSED_DIRECTION",
     "ROUTE_DIRECTION_LABEL": "ROUTE_DIRECTION",
-    "PARSED_SYSTEM_CODE_LABEL": "PARSED_SYSTEM_CODE",
     "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
     "ROUTE_TYPE_GDOT_LABEL": "ROUTE_TYPE_GDOT",
 }
@@ -83,11 +78,8 @@ DECODED_LABEL_LOOKUPS = {
     "DISTRICT_LABEL": (DISTRICT_LABEL_LOOKUP, None),
     "SYSTEM_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
     "FUNCTION_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["function_type"], None),
-    "PARSED_FUNCTION_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["function_type"], None),
-    "F_SYSTEM_LABEL": (ROADWAY_DOMAIN_LABELS["functional_class"], None),
     "FUNCTIONAL_CLASS_LABEL": (ROADWAY_DOMAIN_LABELS["functional_class"], None),
     "FACILITY_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["facility_type"], None),
-    "NHS_LABEL": (ROADWAY_DOMAIN_LABELS["nhs"], None),
     "NHS_IND_LABEL": (ROADWAY_DOMAIN_LABELS["nhs"], None),
     "OWNERSHIP_LABEL": (ROADWAY_DOMAIN_LABELS["ownership"], None),
     "STRAHNET_LABEL": (ROADWAY_DOMAIN_LABELS["strahnet"], None),
@@ -96,9 +88,7 @@ DECODED_LABEL_LOOKUPS = {
     "SURFACE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["surface_type"], None),
     "URBAN_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["urban_code"], 5),
     "DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
-    "PARSED_DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
     "ROUTE_DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
-    "PARSED_SYSTEM_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
     "ROUTE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
     "ROUTE_TYPE_GDOT_LABEL": (ROADWAY_DOMAIN_LABELS["route_type_gdot"], None),
 }
@@ -144,7 +134,7 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
 SIGNED_ROUTE_FAMILIES = frozenset({"Interstate", "U.S. Route", "State Route"})
 
 EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
-    "AADT_2024",
+    "AADT",
     "AADT_2024_OFFICIAL",
     "AADT_2024_SOURCE",
     "AADT_2024_CONFIDENCE",
@@ -291,11 +281,11 @@ def validate_crs(result: ValidationResult) -> None:
 
 def validate_district_range(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that DISTRICT values are in the expected range (1-7)."""
-    if "GDOT_District" not in df.columns:
-        result.add("District range", False, "GDOT_District column not found")
+    if "DISTRICT" not in df.columns:
+        result.add("District range", False, "DISTRICT column not found")
         return
 
-    districts = df["GDOT_District"].dropna().unique()
+    districts = df["DISTRICT"].dropna().unique()
     valid_range = set(range(1, 8))
 
     # Convert to int for comparison, handling string types
@@ -316,7 +306,7 @@ def validate_district_range(result: ValidationResult, df: pd.DataFrame) -> None:
 
 def validate_state_system_location_fields(result: ValidationResult, df: pd.DataFrame) -> None:
     """Check that state-system segments have county and district assignments."""
-    required_columns = ["SYSTEM_CODE", "COUNTY_ID", "COUNTY_CODE", "DISTRICT", "GDOT_District"]
+    required_columns = ["SYSTEM_CODE", "COUNTY_ID", "COUNTY_CODE", "DISTRICT"]
     missing_columns = [column for column in required_columns if column not in df.columns]
     if missing_columns:
         result.add(
@@ -335,7 +325,6 @@ def validate_state_system_location_fields(result: ValidationResult, df: pd.DataF
         state_subset["COUNTY_ID"].isna()
         | state_subset["COUNTY_CODE"].isna()
         | state_subset["DISTRICT"].isna()
-        | state_subset["GDOT_District"].isna()
     )
     missing_count = int(missing_mask.sum())
     result.add(
@@ -347,11 +336,11 @@ def validate_state_system_location_fields(result: ValidationResult, df: pd.DataF
 
 def validate_aadt_coverage(result: ValidationResult, df: pd.DataFrame) -> None:
     """Report current and future AADT coverage."""
-    if "AADT_2024" not in df.columns and "AADT" not in df.columns:
-        result.add("Current AADT coverage", False, "AADT_2024/AADT column not found")
+    if "AADT" not in df.columns:
+        result.add("Current AADT coverage", False, "AADT column not found")
         return
 
-    canonical_current_col = "AADT_2024" if "AADT_2024" in df.columns else "AADT"
+    canonical_current_col = "AADT"
     current_count = int(df[canonical_current_col].notna().sum())
     official_count = (
         int(df["AADT_2024_OFFICIAL"].notna().sum())

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
@@ -24,9 +24,16 @@ class CountyOption(BaseModel):
     district: int
 
 
+class HighwayTypeOption(BaseModel):
+    id: str
+    label: str
+    route_family: str
+
+
 class GeorgiaFilterOptionsResponse(BaseModel):
     districts: list[DistrictOption]
     counties: list[CountyOption]
+    highway_types: list[HighwayTypeOption]
 
 
 class AppConfigResponse(BaseModel):
@@ -58,6 +65,26 @@ class RoadwayFeatureProperties(BaseModel):
     district: int
     district_label: str
     county: str
+    system_code_label: str | None = None
+    direction_label: str | None = None
+    num_lanes: int | None = None
+    future_aadt_2044: int | None = None
+    k_factor: int | None = None
+    d_factor: int | None = None
+    truck_aadt: int | None = None
+    pct_sadt: float | None = None
+    pct_cadt: float | None = None
+    vmt: float | None = None
+    nhs_ind_label: str | None = None
+    median_type_label: str | None = None
+    hwy_des: str | None = None
+    speed_limit: int | None = None
+    truck_pct: float | None = None
+    functional_class_viz: str | None = None
+    surface_type_label: str | None = None
+    ownership_label: str | None = None
+    facility_type_label: str | None = None
+    sec_evac: str | None = None
 
 
 class RoadwayFeature(BaseModel):
@@ -101,3 +128,36 @@ class RoadwayManifestResponse(BaseModel):
 
 class BoundsResponse(BaseModel):
     bounds: list[float] | None
+
+
+class RoadwayLegendItem(BaseModel):
+    color: str
+    label: str
+    value: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+
+
+class RoadwayVisualizationOption(BaseModel):
+    id: str
+    texas_header: str
+    georgia_header: str | None = None
+    label: str
+    description: str
+    notes: str | None = None
+    kind: Literal["numeric", "categorical"] | None = None
+    map_mode: Literal["thematic", "details_only", "unavailable"]
+    implementation_status: Literal["staged", "derived", "popup_only", "unavailable"]
+    property_name: str | None = None
+    status: str
+    unit: str | None = None
+    default: bool = False
+    no_data_color: str = "#b9c5ca"
+    legend_items: list[RoadwayLegendItem] = Field(default_factory=list)
+
+
+class RoadwayVisualizationCatalogResponse(BaseModel):
+    default_option_id: str
+    thematic_options: list[RoadwayVisualizationOption] = Field(default_factory=list)
+    details_only_options: list[RoadwayVisualizationOption] = Field(default_factory=list)
+    unavailable_options: list[RoadwayVisualizationOption] = Field(default_factory=list)

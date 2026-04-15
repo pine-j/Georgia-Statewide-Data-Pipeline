@@ -19,11 +19,17 @@ from app.schemas import (
     DistrictOption,
     GeoJsonFeature,
     GeoJsonFeatureCollection,
+    HighwayTypeOption,
     RoadwayDetailResponse,
     RoadwayFeature,
     RoadwayFeatureCollection,
     RoadwayFeatureProperties,
     RoadwayManifestResponse,
+)
+from app.services.roadway_visualizations import (
+    THEMATIC_PROPERTY_SQL,
+    derive_hwy_des,
+    derive_percent_of_aadt,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -41,6 +47,30 @@ DISTRICT_LABELS = {
     5: "District 5 - Jesup",
     6: "District 6 - Cartersville",
     7: "District 7 - Chamblee",
+}
+HIGHWAY_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    ("IH", "IH", "Interstate"),
+    ("US", "US", "U.S. Route"),
+    ("SH", "SH", "State Route"),
+    ("LOCAL", "Local", "Local/Other"),
+)
+HIGHWAY_TYPE_ROUTE_FAMILY_BY_ID = {
+    highway_type_id: route_family
+    for highway_type_id, _, route_family in HIGHWAY_TYPE_OPTIONS
+}
+HIGHWAY_TYPE_ROUTE_FAMILY_ALIASES = {
+    "IH": "Interstate",
+    "INTERSTATE": "Interstate",
+    "I": "Interstate",
+    "US": "U.S. Route",
+    "U.S. ROUTE": "U.S. Route",
+    "US ROUTE": "U.S. Route",
+    "SH": "State Route",
+    "SR": "State Route",
+    "STATE ROUTE": "State Route",
+    "LOCAL": "Local/Other",
+    "LOCAL/OTHER": "Local/Other",
+    "OTHER": "Local/Other",
 }
 _STAGED_DATA_CACHE_STAMP: tuple[int | None, int | None] | None = None
 
@@ -65,6 +95,13 @@ def _normalize_int(value: Any) -> int | None:
 def _normalize_float(value: Any) -> float:
     if _is_missing(value):
         return 0.0
+
+    return float(value)
+
+
+def _normalize_float_or_none(value: Any) -> float | None:
+    if _is_missing(value):
+        return None
 
     return float(value)
 
@@ -98,6 +135,14 @@ def _normalize_json_value(value: Any) -> Any:
     return str(value)
 
 
+def _normalize_text(value: Any) -> str | None:
+    if _is_missing(value):
+        return None
+
+    text = str(value).strip()
+    return text or None
+
+
 def _format_functional_class(value: Any) -> str:
     if _is_missing(value):
         return "Unknown"
@@ -109,7 +154,10 @@ def _format_functional_class(value: Any) -> str:
     return str(numeric_value)
 
 
-def _format_road_name(route_id: Any) -> str:
+def _format_road_name(hwy_name: Any, route_id: Any) -> str:
+    if hwy_name and str(hwy_name).strip():
+        return str(hwy_name)
+
     if route_id and str(route_id).strip():
         return str(route_id)
 
@@ -121,6 +169,17 @@ def get_district_label(district_id: int | None) -> str:
         return "District"
 
     return DISTRICT_LABELS.get(district_id, f"District {district_id}")
+
+
+def list_highway_type_options() -> list[HighwayTypeOption]:
+    return [
+        HighwayTypeOption(
+            id=highway_type_id,
+            label=label,
+            route_family=route_family,
+        )
+        for highway_type_id, label, route_family in HIGHWAY_TYPE_OPTIONS
+    ]
 
 
 @lru_cache(maxsize=1)
@@ -169,6 +228,19 @@ def _selected_county_names(counties: list[str] | None) -> tuple[str, ...]:
     return tuple(sorted(selected_names))
 
 
+def _selected_highway_route_families(highway_types: list[str] | None) -> tuple[str, ...]:
+    if not highway_types:
+        return ()
+
+    selected_route_families = {
+        HIGHWAY_TYPE_ROUTE_FAMILY_ALIASES.get(str(highway_type).strip().upper())
+        for highway_type in highway_types
+    }
+    return tuple(
+        sorted(route_family for route_family in selected_route_families if route_family is not None)
+    )
+
+
 def _county_all_match_expression(column_name: str = "county_all") -> str:
     return f"(',' || replace(lower(COALESCE({column_name}, '')), ', ', ',') || ',')"
 
@@ -178,15 +250,16 @@ def _escape_sql_literal(value: str) -> str:
 
 
 def _build_sqlite_filters(
-    district: int | None,
+    district: tuple[int, ...] | None,
     county_names: tuple[str, ...],
+    highway_route_families: tuple[str, ...],
 ) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
 
-    if district is not None:
-        clauses.append("DISTRICT = ?")
-        params.append(district)
+    if district:
+        clauses.append("(" + " OR ".join("DISTRICT = ?" for _ in district) + ")")
+        params.extend(district)
 
     if county_names:
         county_expression = _county_all_match_expression()
@@ -195,17 +268,27 @@ def _build_sqlite_filters(
         )
         params.extend(f"%,{county_name},%" for county_name in county_names)
 
+    if highway_route_families:
+        clauses.append(
+            "(" + " OR ".join("ROUTE_FAMILY = ?" for _ in highway_route_families) + ")"
+        )
+        params.extend(highway_route_families)
+
     if not clauses:
         return "", params
 
     return f"WHERE {' AND '.join(clauses)}", params
 
 
-def _build_gpkg_where(district: int | None, county_names: tuple[str, ...]) -> str:
+def _build_gpkg_where(
+    district: tuple[int, ...] | None,
+    county_names: tuple[str, ...],
+    highway_route_families: tuple[str, ...],
+) -> str:
     clauses: list[str] = []
 
-    if district is not None:
-        clauses.append(f"DISTRICT = {district}")
+    if district:
+        clauses.append("(" + " OR ".join(f"DISTRICT = {d}" for d in district) + ")")
 
     if county_names:
         county_expression = _county_all_match_expression()
@@ -215,6 +298,13 @@ def _build_gpkg_where(district: int | None, county_names: tuple[str, ...]) -> st
         )
         clauses.append(f"({county_patterns})")
 
+    if highway_route_families:
+        route_family_patterns = " OR ".join(
+            f"ROUTE_FAMILY = '{_escape_sql_literal(route_family)}'"
+            for route_family in highway_route_families
+        )
+        clauses.append(f"({route_family_patterns})")
+
     if not clauses:
         return ""
 
@@ -223,13 +313,13 @@ def _build_gpkg_where(district: int | None, county_names: tuple[str, ...]) -> st
 
 def _build_boundary_where(
     layer_name: str,
-    district: int | None,
+    district: tuple[int, ...] | None,
     county_codes: tuple[str, ...],
 ) -> str:
     clauses: list[str] = []
 
-    if district is not None and layer_name in {"county_boundaries", "district_boundaries"}:
-        clauses.append(f"GDOT_DISTRICT = {district}")
+    if district and layer_name in {"county_boundaries", "district_boundaries"}:
+        clauses.append("(" + " OR ".join(f"GDOT_DISTRICT = {d}" for d in district) + ")")
 
     if county_codes and layer_name == "county_boundaries":
         quoted_codes = ", ".join(f"'{county_code}'" for county_code in county_codes)
@@ -305,8 +395,16 @@ def _open_sqlite() -> sqlite3.Connection:
 
 
 @lru_cache(maxsize=256)
-def _get_segment_count(district: int | None, county_names: tuple[str, ...]) -> int:
-    where_clause, params = _build_sqlite_filters(district, county_names)
+def _get_segment_count(
+    district: tuple[int, ...],
+    county_names: tuple[str, ...],
+    highway_route_families: tuple[str, ...],
+) -> int:
+    where_clause, params = _build_sqlite_filters(
+        district,
+        county_names,
+        highway_route_families,
+    )
     query = f"SELECT COUNT(*) FROM segments {where_clause}"
 
     with _open_sqlite() as connection:
@@ -319,10 +417,15 @@ def _get_segment_count(district: int | None, county_names: tuple[str, ...]) -> i
 
 @lru_cache(maxsize=256)
 def _get_class_summary_rows(
-    district: int | None,
+    district: tuple[int, ...],
     county_names: tuple[str, ...],
+    highway_route_families: tuple[str, ...],
 ) -> tuple[tuple[str, int, float], ...]:
-    where_clause, params = _build_sqlite_filters(district, county_names)
+    where_clause, params = _build_sqlite_filters(
+        district,
+        county_names,
+        highway_route_families,
+    )
     query = f"""
         SELECT
             FUNCTIONAL_CLASS,
@@ -351,13 +454,14 @@ def _get_class_summary_rows(
 
 @lru_cache(maxsize=256)
 def _get_filtered_bounds(
-    district: int | None,
+    district: tuple[int, ...],
     county_names: tuple[str, ...],
+    highway_route_families: tuple[str, ...],
 ) -> list[float] | None:
-    if _get_segment_count(district, county_names) == 0:
+    if _get_segment_count(district, county_names, highway_route_families) == 0:
         return None
 
-    if district is None and not county_names:
+    if not district and not county_names and not highway_route_families:
         info = pyogrio.read_info(STAGED_GPKG_PATH, layer="roadway_segments")
         total_bounds = info.get("total_bounds")
         if total_bounds is None:
@@ -365,7 +469,7 @@ def _get_filtered_bounds(
 
         return _project_bounds(tuple(float(value) for value in total_bounds))
 
-    where_clause = _build_gpkg_where(district, county_names)
+    where_clause = _build_gpkg_where(district, county_names, highway_route_families)
     _, feature_bounds = pyogrio.read_bounds(
         STAGED_GPKG_PATH,
         layer="roadway_segments",
@@ -387,15 +491,18 @@ def _get_filtered_bounds(
 def get_staged_roadway_manifest(
     state_code: str,
     chunk_size: int,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> RoadwayManifestResponse:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_manifest(state_code, chunk_size)
 
     county_names = _selected_county_names(counties)
-    total_segments = _get_segment_count(district, county_names)
+    highway_route_families = _selected_highway_route_families(highway_types)
+    district_tuple = tuple(sorted(district)) if district else ()
+    total_segments = _get_segment_count(district_tuple, county_names, highway_route_families)
     chunk_count = math.ceil(total_segments / chunk_size) if total_segments else 0
 
     return RoadwayManifestResponse(
@@ -403,21 +510,28 @@ def get_staged_roadway_manifest(
         total_segments=total_segments,
         chunk_size=chunk_size,
         chunk_count=chunk_count,
-        bounds=_get_filtered_bounds(district, county_names),
+        bounds=_get_filtered_bounds(district_tuple, county_names, highway_route_families),
     )
 
 
 def get_staged_roadway_summary(
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> AnalyticsSummaryResponse:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_summary(state_code)
 
     county_names = _selected_county_names(counties)
-    class_rows = _get_class_summary_rows(district, county_names)
+    highway_route_families = _selected_highway_route_families(highway_types)
+    district_tuple = tuple(sorted(district)) if district else ()
+    class_rows = _get_class_summary_rows(
+        district_tuple,
+        county_names,
+        highway_route_families,
+    )
     classes = [
         FunctionalClassSummary(
             functional_class=functional_class,
@@ -437,34 +551,55 @@ def get_staged_roadway_summary(
 
 def get_staged_roadway_bounds(
     state_code: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> list[float] | None:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return None
 
     county_names = _selected_county_names(counties)
-    return _get_filtered_bounds(district, county_names)
+    highway_route_families = _selected_highway_route_families(highway_types)
+    district_tuple = tuple(sorted(district)) if district else ()
+    return _get_filtered_bounds(district_tuple, county_names, highway_route_families)
 
 
 def get_staged_roadway_features(
     state_code: str,
     limit: int,
     offset: int = 0,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
 ) -> RoadwayFeatureCollection:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return RoadwayFeatureCollection(type="FeatureCollection", features=[])
 
     county_names = _selected_county_names(counties)
-    where_clause = _build_gpkg_where(district, county_names)
+    highway_route_families = _selected_highway_route_families(highway_types)
+    district_tuple = tuple(sorted(district)) if district else ()
+    where_clause = _build_gpkg_where(district_tuple, county_names, highway_route_families)
+    thematic_selects = [
+        f"{sql_expression} AS {alias}"
+        for alias, sql_expression in THEMATIC_PROPERTY_SQL.items()
+        if alias != "aadt"
+    ]
     query = " ".join(
         [
-            "SELECT RouteId, COUNTY_CODE, DISTRICT, FUNCTIONAL_CLASS,",
-            "AADT, segment_length_mi, unique_id, geom",
+            "SELECT",
+            "ROUTE_ID AS route_id,",
+            "HWY_NAME AS hwy_name,",
+            "COUNTY_CODE AS county_code,",
+            "DISTRICT AS district_id,",
+            "DISTRICT_LABEL AS district_label,",
+            "FUNCTIONAL_CLASS AS functional_class,",
+            "AADT AS aadt,",
+            "segment_length_mi AS length_miles,",
+            "unique_id AS unique_id,",
+            ", ".join(thematic_selects) + ",",
+            "geom",
             "FROM roadway_segments",
             where_clause,
             "ORDER BY ROWID",
@@ -482,11 +617,15 @@ def get_staged_roadway_features(
 
     features: list[RoadwayFeature] = []
     for item_index, row in enumerate(gdf.itertuples(index=False), start=offset + 1):
-        county_code = _normalize_county_code(getattr(row, "COUNTY_CODE", None))
+        county_code = _normalize_county_code(getattr(row, "county_code", None))
         county_name = county_code_to_name.get(county_code or "", "Unknown")
-        district_id = _normalize_int(getattr(row, "DISTRICT", None)) or 0
-        aadt = _normalize_int(getattr(row, "AADT", None))
-        length_miles = _normalize_float(getattr(row, "segment_length_mi", None))
+        district_id = _normalize_int(getattr(row, "district_id", None)) or 0
+        district_label = (
+            _normalize_text(getattr(row, "district_label", None))
+            or get_district_label(district_id)
+        )
+        aadt = _normalize_int(getattr(row, "aadt", None))
+        length_miles = _normalize_float(getattr(row, "length_miles", None))
         unique_id = str(getattr(row, "unique_id", "")).strip() or f"segment-{item_index}"
 
         features.append(
@@ -496,15 +635,58 @@ def get_staged_roadway_features(
                 properties=RoadwayFeatureProperties(
                     id=item_index,
                     unique_id=unique_id,
-                    road_name=_format_road_name(getattr(row, "RouteId", None)),
+                    road_name=_format_road_name(
+                        getattr(row, "hwy_name", None),
+                        getattr(row, "route_id", None),
+                    ),
                     functional_class=_format_functional_class(
-                        getattr(row, "FUNCTIONAL_CLASS", None)
+                        getattr(row, "functional_class", None)
                     ),
                     aadt=aadt,
                     length_miles=length_miles,
                     district=district_id,
-                    district_label=get_district_label(district_id),
+                    district_label=district_label,
                     county=county_name,
+                    system_code_label=_normalize_text(
+                        getattr(row, "system_code_label", None)
+                    ),
+                    direction_label=_normalize_text(
+                        getattr(row, "direction_label", None)
+                    ),
+                    num_lanes=_normalize_int(getattr(row, "num_lanes", None)),
+                    future_aadt_2044=_normalize_int(
+                        getattr(row, "future_aadt_2044", None)
+                    ),
+                    k_factor=_normalize_int(getattr(row, "k_factor", None)),
+                    d_factor=_normalize_int(getattr(row, "d_factor", None)),
+                    truck_aadt=_normalize_int(getattr(row, "truck_aadt", None)),
+                    pct_sadt=_normalize_float_or_none(getattr(row, "pct_sadt", None)),
+                    pct_cadt=_normalize_float_or_none(getattr(row, "pct_cadt", None)),
+                    vmt=_normalize_float_or_none(getattr(row, "vmt", None)),
+                    nhs_ind_label=_normalize_text(
+                        getattr(row, "nhs_ind_label", None)
+                    ),
+                    median_type_label=_normalize_text(
+                        getattr(row, "median_type_label", None)
+                    ),
+                    hwy_des=_normalize_text(getattr(row, "hwy_des", None)),
+                    speed_limit=_normalize_int(getattr(row, "speed_limit", None)),
+                    truck_pct=_normalize_float_or_none(getattr(row, "truck_pct", None)),
+                    functional_class_viz=_normalize_text(
+                        getattr(row, "functional_class_viz", None)
+                    ),
+                    surface_type_label=_normalize_text(
+                        getattr(row, "surface_type_label", None)
+                    ),
+                    ownership_label=_normalize_text(
+                        getattr(row, "ownership_label", None)
+                    ),
+                    facility_type_label=_normalize_text(
+                        getattr(row, "facility_type_label", None)
+                    ),
+                    sec_evac=_normalize_text(
+                        getattr(row, "sec_evac", None)
+                    ),
                 ),
             )
         )
@@ -515,7 +697,7 @@ def get_staged_roadway_features(
 def get_staged_boundary_features(
     state_code: str,
     boundary_type: str,
-    district: int | None = None,
+    district: list[int] | None = None,
     counties: list[str] | None = None,
 ) -> GeoJsonFeatureCollection:
     _ensure_staged_data_cache_fresh()
@@ -530,7 +712,8 @@ def get_staged_boundary_features(
         return GeoJsonFeatureCollection(type="FeatureCollection", features=[])
 
     county_codes = _selected_county_codes(counties)
-    where_clause = _build_boundary_where(layer_name, district, county_codes)
+    district_tuple = tuple(sorted(district)) if district else ()
+    where_clause = _build_boundary_where(layer_name, district_tuple, county_codes)
     query = " ".join(
         [
             "SELECT *",
@@ -597,6 +780,7 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
             for district_id in districts
         ],
         counties=sorted(counties, key=lambda item: item.county),
+        highway_types=list_highway_type_options(),
     )
 
 
@@ -617,17 +801,35 @@ def get_staged_roadway_detail(unique_id: str) -> RoadwayDetailResponse | None:
     county_name = county_code_to_name.get(county_code or "", "Unknown")
     district_id = _normalize_int(row["DISTRICT"]) or 0
     route_id = row["ROUTE_ID"] if "ROUTE_ID" in row.keys() else row["unique_id"]
+    hwy_name = row["HWY_NAME"] if "HWY_NAME" in row.keys() else None
 
     attributes = {
         key: _normalize_json_value(row[key])
         for key in row.keys()
     }
+    attributes["PCT_SADT"] = derive_percent_of_aadt(
+        row["SINGLE_UNIT_AADT_2024"] if "SINGLE_UNIT_AADT_2024" in row.keys() else None,
+        row["AADT"] if "AADT" in row.keys() else None,
+    )
+    attributes["PCT_CADT"] = derive_percent_of_aadt(
+        row["COMBO_UNIT_AADT_2024"] if "COMBO_UNIT_AADT_2024" in row.keys() else None,
+        row["AADT"] if "AADT" in row.keys() else None,
+    )
+    attributes["HWY_DES"] = derive_hwy_des(
+        row["NUM_LANES"] if "NUM_LANES" in row.keys() else None,
+        row["MEDIAN_TYPE"] if "MEDIAN_TYPE" in row.keys() else None,
+        row["ROUTE_FAMILY"] if "ROUTE_FAMILY" in row.keys() else None,
+        row["HPMS_ACCESS_CONTROL"] if "HPMS_ACCESS_CONTROL" in row.keys() else None,
+    )
+    district_label = (
+        _normalize_text(row["DISTRICT_LABEL"]) if "DISTRICT_LABEL" in row.keys() else None
+    ) or get_district_label(district_id)
 
     return RoadwayDetailResponse(
         unique_id=unique_id,
-        road_name=_format_road_name(route_id),
+        road_name=_format_road_name(hwy_name, route_id),
         district=district_id,
-        district_label=get_district_label(district_id),
+        district_label=district_label,
         county=county_name,
         attributes=attributes,
     )
