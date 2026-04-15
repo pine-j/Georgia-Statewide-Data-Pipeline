@@ -271,10 +271,29 @@ def _attribute_prefilter_mask(
     state-system segments (I, US, SR, and their suffix variants like SP,
     BU, CN) are kept so that concurrent route designations are not lost
     (e.g., a US Route segment carrying an SR evac corridor).
+
+    CR/CS segments are excluded UNLESS a parsed designation specifically
+    targets them (e.g., ``CR 780`` is a legitimate evac route).
     """
     if "ROUTE_TYPE_GDOT" not in segments.columns:
         return pd.Series(True, index=segments.index)
-    return ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+
+    # Check whether any designation explicitly targets a Local/Other type.
+    local_designations = [
+        (rt, num, sfx) for rt, num, sfx in designations if rt in _LOCAL_ROUTE_TYPES
+    ]
+
+    mask = ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+
+    # Re-include CR/CS segments that match a specific local designation.
+    if local_designations and "BASE_ROUTE_NUMBER" in segments.columns:
+        for route_type, number, _suffix in local_designations:
+            mask |= (
+                (segments["ROUTE_TYPE_GDOT"] == route_type)
+                & (segments["BASE_ROUTE_NUMBER"] == number)
+            )
+
+    return mask
 
 
 def _specific_designation_mask(
@@ -294,8 +313,20 @@ def _specific_designation_mask(
     for route_type, number, suffix in designations:
         if route_type == "I":
             if has_hwy:
-                prefix = f"I-{number}"
-                mask |= segments["HWY_NAME"].str.startswith(prefix, na=False)
+                if suffix:
+                    # "I 16 Spur" → match HWY_NAME containing "I-16" and
+                    # the suffix (e.g., "I-16 SPUR"), case-insensitive.
+                    suffix_upper = suffix.upper()
+                    prefix = f"I-{number}"
+                    mask |= (
+                        segments["HWY_NAME"].str.startswith(prefix, na=False)
+                        & segments["HWY_NAME"].str.upper().str.contains(
+                            suffix_upper, na=False
+                        )
+                    )
+                else:
+                    prefix = f"I-{number}"
+                    mask |= segments["HWY_NAME"].str.startswith(prefix, na=False)
         else:
             if has_rt and has_brn:
                 type_set = {route_type}

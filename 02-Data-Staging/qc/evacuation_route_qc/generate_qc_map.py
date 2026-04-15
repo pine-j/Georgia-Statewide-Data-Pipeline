@@ -173,10 +173,25 @@ def _attribute_prefilter_mask(
     segments: gpd.GeoDataFrame,
     designations: list[tuple[str, int, str | None]],
 ) -> pd.Series:
-    """Build boolean mask excluding Local/Other (CR/CS) segments."""
+    """Build boolean mask excluding Local/Other (CR/CS) segments.
+
+    CR/CS segments are re-included when a parsed designation explicitly
+    targets them (e.g., CR 780 is a legitimate evac route).
+    """
     if "ROUTE_TYPE_GDOT" not in segments.columns:
         return pd.Series(True, index=segments.index)
-    return ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+
+    local_designations = [
+        (rt, num, sfx) for rt, num, sfx in designations if rt in _LOCAL_ROUTE_TYPES
+    ]
+    mask = ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+    if local_designations and "BASE_ROUTE_NUMBER" in segments.columns:
+        for route_type, number, _suffix in local_designations:
+            mask |= (
+                (segments["ROUTE_TYPE_GDOT"] == route_type)
+                & (segments["BASE_ROUTE_NUMBER"] == number)
+            )
+    return mask
 
 
 def _specific_designation_mask(
@@ -191,8 +206,18 @@ def _specific_designation_mask(
     for route_type, number, suffix in designations:
         if route_type == "I":
             if has_hwy:
-                prefix = f"I-{number}"
-                mask |= segments["HWY_NAME"].str.startswith(prefix, na=False)
+                if suffix:
+                    suffix_upper = suffix.upper()
+                    prefix = f"I-{number}"
+                    mask |= (
+                        segments["HWY_NAME"].str.startswith(prefix, na=False)
+                        & segments["HWY_NAME"].str.upper().str.contains(
+                            suffix_upper, na=False
+                        )
+                    )
+                else:
+                    prefix = f"I-{number}"
+                    mask |= segments["HWY_NAME"].str.startswith(prefix, na=False)
         else:
             if has_rt and has_brn:
                 type_set = {route_type}
