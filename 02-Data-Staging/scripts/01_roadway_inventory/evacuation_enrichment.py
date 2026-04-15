@@ -255,16 +255,36 @@ def _parse_route_designations(
     return results
 
 
+# GDOT ROUTE_TYPE_GDOT values that are Local/Other (county roads, city
+# streets) — the primary source of false-positive evacuation matches.
+_LOCAL_ROUTE_TYPES = frozenset({"CR", "CS"})
+
+
 def _attribute_prefilter_mask(
     segments: gpd.GeoDataFrame,
     designations: list[tuple[str, int, str | None]],
 ) -> pd.Series:
-    """Build a boolean mask selecting segments that match any designation.
+    """Build a boolean mask excluding Local/Other segments.
 
-    Interstate routes are matched via ``HWY_NAME`` prefix (because GDOT
-    uses a 400-series ``BASE_ROUTE_NUMBER`` for Interstates that doesn't
-    correspond to the signed Interstate number).  SR/US/CR routes are
-    matched on ``ROUTE_TYPE_GDOT`` + ``BASE_ROUTE_NUMBER``.
+    The primary purpose is to eliminate false positives from county roads
+    and city streets that run parallel to evacuation corridors.  All
+    state-system segments (I, US, SR, and their suffix variants like SP,
+    BU, CN) are kept so that concurrent route designations are not lost
+    (e.g., a US Route segment carrying an SR evac corridor).
+    """
+    if "ROUTE_TYPE_GDOT" not in segments.columns:
+        return pd.Series(True, index=segments.index)
+    return ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+
+
+def _specific_designation_mask(
+    segments: gpd.GeoDataFrame,
+    designations: list[tuple[str, int, str | None]],
+) -> pd.Series:
+    """Build a boolean mask for segments matching a specific designation.
+
+    Used to determine ``match_method`` — segments matching here get
+    ``attribute+spatial``, others get ``spatial_only``.
     """
     mask = pd.Series(False, index=segments.index)
     has_hwy = "HWY_NAME" in segments.columns
@@ -273,12 +293,10 @@ def _attribute_prefilter_mask(
 
     for route_type, number, suffix in designations:
         if route_type == "I":
-            # Interstates: match HWY_NAME starting with "I-{number}"
             if has_hwy:
                 prefix = f"I-{number}"
                 mask |= segments["HWY_NAME"].str.startswith(prefix, na=False)
         else:
-            # SR/US/CR: match ROUTE_TYPE_GDOT + BASE_ROUTE_NUMBER
             if has_rt and has_brn:
                 type_set = {route_type}
                 if suffix:
@@ -591,17 +609,29 @@ def _hybrid_evac_overlay(
 
     results: dict[int, dict[str, object]] = {}
 
-    # --- Attribute + Spatial path for parseable evac features ---
+    # --- Attribute-prefiltered path for parseable evac features ---
+    # Prefilter excludes Local/Other (CR/CS) segments; state-system segments
+    # are kept to accommodate concurrent route designations.
     if not evac_parseable.empty:
         attr_results = _overlay_matches(
             segments,
             evac_parseable,
             name_field,
-            overlay_label="Evac (attribute+spatial)",
+            overlay_label="Evac (attribute-filtered)",
             attribute_prefilter=True,
         )
+        # Determine match_method per segment: "attribute+spatial" if the
+        # segment's own attributes match the evac designation specifically,
+        # "spatial_only" if it matched via proximity to a concurrent route.
+        all_designations: list[tuple[str, int, str | None]] = []
+        for desigs in evac_parseable["_designations"]:
+            all_designations.extend(desigs)
+        specific_mask = _specific_designation_mask(segments, all_designations)
         for idx, match in attr_results.items():
-            match["match_method"] = "attribute+spatial"
+            if specific_mask.loc[idx]:
+                match["match_method"] = "attribute+spatial"
+            else:
+                match["match_method"] = "spatial_only"
             results[idx] = match
 
     # --- Spatial-only path for unparseable evac features ---
@@ -615,7 +645,6 @@ def _hybrid_evac_overlay(
         for idx, match in spatial_results.items():
             match["match_method"] = "spatial_only"
             if idx in results:
-                # Merge: keep stronger overlap, combine names
                 existing = results[idx]
                 existing["names"] = list(
                     set(existing["names"]) | set(match.get("names", []))

@@ -166,11 +166,24 @@ def _parse_route_designations(
     return results
 
 
+_LOCAL_ROUTE_TYPES = frozenset({"CR", "CS"})
+
+
 def _attribute_prefilter_mask(
     segments: gpd.GeoDataFrame,
     designations: list[tuple[str, int, str | None]],
 ) -> pd.Series:
-    """Build boolean mask for segments matching any parsed designation."""
+    """Build boolean mask excluding Local/Other (CR/CS) segments."""
+    if "ROUTE_TYPE_GDOT" not in segments.columns:
+        return pd.Series(True, index=segments.index)
+    return ~segments["ROUTE_TYPE_GDOT"].isin(_LOCAL_ROUTE_TYPES)
+
+
+def _specific_designation_mask(
+    segments: gpd.GeoDataFrame,
+    designations: list[tuple[str, int, str | None]],
+) -> pd.Series:
+    """Build boolean mask for segments matching a specific designation."""
     mask = pd.Series(False, index=segments.index)
     has_hwy = "HWY_NAME" in segments.columns
     has_rt = "ROUTE_TYPE_GDOT" in segments.columns
@@ -636,7 +649,7 @@ def main() -> None:
     evac_unparseable = evac_routes[~parseable_mask].reset_index(drop=True)
     print(f"Evac split: {len(evac_parseable)} parseable, {len(evac_unparseable)} spatial-only")
 
-    # Attribute + spatial for parseable routes
+    # Attribute-filtered pass for parseable routes (excludes Local/Other)
     evac_attr_flagged = flag_matches(
         roads,
         evac_parseable,
@@ -645,7 +658,13 @@ def main() -> None:
         attribute_prefilter=True,
     )
     if not evac_attr_flagged.empty:
-        evac_attr_flagged["match_method"] = "attribute+spatial"
+        # Determine per-segment match_method based on specific designation
+        all_designations: list[tuple[str, int, str | None]] = []
+        for desigs in evac_parseable["_designations"]:
+            all_designations.extend(desigs)
+        specific_mask = _specific_designation_mask(evac_attr_flagged, all_designations)
+        evac_attr_flagged["match_method"] = "spatial_only"
+        evac_attr_flagged.loc[specific_mask, "match_method"] = "attribute+spatial"
 
     # Spatial-only for unparseable routes
     evac_spatial_flagged = flag_matches(
