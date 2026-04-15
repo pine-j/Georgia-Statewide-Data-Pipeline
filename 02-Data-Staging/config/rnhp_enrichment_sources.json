@@ -14,10 +14,9 @@
       "layer_name": "SpeedZone OffSystem",
       "service_url": "https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9",
       "local_geojson": "01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/speed_zone_off_system.geojson",
-      "match_key": "spatial",
-      "route_id_field": "RNH_ROUTE_ID",
+      "match_key": "road_name_county",
       "active_filter": "RECORD_STATUS_CD = 'ACTV'",
-      "note": "Layer 9 has no FROM/TO_MILEPOINT_STATEWIDE fields — all records use spatial matching"
+      "note": "Layer 9 lacks geometry and milepoints for most records. Matching uses normalized ROAD_NAME + COUNTY_FIPS_CD against segment HPMS_ROUTE_NAME + COUNTY_CODE."
     }
   },
   "query_batch_size": 500

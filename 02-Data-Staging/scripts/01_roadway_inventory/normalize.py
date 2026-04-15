@@ -33,7 +33,11 @@ from shapely.ops import substring
 
 from evacuation_enrichment import apply_evacuation_enrichment, write_evacuation_summary
 from hpms_enrichment import apply_hpms_enrichment, write_hpms_enrichment_summary
-from rnhp_enrichment import apply_rnhp_enrichment, write_enrichment_summary
+from rnhp_enrichment import (
+    apply_speed_zone_enrichment,
+    apply_off_system_speed_zone_enrichment,
+    write_enrichment_summary,
+)
 from route_family import classify_route_families
 from route_verification import (
     apply_signed_route_verification,
@@ -486,6 +490,7 @@ def prepare_route_attributes(routes: gpd.GeoDataFrame, current_traffic: pd.DataF
     routes["DISTRICT"] = routes["GDOT_District"]
 
     routes = sync_derived_alias_fields(routes)
+    routes["FUNCTION_TYPE"] = routes["PARSED_FUNCTION_TYPE"]
     routes["ROUTE_TYPE"] = routes["PARSED_SYSTEM_CODE"]
     routes["ROUTE_NUMBER"] = routes["PARSED_ROUTE_NUMBER"]
     routes["ROUTE_SUFFIX"] = routes["PARSED_SUFFIX"]
@@ -2487,7 +2492,7 @@ def main() -> None:
         logger.warning("No CRS set on segmented network; cannot reproject")
 
     segmented = compute_segment_length(segmented)
-    segmented = apply_rnhp_enrichment(segmented)
+    segmented = apply_speed_zone_enrichment(segmented)
     existing_gpkg_path = SPATIAL_DIR / "base_network.gpkg"
     county_boundaries_for_backfill = load_county_boundaries_for_attribute_backfill(existing_gpkg_path)
     segmented = backfill_county_district_from_geometry(
@@ -2495,6 +2500,7 @@ def main() -> None:
         county_boundaries_for_backfill,
     )
     segmented = apply_hpms_enrichment(segmented)
+    segmented = apply_off_system_speed_zone_enrichment(segmented)
     # Signed-route verification precedence:
     # 1. HPMS enrichment runs first — broad coverage, gap-fills AADT and
     #    attributes, sets initial signed-route classification from federal

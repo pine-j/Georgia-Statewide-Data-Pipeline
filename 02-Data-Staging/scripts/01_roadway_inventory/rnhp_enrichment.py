@@ -3,6 +3,7 @@
 Current enrichment layers:
 - SpeedZone OnSystem: posted speed limits for state highway routes
 - SpeedZone OffSystem: posted speed limits for non-state-highway roads
+  (matched by normalized road name + county FIPS code)
 
 Downloads are cached under 01-Raw-Data/Roadway-Inventory/GDOT_GPAS/rnhp_enrichment/.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -225,25 +227,51 @@ def apply_speed_zone_enrichment(
     return enriched
 
 
-def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Normalize SpeedZone OffSystem into a spatially-joinable GeoDataFrame.
+_ROAD_SUFFIX_MAP: dict[str, str] = {
+    "STREET": "ST", "DRIVE": "DR", "ROAD": "RD", "AVENUE": "AVE",
+    "BOULEVARD": "BLVD", "LANE": "LN", "COURT": "CT", "CIRCLE": "CIR",
+    "PLACE": "PL", "TRAIL": "TRL", "WAY": "WAY", "PARKWAY": "PKWY",
+    "TERRACE": "TER", "HIGHWAY": "HWY", "EXTENSION": "EXT",
+    "CROSSING": "XING", "POINT": "PT", "LOOP": "LP",
+    "NORTH": "N", "SOUTH": "S", "EAST": "E", "WEST": "W",
+    "NORTHEAST": "NE", "NORTHWEST": "NW", "SOUTHEAST": "SE", "SOUTHWEST": "SW",
+}
 
-    Layer 9 has no FROM/TO_MILEPOINT_STATEWIDE fields, so all records use
-    spatial matching.  The ``match_method`` column is always ``"spatial"``.
+
+def _normalize_road_name(name: Any) -> str:
+    """Canonicalize a road name for matching.
+
+    Strips school-zone suffixes, parenthetical route codes, slash
+    alternatives, punctuation, and normalizes common road-type suffixes
+    (STREET -> ST, DRIVE -> DR, etc.).
     """
+    if pd.isna(name):
+        return ""
+    s = str(name).strip().upper().rstrip(";")
+    s = re.sub(r"\*+", "", s)
+    s = re.sub(r"\n", " ", s)
+    s = re.sub(r"SCHOOL\s*ZONE", "", s)
+    s = re.sub(r"\(.*?\)", "", s)
+    s = re.sub(r"/.*$", "", s)
+    s = re.sub(r"[.\-,'\"]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    words = s.split()
+    words = [_ROAD_SUFFIX_MAP.get(w, w) for w in words]
+    return " ".join(words)
 
-    if gdf.empty:
-        return gpd.GeoDataFrame(columns=[
-            "SPEED_LIMIT", "IS_SCHOOL_ZONE", "match_method", "geometry",
-        ])
 
+def _build_off_system_name_lookup(
+    gdf: gpd.GeoDataFrame,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Build a (normalized_name, county_fips) -> speed-zone record lookup.
+
+    When multiple speed zone records share the same (name, county) key,
+    the key is only kept if all records agree on the same speed limit
+    (unambiguous).  Keys with conflicting speed limits are skipped.
+    School-zone flag is OR'd across agreeing records.
+    """
     df = gdf.copy()
-    geom_col = df.geometry.name
     df.columns = [c.strip().upper() if isinstance(c, str) else c for c in df.columns]
-    # Restore geometry column name after uppercasing
-    if geom_col.upper() in df.columns and geom_col.upper() != geom_col:
-        df = df.rename(columns={geom_col.upper(): geom_col})
-    df = df.set_geometry(geom_col)
 
     active_col = "RECORD_STATUS_CD"
     if active_col in df.columns:
@@ -251,109 +279,67 @@ def _normalize_off_system_speed_zones(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame
         df = df[df[active_col].astype(str).str.strip().str.upper() == "ACTV"]
         LOGGER.info("Filtered to active off-system speed zones: %d -> %d", before, len(df))
 
-    result = gpd.GeoDataFrame(geometry=df.geometry, crs=df.crs)
+    df = df[df["ROAD_NAME"].notna() & df["COUNTY_FIPS_CD"].notna()]
 
-    result["SPEED_LIMIT"] = pd.to_numeric(
+    speed = pd.to_numeric(
         df["SPEED_LIMIT_CD"].astype(str).str.strip(), errors="coerce"
-    ).astype("Int64")
-    result["IS_SCHOOL_ZONE"] = (
+    )
+    df = df[speed.notna()].copy()
+    df["_speed"] = speed[speed.notna()].astype(int)
+
+    df["_is_school"] = (
         df["IS_SCHOOL_ZONE_CD"].astype(str).str.strip().str.upper() == "Y"
         if "IS_SCHOOL_ZONE_CD" in df.columns
         else False
     )
 
-    result = result.dropna(subset=["SPEED_LIMIT"])
-    result["match_method"] = "spatial"
+    df["_name_norm"] = df["ROAD_NAME"].map(_normalize_road_name)
+    df["_county"] = df["COUNTY_FIPS_CD"].astype(str).str.strip().str.zfill(3)
+    df = df[df["_name_norm"].str.len() > 0]
 
-    LOGGER.info("Off-system speed zones normalized: %d records (all spatial)", len(result))
+    # Group by (name, county) — collect all speed limits per key
+    key_records: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for _, row in df.iterrows():
+        key = (row["_name_norm"], row["_county"])
+        key_records.setdefault(key, []).append({
+            "SPEED_LIMIT": row["_speed"],
+            "IS_SCHOOL_ZONE": row["_is_school"],
+        })
 
-    return result
-
-
-def _spatial_match_off_system(
-    segments: gpd.GeoDataFrame,
-    speed_zones: gpd.GeoDataFrame,
-) -> dict[Any, dict[str, Any]]:
-    """Spatially match off-system speed zones to roadway segments.
-
-    Returns a dict of segment index -> best speed-zone record.  When a segment
-    intersects multiple zones the one with the longest intersection is chosen.
-    """
-
-    spatial_zones = speed_zones[speed_zones["match_method"] == "spatial"].copy()
-    if spatial_zones.empty:
-        return {}
-
-    if segments.crs is None or spatial_zones.crs is None:
-        LOGGER.warning("Cannot spatially match without CRS on both inputs")
-        return {}
-    if segments.crs != spatial_zones.crs:
-        spatial_zones = spatial_zones.to_crs(segments.crs)
-
-    # Drop records with null/empty geometry before joining
-    spatial_zones = spatial_zones[~spatial_zones.geometry.is_empty & spatial_zones.geometry.notna()]
-    segments = segments[~segments.geometry.is_empty & segments.geometry.notna()]
-    if segments.empty:
-        return {}
+    # Only keep unambiguous keys: all records for the key agree on speed limit
+    lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    ambiguous_count = 0
+    for key, records in key_records.items():
+        speed_limits = {r["SPEED_LIMIT"] for r in records}
+        if len(speed_limits) == 1:
+            lookup[key] = {
+                "SPEED_LIMIT": records[0]["SPEED_LIMIT"],
+                "IS_SCHOOL_ZONE": any(r["IS_SCHOOL_ZONE"] for r in records),
+            }
+        else:
+            ambiguous_count += 1
 
     LOGGER.info(
-        "Running spatial join: %d segments x %d off-system speed zones",
-        len(segments), len(spatial_zones),
+        "Off-system name lookup: %d unambiguous keys, %d ambiguous (skipped), from %d records",
+        len(lookup), ambiguous_count, len(df),
     )
-
-    joined = gpd.sjoin(
-        segments[["geometry"]],
-        spatial_zones[["geometry", "SPEED_LIMIT", "IS_SCHOOL_ZONE"]],
-        how="inner",
-        predicate="intersects",
-    )
-
-    if joined.empty:
-        LOGGER.info("Spatial join produced no matches")
-        return {}
-
-    results: dict[Any, dict[str, Any]] = {}
-    MIN_OVERLAP = 0.0  # require positive overlap (reject point-touches)
-
-    for seg_idx, group in joined.groupby(joined.index):
-        best_limit = None
-        best_school = False
-        best_overlap = MIN_OVERLAP
-        seg_geom = segments.loc[seg_idx, "geometry"]
-        for _, row in group.iterrows():
-            zone_geom = spatial_zones.loc[row["index_right"], "geometry"]
-            try:
-                if zone_geom.geom_type in ("Point", "MultiPoint"):
-                    overlap = seg_geom.length if seg_geom.intersects(zone_geom) else 0.0
-                else:
-                    overlap = seg_geom.intersection(zone_geom).length
-            except Exception:
-                overlap = 0.0
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_limit = row["SPEED_LIMIT"]
-                best_school = row.get("IS_SCHOOL_ZONE", False)
-        if best_limit is not None:
-            results[seg_idx] = {
-                "SPEED_LIMIT": best_limit,
-                "IS_SCHOOL_ZONE": best_school,
-            }
-
-    LOGGER.info("Spatial matching produced %d segment matches", len(results))
-    return results
+    return lookup
 
 
 def apply_off_system_speed_zone_enrichment(
     gdf: gpd.GeoDataFrame,
     refresh: bool = False,
 ) -> gpd.GeoDataFrame:
-    """Apply SpeedZone OffSystem data to segments not already speed-enriched.
+    """Apply SpeedZone OffSystem data via road-name + county matching.
 
-    Layer 9 has no milepoint fields, so all matching is spatial.  Only
-    non-state-highway segments (``PARSED_SYSTEM_CODE != "1"``) without an
-    existing ``SPEED_LIMIT`` are candidates.
+    Layer 9 records have ROAD_NAME and COUNTY_FIPS_CD but largely lack
+    geometry and milepoint fields.  Matching is done by normalizing road
+    names (suffix canonicalization, stripping school-zone tags, etc.) and
+    joining on (normalized_name, county_code).
+
+    Only fills segments where ``SPEED_LIMIT`` is still null after the
+    OnSystem pass.
     """
-
     enriched = gdf.copy()
 
     try:
@@ -362,35 +348,40 @@ def apply_off_system_speed_zone_enrichment(
         LOGGER.warning("Off-system speed zone enrichment unavailable: %s", exc)
         return enriched
 
-    off_system = _normalize_off_system_speed_zones(raw)
-    if off_system.empty:
+    lookup = _build_off_system_name_lookup(raw)
+    if not lookup:
         LOGGER.warning("No usable off-system speed zone records after normalization")
         return enriched
 
     already_filled = enriched["SPEED_LIMIT"].notna()
-    off_system_mask = enriched["PARSED_SYSTEM_CODE"].astype(str) != "1"
-    unfilled_mask = ~already_filled & off_system_mask
-    unfilled_segments = enriched.loc[unfilled_mask]
-    if unfilled_segments.empty:
-        LOGGER.info("No unfilled off-system segments to match — skipping off-system enrichment")
+
+    if "HPMS_ROUTE_NAME" not in enriched.columns:
+        LOGGER.warning("HPMS_ROUTE_NAME column missing — cannot match off-system speed zones")
         return enriched
 
-    spatial_matches = _spatial_match_off_system(unfilled_segments, off_system)
-    spatial_count = 0
+    seg_names = enriched["HPMS_ROUTE_NAME"].map(_normalize_road_name)
+    seg_counties = enriched["COUNTY_CODE"].astype(str).str.strip().str.zfill(3)
+
+    match_count = 0
     school_count = 0
-    for idx, match in spatial_matches.items():
+
+    candidates = enriched.index[~already_filled & seg_names.str.len().gt(0)]
+    for idx in candidates:
+        key = (seg_names.at[idx], seg_counties.at[idx])
+        match = lookup.get(key)
+        if match is None:
+            continue
         enriched.at[idx, "SPEED_LIMIT"] = match["SPEED_LIMIT"]
-        enriched.at[idx, "IS_SCHOOL_ZONE"] = match.get("IS_SCHOOL_ZONE", False)
+        enriched.at[idx, "IS_SCHOOL_ZONE"] = match["IS_SCHOOL_ZONE"]
         enriched.at[idx, "SPEED_LIMIT_SOURCE"] = "gdot_speed_zone_off_system"
-        spatial_count += 1
-        if match.get("IS_SCHOOL_ZONE", False):
+        match_count += 1
+        if match["IS_SCHOOL_ZONE"]:
             school_count += 1
 
     LOGGER.info(
-        "Off-system spatial matches: %d segments (including %d school zones)",
-        spatial_count, school_count,
+        "Off-system name matches: %d segments (including %d school zones)",
+        match_count, school_count,
     )
-
     return enriched
 
 

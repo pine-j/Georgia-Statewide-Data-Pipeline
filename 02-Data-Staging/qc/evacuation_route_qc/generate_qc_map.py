@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import box
+from shapely.geometry import LineString, MultiLineString, box
 
 
 OUTPUT_DIR = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\qc\evacuation_route_qc")
@@ -19,16 +20,28 @@ ROADWAY_CRS = "EPSG:32617"
 WEB_CRS = "EPSG:4326"
 # Tiered overlap thresholds — length-adaptive to avoid filtering out short
 # segments that sit entirely within an evacuation corridor.
+#   Short  (<400 m):   ratio >= 40 % only  (no absolute minimum)
+#   Normal (400 m–10 km): overlap >= 150 m AND ratio >= 20 %
+#   Mega   (>10 km):   overlap >= 200 m AND ratio >= 50 %
+#                       OR clipped-to-corridor portion meets normal thresholds
 SHORT_SEGMENT_MAX_M = 400.0
-SHORT_SEGMENT_MIN_RATIO = 0.50
+SHORT_SEGMENT_MIN_RATIO = 0.40
 NORMAL_MIN_OVERLAP_M = 150.0
-NORMAL_MIN_RATIO = 0.08
-NORMAL_HIGH_OVERLAP_M = 300.0
-NORMAL_HIGH_OVERLAP_MIN_RATIO = 0.03
+NORMAL_MIN_RATIO = 0.20
 MEGA_SEGMENT_LENGTH_M = 10_000.0
-MEGA_MIN_OVERLAP_M = 500.0
-MEGA_MIN_RATIO = 0.05
+MEGA_MIN_OVERLAP_M = 200.0
+MEGA_MIN_RATIO = 0.50
 MATCH_BUFFER_M = 30.0
+MAX_ALIGNMENT_ANGLE_DEG = 30.0
+# Contraflow-specific spatial parameters — tighter than general evacuation
+# routes because contraflow applies only to specific Interstate lanes and
+# both geometries (GDOT Interstates + contraflow polylines) are high-quality.
+CONTRAFLOW_BUFFER_M = 15.0
+CONTRAFLOW_MIN_OVERLAP_M = 200.0
+CONTRAFLOW_MIN_RATIO = 0.30
+CONTRAFLOW_SHORT_MIN_RATIO = 0.60
+CONTRAFLOW_MAX_ALIGNMENT_ANGLE_DEG = 20.0
+CONTRAFLOW_MIN_INSIDE_CORRIDOR_RATIO = 0.25
 CONTEXT_SAMPLE_SIZE = 5000
 RANDOM_STATE = 42
 ROADWAY_COLUMNS = [
@@ -42,6 +55,32 @@ ROADWAY_COLUMNS = [
     "geometry",
 ]
 CONTEXT_COLUMNS = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "geometry"]
+
+
+def _line_azimuth(geom):
+    """Azimuth (radians) from first to last coordinate of a line geometry."""
+    if geom is None or geom.is_empty:
+        return None
+    if isinstance(geom, MultiLineString):
+        geom = max(geom.geoms, key=lambda g: g.length)
+    if not isinstance(geom, LineString):
+        return None
+    coords = list(geom.coords)
+    if len(coords) < 2:
+        return None
+    dx = coords[-1][0] - coords[0][0]
+    dy = coords[-1][1] - coords[0][1]
+    if abs(dx) < 1e-10 and abs(dy) < 1e-10:
+        return None
+    return math.atan2(dx, dy)
+
+
+def _alignment_angle_deg(az1, az2):
+    """Minimum angle (degrees) between two azimuths, direction-independent."""
+    if az1 is None or az2 is None:
+        return None
+    diff = abs(az1 - az2) % math.pi
+    return math.degrees(min(diff, math.pi - diff))
 
 
 def load_routes(path: Path, target_crs: str) -> gpd.GeoDataFrame:
@@ -99,7 +138,19 @@ def flag_matches(
     route_name_field: str | None = None,
     enforce_route_family: bool = False,
     interstate_only: bool = False,
+    buffer_m: float | None = None,
+    min_overlap_m: float | None = None,
+    min_ratio: float | None = None,
+    short_min_ratio: float | None = None,
+    max_alignment_deg: float | None = None,
 ) -> gpd.GeoDataFrame:
+    # Resolve per-call threshold overrides (fall back to module-level defaults)
+    eff_buffer_m = buffer_m if buffer_m is not None else MATCH_BUFFER_M
+    eff_min_overlap_m = min_overlap_m if min_overlap_m is not None else NORMAL_MIN_OVERLAP_M
+    eff_min_ratio = min_ratio if min_ratio is not None else NORMAL_MIN_RATIO
+    eff_short_min_ratio = short_min_ratio if short_min_ratio is not None else SHORT_SEGMENT_MIN_RATIO
+    eff_max_alignment_deg = max_alignment_deg if max_alignment_deg is not None else MAX_ALIGNMENT_ANGLE_DEG
+
     eligible = roads
     if interstate_only and "ROUTE_FAMILY" in roads.columns:
         eligible = roads.loc[roads["ROUTE_FAMILY"] == "Interstate"]
@@ -113,8 +164,9 @@ def flag_matches(
     if route_name_field and route_name_field in routes.columns:
         routes_indexed[route_name_field] = routes[route_name_field].values
     routes_indexed = routes_indexed.reset_index(drop=True).rename_axis("route_idx").reset_index()
+    original_route_geoms = routes_indexed.set_index("route_idx").geometry
     buffered = routes_indexed.copy()
-    buffered["geometry"] = buffered.geometry.buffer(MATCH_BUFFER_M)
+    buffered["geometry"] = buffered.geometry.buffer(eff_buffer_m)
     candidates = gpd.sjoin(
         eligible,
         buffered[["route_idx", "geometry"] + ([route_name_field] if route_name_field and route_name_field in buffered.columns else [])],
@@ -159,28 +211,46 @@ def flag_matches(
 
             corridor = buffered_geoms.loc[row["route_idx"]]
             try:
-                overlap_len = float(seg_geom.intersection(corridor).length)
+                overlap_geom = seg_geom.intersection(corridor)
+                overlap_len = float(overlap_geom.length)
             except Exception:
+                overlap_geom = None
                 overlap_len = 0.0
 
             overlap_ratio = overlap_len / seg_length if seg_length > 0 else 0.0
             is_short = seg_length < SHORT_SEGMENT_MAX_M
             is_mega = seg_length > MEGA_SEGMENT_LENGTH_M
             if is_short:
-                accepted = overlap_ratio >= SHORT_SEGMENT_MIN_RATIO
+                accepted = overlap_ratio >= eff_short_min_ratio
             elif is_mega:
                 accepted = (
                     overlap_len >= MEGA_MIN_OVERLAP_M
                     and overlap_ratio >= MEGA_MIN_RATIO
                 )
+                # Fallback: accept mega-segments whose clipped-to-corridor
+                # portion meets the normal absolute threshold.
+                if not accepted and overlap_len >= eff_min_overlap_m:
+                    accepted = True
             else:
                 accepted = (
-                    overlap_len >= NORMAL_MIN_OVERLAP_M
-                    and overlap_ratio >= NORMAL_MIN_RATIO
-                ) or (
-                    overlap_len >= NORMAL_HIGH_OVERLAP_M
-                    and overlap_ratio >= NORMAL_HIGH_OVERLAP_MIN_RATIO
+                    overlap_len >= eff_min_overlap_m
+                    and overlap_ratio >= eff_min_ratio
                 )
+
+            if accepted and not is_short and overlap_geom is not None:
+                route_geom = original_route_geoms.loc[row["route_idx"]]
+                try:
+                    route_section = route_geom.intersection(
+                        seg_geom.buffer(eff_buffer_m)
+                    )
+                except Exception:
+                    route_section = None
+                seg_az = _line_azimuth(overlap_geom)
+                route_az = _line_azimuth(route_section)
+                angle = _alignment_angle_deg(seg_az, route_az)
+                if angle is not None and angle > eff_max_alignment_deg:
+                    accepted = False
+
             if not accepted:
                 continue
 
@@ -462,13 +532,55 @@ def main() -> None:
         route_name_field="ROUTE_NAME",
         enforce_route_family=False,
     )
+
+    # Corridor proximity post-filter: remove segments where <10% of their
+    # length sits inside the evacuation corridor (catches long segments that
+    # clip a corridor briefly but extend far beyond it).
+    MIN_INSIDE_CORRIDOR_RATIO = 0.10
+    if not evac_flagged.empty:
+        evac_corridor = evac_routes.geometry.buffer(MATCH_BUFFER_M).union_all()
+        inside_lens = evac_flagged.geometry.intersection(evac_corridor).length
+        seg_lens = evac_flagged.geometry.length
+        inside_ratios = inside_lens / seg_lens.replace(0, 1)
+        before = len(evac_flagged)
+        evac_flagged = evac_flagged[inside_ratios >= MIN_INSIDE_CORRIDOR_RATIO].reset_index(drop=True)
+        removed = before - len(evac_flagged)
+        if removed > 0:
+            print(f"Corridor proximity filter removed {removed} segments (kept {len(evac_flagged)})")
+
+        # Clip mega-segment geometries to the corridor so the QC map shows
+        # only the portion running along evacuation routes, not the full
+        # 300+ km line for statewide DEC segments.
+        mega_mask = evac_flagged.geometry.length > MEGA_SEGMENT_LENGTH_M
+        if mega_mask.any():
+            clipped = evac_flagged.loc[mega_mask, "geometry"].intersection(evac_corridor)
+            evac_flagged.loc[mega_mask, "geometry"] = clipped
+            print(f"Clipped {mega_mask.sum()} mega-segment geometries to corridor")
+
     contraflow_flagged = flag_matches(
         roads,
         contraflow_routes,
         ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"],
         route_name_field="TITLE",
         interstate_only=True,
+        buffer_m=CONTRAFLOW_BUFFER_M,
+        min_overlap_m=CONTRAFLOW_MIN_OVERLAP_M,
+        min_ratio=CONTRAFLOW_MIN_RATIO,
+        short_min_ratio=CONTRAFLOW_SHORT_MIN_RATIO,
+        max_alignment_deg=CONTRAFLOW_MAX_ALIGNMENT_ANGLE_DEG,
     )
+
+    # Corridor proximity post-filter for contraflow
+    if not contraflow_flagged.empty:
+        contra_corridor = contraflow_routes.geometry.buffer(CONTRAFLOW_BUFFER_M).union_all()
+        inside_lens = contraflow_flagged.geometry.intersection(contra_corridor).length
+        seg_lens = contraflow_flagged.geometry.length
+        inside_ratios = inside_lens / seg_lens.replace(0, 1)
+        before = len(contraflow_flagged)
+        contraflow_flagged = contraflow_flagged[inside_ratios >= CONTRAFLOW_MIN_INSIDE_CORRIDOR_RATIO].reset_index(drop=True)
+        removed = before - len(contraflow_flagged)
+        if removed > 0:
+            print(f"Contraflow corridor proximity filter removed {removed} segments (kept {len(contraflow_flagged)})")
 
     flagged_ids = set(evac_flagged["unique_id"]).union(set(contraflow_flagged["unique_id"]))
     context = build_context_layer(roads, flagged_ids, tuple(evac_bounds))

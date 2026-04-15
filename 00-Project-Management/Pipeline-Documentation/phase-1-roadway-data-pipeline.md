@@ -20,7 +20,7 @@ Current closeout position:
 | 2 | **GDOT Traffic Data 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Current AADT, future AADT, truck AADT, VMT, K-factor, D-factor, traffic class, and count station numbers. The traffic intervals define the segment boundaries — routes are sliced at traffic milepoint breaks to assign per-segment traffic values. |
 | 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Gap-fill for AADT, future AADT, and roadway attributes where GDOT values are missing. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
 | 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags for state highway routes, matched by route ID and milepoint overlap. |
-| 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads. Records with ROUTE_ID use milepoint matching; records without ROUTE_ID use spatial (geometry) matching. |
+| 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads (81,778 features). Most records lack geometry; matched by normalized road name + county FIPS code. |
 | 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
 | 7 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
 | 8 | **GDOT EOC Hurricane Evacuation Routes** | [EOC MapServer/7](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/7) | Hurricane evacuation route polylines (268 features) used to flag roadway segments as evacuation routes via spatial overlay. Also includes contraflow routes ([Layer 8](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/8), 12 features). |
@@ -34,7 +34,7 @@ GDOT Road Inventory GDB -> Base geometry + route attributes (206,994 routes)
 GDOT Traffic GDB -> Segment at traffic intervals -> assign AADT, VMT, factors (46,029 traffic records)
          |
          v
-GDOT GPAS SpeedZone -> Enrich: posted speed limits (OnSystem by route + milepoint; OffSystem by spatial match)
+GDOT GPAS SpeedZone -> Enrich: posted speed limits (OnSystem by route + milepoint; OffSystem by road name + county)
          |
          v
 GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
@@ -472,7 +472,7 @@ GPAS SpeedZone layers before the HPMS and GPAS signed-route passes.
 
 **OnSystem** (state highway routes):
 
-Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10`
+Source: [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10)
 
 Matching method:
 
@@ -495,20 +495,31 @@ Speed limit distribution:
 - 65 mph: `940` segments
 - 70 mph: `629` segments
 
-**OffSystem** (non-state-highway roads):
+**OffSystem** (county roads, city streets):
 
-Source: `https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9`
+Source: [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) — 81,778 features
 
-This layer contains 81,778 speed zone features for county roads, city streets,
-and other non-state-highway roads. Unlike OnSystem, layer 9 has no
-`FROM/TO_MILEPOINT_STATEWIDE` fields, so all matching is spatial:
+Layer 9 records mostly lack geometry (only 1,696/81,778 have it) and have no
+milepoint fields.  All 80,199 active records have `ROAD_NAME` and
+`COUNTY_FIPS_CD`, so matching is done by normalized road name + county code:
 
-- Geometry-based `sjoin(predicate="intersects")` against unfilled non-state-highway segments (`PARSED_SYSTEM_CODE != 1`)
-- When multiple zones intersect a segment, the one with the longest geometric overlap is selected
-- Point-geometry zones are matched by intersection proximity (using segment length as overlap score)
-- Zero-overlap touches are rejected
+- Filter to active records (`RECORD_STATUS_CD = 'ACTV'`)
+- Normalize road names: canonicalize suffixes (STREET->ST, DRIVE->DR, etc.), strip "SCHOOL ZONE" tags, remove parenthetical route codes, remove slash alternatives, normalize punctuation
+- Build a `(normalized_name, county_fips)` lookup from speed zone records
+- Join against segment `HPMS_ROUTE_NAME` (same normalization) + `COUNTY_CODE`
+- Only fills segments where `SPEED_LIMIT` is still null after the OnSystem pass
+- When multiple speed zones share the same (name, county) key but disagree on speed limit, the key is skipped as ambiguous (3,270 ambiguous keys skipped)
+- Runs after HPMS enrichment (requires `HPMS_ROUTE_NAME` column)
 
-Only fills segments that do not already have a `SPEED_LIMIT` from the OnSystem pass. Source is tagged as `gdot_speed_zone_off_system`.
+Current enrichment results:
+
+- `29,672` segments with posted speed limits
+- `582` school zone segments flagged
+- `31,674` unambiguous (name, county) keys used; `3,270` ambiguous keys skipped
+
+~30.7% of speed zone road names (10,546 unique roads) do not appear in the
+GDOT Road Inventory at all — these are local streets not digitized by GDOT
+and cannot be matched regardless of approach.
 
 Current enrichment fields:
 
@@ -518,9 +529,10 @@ Current enrichment fields:
 
 ### 8b. Apply HPMS 2024 enrichment
 
-After speed zone enrichment, the ETL joins FHWA HPMS 2024 data to fill AADT
-gaps, derive signed-route flags, gap-fill GDOT roadway attributes, and add
-pavement/safety attributes.
+After OnSystem speed zone enrichment, the ETL joins FHWA HPMS 2024 data to
+fill AADT gaps, derive signed-route flags, gap-fill GDOT roadway attributes,
+and add pavement/safety attributes.  The OffSystem speed zone pass runs
+immediately after HPMS (it requires `HPMS_ROUTE_NAME` for name matching).
 
 Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
 
@@ -1005,13 +1017,16 @@ GPAS has final authority because it is the direct GDOT live reference source. HP
 Official posted speed limits are enriched from GDOT GPAS SpeedZone permits
 from `rnhp.dot.ga.gov`:
 
-- GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits (state highways)
-- GPAS/9 `SpeedZone OffSystem` — 81,778 features (county roads, city streets; all spatially matched — layer has no milepoint fields)
+- GPAS/10 `SpeedZone OnSystem` — 22,265 features with active speed zone permits (state highways, route ID + milepoint matching)
+- GPAS/9 `SpeedZone OffSystem` — 81,778 features (county roads, city streets; name + county matching)
 
-Current enrichment coverage:
+Current enrichment coverage (combined OnSystem + OffSystem + HPMS backfill):
 
-- `14,766` segments with posted speed limits
-- `494` school zone segments flagged
+- `50,959` segments with posted speed limits (20.7% of network)
+- OnSystem: `15,709` segments (route ID + milepoint)
+- OffSystem: `29,672` segments (road name + county)
+- HPMS backfill: `5,578` segments
+- `582` school zone segments flagged (OnSystem + OffSystem)
 
 Detailed design note:
 
@@ -1151,7 +1166,7 @@ Several layers were evaluated but not integrated:
 - **Traffic Counters (FCRS/4)**: 17,145 features — stuck at 2013 data, superseded by 2024 AADT
 - **Crashes (FCRS/6)**: 1,827,102 features — 2016-2021 data, available for future safety analysis
 - **Fatalities (FCRS/5)**: 41,869 features — 2024-2026 data, available for future safety analysis
-- **SpeedZone OffSystem (GPAS/9)**: 81,778 features — now integrated via milepoint + spatial matching (see step 8a)
+- **SpeedZone OffSystem (GPAS/9)**: 81,778 features — now integrated via normalized road name + county matching (only 1,696 have geometry; 80,199 active records matched by name)
 - **Scenic Byways (GPAS/16)**: 112 features — available for future integration
 - **Estimated ROW (GDOT_Estimated_ROW/1)**: 7,460 features — available for future integration
 
