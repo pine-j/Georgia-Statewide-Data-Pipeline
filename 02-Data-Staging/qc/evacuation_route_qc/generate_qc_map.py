@@ -545,6 +545,7 @@ def html_template(summary: dict[str, object]) -> str:
         <h3>QC Summary</h3>
         <div class="metric"><strong>Total evacuation flagged:</strong> ${{QC_SUMMARY.total_evac_flagged}}</div>
         <div class="metric"><strong>Total contraflow flagged:</strong> ${{QC_SUMMARY.total_contraflow_flagged}}</div>
+        ${{QC_SUMMARY.evac_routes_null_name_excluded ? `<div class="metric" style="color:#888"><em>Unnamed evac route features excluded from blue layer: ${{QC_SUMMARY.evac_routes_null_name_excluded}}</em></div>` : ''}}
         <div class="breakdown-title">Evacuation by ROUTE_FAMILY</div>
         <ul>${{evacBreakdown || '<li>None</li>'}}</ul>
         <div class="breakdown-title">Contraflow by ROUTE_FAMILY</div>
@@ -865,6 +866,14 @@ def main() -> None:
     context = build_context_layer(roads, flagged_ids, tuple(evac_bounds))
 
     evac_routes_export = evac_routes.drop(columns=["_designations"], errors="ignore")
+    # Drop null-name features — they have no ROUTE_NAME and cannot be matched
+    # to any named corridor. Keeping them creates phantom blue lines in the QC
+    # map that look like false-negative gaps.
+    null_name_mask = evac_routes_export["ROUTE_NAME"].isna() | (evac_routes_export["ROUTE_NAME"] == "")
+    null_name_count = int(null_name_mask.sum())
+    if null_name_count:
+        print(f"Excluding {null_name_count} null-name evac route features from QC map blue layer")
+        evac_routes_export = evac_routes_export.loc[~null_name_mask].reset_index(drop=True)
     export_geojson(evac_routes_export, OUTPUT_DIR / "evac_routes_official.geojson")
     export_geojson(contraflow_routes, OUTPUT_DIR / "contraflow_routes_official.geojson")
     export_geojson(evac_flagged, OUTPUT_DIR / "network_evac_flagged.geojson")
@@ -879,6 +888,7 @@ def main() -> None:
     summary = {
         "total_evac_flagged": int(len(evac_flagged)),
         "total_contraflow_flagged": int(len(contraflow_flagged)),
+        "evac_routes_null_name_excluded": null_name_count,
         "evac_route_family_breakdown": summarize_route_families(evac_flagged),
         "contraflow_route_family_breakdown": summarize_route_families(contraflow_flagged),
         "evac_match_method_breakdown": match_method_breakdown,

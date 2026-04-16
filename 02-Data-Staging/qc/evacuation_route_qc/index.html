@@ -67,6 +67,7 @@
     const QC_SUMMARY = {
   "total_evac_flagged": 1639,
   "total_contraflow_flagged": 170,
+  "evac_routes_null_name_excluded": 36,
   "evac_route_family_breakdown": {
     "Interstate": 266,
     "Local/Other": 62,
@@ -175,6 +176,7 @@
         <h3>QC Summary</h3>
         <div class="metric"><strong>Total evacuation flagged:</strong> ${QC_SUMMARY.total_evac_flagged}</div>
         <div class="metric"><strong>Total contraflow flagged:</strong> ${QC_SUMMARY.total_contraflow_flagged}</div>
+        ${QC_SUMMARY.evac_routes_null_name_excluded ? `<div class="metric" style="color:#888"><em>Unnamed evac route features excluded from blue layer: ${QC_SUMMARY.evac_routes_null_name_excluded}</em></div>` : ''}
         <div class="breakdown-title">Evacuation by ROUTE_FAMILY</div>
         <ul>${evacBreakdown || '<li>None</li>'}</ul>
         <div class="breakdown-title">Contraflow by ROUTE_FAMILY</div>
