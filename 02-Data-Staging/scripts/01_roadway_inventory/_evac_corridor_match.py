@@ -75,6 +75,27 @@ _MANUAL_NAME_MAP: dict[str, dict[str, Any]] = {
     "Ocean Hwy": {"hwy_patterns": ["US-17"], "hpms_contains": "Ocean Hwy"},
 }
 
+# Maps evac corridor ROUTE_NAME → HWY_NAME prefixes of known concurrent routes.
+# Segments matching these prefixes receive Tier 1 (attribute-relaxed) treatment.
+# Source: GDOT shared ROUTE_ID analysis + existing hardcode references.
+_CONCURRENT_DESIGNATION_MAP: dict[str, list[str]] = {
+    "SR 26":        ["US-80", "US-25"],
+    "SR 3":         ["US-19", "US-41"],
+    "SR 520":       ["US-82", "US-84"],
+    "SR 30":        ["US-280", "US-441"],
+    "SR 4":         ["US-1", "US-82", "US-84", "US-301"],
+    "SR 15":        ["US-1", "US-301", "US-441"],
+    "SR 31":        ["US-319"],
+    "SR 35":        ["US-319", "US-133"],
+    "I 16 Spur":    ["US-17 SPUR"],
+    "SR 76":        ["US-221"],
+    "SR 27":        ["US-341"],
+    "SR 7":         ["US-41"],
+    "SR 300":       ["US-300"],
+    "SR 1/US 27":   ["US-82", "US-45"],
+    "Liberty Expy": ["US-133"],
+}
+
 # Families that belong to the signed state road system.
 _STATE_SYSTEM_FAMILIES = frozenset(
     {"interstate", "us route", "u.s. route", "state route"}
@@ -448,6 +469,8 @@ def _per_corridor_evac_overlay(
                 patterns = _build_hwy_patterns(route_name_str)
                 for pat in patterns:
                     hwy_pos_set.update(hwy_index.get(pat, []))
+                for prefix in _CONCURRENT_DESIGNATION_MAP.get(route_name_str, []):
+                    hwy_pos_set.update(hwy_index.get(prefix, []))
             corridor_hwy_positions[route_name_str] = hwy_pos_set
 
             # --- HARD-CODE OVERRIDES: force-include by unique_id ---
