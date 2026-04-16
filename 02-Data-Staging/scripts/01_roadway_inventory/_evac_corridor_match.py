@@ -105,6 +105,13 @@ _HARDCODE_OVERRIDES: dict[str, list[str]] = {
     # SR-93 segment with >30 m geometry offset from evac route polyline —
     # zero buffer overlap despite correct HWY_NAME. Digitization offset.
     "SR 93": ["1000100009300INC_11.7350_12.0117"],
+    # US-341 concurrent with SR 3 through Pearson (alignment reject, 508m overlap);
+    # CR-310 and CR-282 are Local/Other city pass-through gap fills.
+    "SR 3": [
+        "1000100002700INC_58.1249_59.4835",
+        "1261200031000INC_0.0000_0.0502",
+        "1269200028200INC_0.0000_0.0604",
+    ],
 }
 
 # Route designation regex
