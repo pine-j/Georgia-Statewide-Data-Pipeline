@@ -105,18 +105,33 @@ _HARDCODE_OVERRIDES: dict[str, list[str]] = {
     # SR-93 segment with >30 m geometry offset from evac route polyline —
     # zero buffer overlap despite correct HWY_NAME. Digitization offset.
     "SR 93": ["1000100009300INC_11.7350_12.0117"],
-    # US-341 concurrent with SR 3 through Pearson (alignment reject, 508m overlap);
-    # CR-310 and CR-282 are Local/Other city pass-through gap fills.
+    # SR 3 city pass-through gaps: US-341/US-19/US-41 alignment rejects plus
+    # Local/Other segments filling gaps where state system roads don't exist.
     "SR 3": [
-        "1000100002700INC_58.1249_59.4835",
-        "1261200031000INC_0.0000_0.0502",
-        "1269200028200INC_0.0000_0.0604",
+        "1000100002700INC_58.1249_59.4835",   # US-341 alignment reject
+        "1261200031000INC_0.0000_0.0502",      # CR-310 gap fill
+        "1269200028200INC_0.0000_0.0604",      # CR-282 gap fill
+        "1000100000300INC_121.5390_125.7467",   # US-19 low-ratio section
+        "1000100000300INC_131.0434_134.7584",   # US-19 low-ratio section
+        "1000100012700INC_9.9467_22.4303",      # US-41 cross-section
+        "1000100009000INC_128.1383_133.1540",   # SR-90 cross-section
+        "1269200015500INC_0.0000_0.5315",       # CR-155 gap fill
+        "1261200018600INC_0.0000_0.3394",       # CR-186 gap fill
+        "1177200002400INC_0.0000_6.7152",       # CR-24 gap fill
+        "1269200001000INC_0.0000_2.1791",       # CR-10 gap fill
+        "1269200015600INC_0.0000_0.5833",       # CR-156 gap fill
+        "1249200002500INC_0.0000_3.4748",       # CR-25 gap fill
+        "1177200000100INC_0.0000_6.0564",       # CR-1 gap fill
+        "1261200021100INC_0.0000_0.8727",       # CR-211 gap fill
     ],
-    # CS-622 in Ocean Hwy gap — Local/Other segment with 421m overlap (ratio 0.665)
-    # running through the corridor gap between flagged US-17 segments.
+    # CS-622 in Ocean Hwy gap — Local/Other segment running through corridor.
     "Ocean Hwy": ["1127200062201INC_0.0000_0.3939"],
-    # CR-28 at SR 21 southern terminus — only segment in the 1.1km endpoint gap.
-    "SR 21": ["1103200002800INC_0.0000_2.1394"],
+    # SR 21 southern terminus and mid-section gap fills.
+    "SR 21": [
+        "1103200002800INC_0.0000_2.1394",       # CR-28 Old Dixie Hwy
+        "1251200006600INC_0.0000_2.1533",       # CR-66 gap fill
+        "1251200051003INC_0.0000_0.1549",       # CS-510 gap fill
+    ],
 }
 
 # Route designation regex
