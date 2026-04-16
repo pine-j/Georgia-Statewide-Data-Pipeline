@@ -46,9 +46,9 @@ MIN_INSIDE_CORRIDOR_RATIO = 0.10
 # Gap-filling thresholds — used to allow Local/Other segments in gaps between
 # matched state-system segments.  High ratio ensures only segments running
 # along the corridor are included (not cross-streets).
-GAP_FILL_MIN_OVERLAP_RATIO = 0.50
+GAP_FILL_MIN_OVERLAP_RATIO = 0.30
 GAP_FILL_SAMPLE_INTERVAL_M = 200.0
-GAP_FILL_TOLERANCE_M = 60.0
+GAP_FILL_TOLERANCE_M = 80.0
 
 # Attribute-boosted thresholds (Tier 1) — relaxed for segments whose HWY_NAME
 # matches the corridor designation, confirming identity via attribute.
@@ -112,6 +112,11 @@ _HARDCODE_OVERRIDES: dict[str, list[str]] = {
         "1261200031000INC_0.0000_0.0502",
         "1269200028200INC_0.0000_0.0604",
     ],
+    # CS-622 in Ocean Hwy gap — Local/Other segment with 421m overlap (ratio 0.665)
+    # running through the corridor gap between flagged US-17 segments.
+    "Ocean Hwy": ["1127200062201INC_0.0000_0.3939"],
+    # CR-28 at SR 21 southern terminus — only segment in the 1.1km endpoint gap.
+    "SR 21": ["1103200002800INC_0.0000_2.1394"],
 }
 
 # Route designation regex
