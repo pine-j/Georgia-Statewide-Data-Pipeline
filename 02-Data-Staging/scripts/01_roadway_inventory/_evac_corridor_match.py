@@ -80,6 +80,9 @@ _STATE_SYSTEM_FAMILIES = frozenset(
     {"interstate", "us route", "u.s. route", "state route"}
 )
 
+# HWY_NAME values that are never evacuation route segments.
+_EXCLUDED_HWY_NAME_VALUES: frozenset[str] = frozenset({"RAMP"})
+
 # Match method precedence (higher = stronger)
 _METHOD_PRECEDENCE = {
     "hwy_name+spatial": 4,
@@ -91,6 +94,10 @@ _METHOD_PRECEDENCE = {
 }
 
 # Hard-code overrides: segments that must be flagged regardless of thresholds.
+# Only needed for main-pass rejections (alignment angle, mega-segment ratio,
+# geometry digitization offset).  Local/Other gap fills are now auto-discovered
+# by the gap-fill pass via direct gap_region spatial query — no hardcodes needed
+# for county roads or city streets that spatially connect corridor endpoints.
 # Format: "ROUTE_NAME": ["unique_id_1", "unique_id_2"]
 _HARDCODE_OVERRIDES: dict[str, list[str]] = {
     # US-221 segment along SR 76 — alignment angle 31.35° barely exceeds 30°
@@ -105,33 +112,23 @@ _HARDCODE_OVERRIDES: dict[str, list[str]] = {
     # SR-93 segment with >30 m geometry offset from evac route polyline —
     # zero buffer overlap despite correct HWY_NAME. Digitization offset.
     "SR 93": ["1000100009300INC_11.7350_12.0117"],
-    # SR 3 city pass-through gaps: US-341/US-19/US-41 alignment rejects plus
-    # Local/Other segments filling gaps where state system roads don't exist.
+    # SR 3 state-system alignment/ratio rejects only.
+    # CR/Local gap fills removed — auto-discovered by gap-fill spatial query.
     "SR 3": [
         "1000100002700INC_58.1249_59.4835",   # US-341 alignment reject
-        "1261200031000INC_0.0000_0.0502",      # CR-310 gap fill
-        "1269200028200INC_0.0000_0.0604",      # CR-282 gap fill
         "1000100000300INC_121.5390_125.7467",   # US-19 low-ratio section
         "1000100000300INC_131.0434_134.7584",   # US-19 low-ratio section
         "1000100012700INC_9.9467_22.4303",      # US-41 cross-section
         "1000100009000INC_128.1383_133.1540",   # SR-90 cross-section
-        "1269200015500INC_0.0000_0.5315",       # CR-155 gap fill
-        "1261200018600INC_0.0000_0.3394",       # CR-186 gap fill
-        "1177200002400INC_0.0000_6.7152",       # CR-24 gap fill
-        "1269200001000INC_0.0000_2.1791",       # CR-10 gap fill
-        "1269200015600INC_0.0000_0.5833",       # CR-156 gap fill
-        "1249200002500INC_0.0000_3.4748",       # CR-25 gap fill
-        "1177200000100INC_0.0000_6.0564",       # CR-1 gap fill
-        "1261200021100INC_0.0000_0.8727",       # CR-211 gap fill
     ],
-    # CS-622 in Ocean Hwy gap — Local/Other segment running through corridor.
-    "Ocean Hwy": ["1127200062201INC_0.0000_0.3939"],
-    # SR 21 southern terminus and mid-section gap fills.
-    "SR 21": [
-        "1103200002800INC_0.0000_2.1394",       # CR-28 Old Dixie Hwy
-        "1251200006600INC_0.0000_2.1533",       # CR-66 gap fill
-        "1251200051003INC_0.0000_0.1549",       # CS-510 gap fill
-    ],
+}
+
+# Hard-code exclusions: segments force-excluded regardless of thresholds.
+# Use "" key to exclude globally across all corridors.
+# Populate from QC map review after logic changes stabilize.
+_HARDCODE_EXCLUSIONS: dict[str, list[str]] = {
+    # "CORRIDOR_NAME": ["unique_id_1"],
+    # "": ["globally_excluded_uid"],  # "" = exclude from ALL corridors
 }
 
 # Route designation regex
@@ -472,6 +469,21 @@ def _per_corridor_evac_overlay(
                     if pd.notna(uid) and str(uid) in hardcode_ids:
                         is_hardcoded = True
 
+                # Block A — HWY_NAME exclusion (e.g. RAMP segments)
+                if not is_hardcoded and hwy_name_col is not None:
+                    hwy_val = segments.iat[pos_idx, hwy_name_col]
+                    if pd.notna(hwy_val) and str(hwy_val).strip().upper() in _EXCLUDED_HWY_NAME_VALUES:
+                        continue
+
+                # Block B — hard-code exclusion
+                if has_unique_id and not is_hardcoded:
+                    uid = segments.iat[pos_idx, uid_col_loc]
+                    if pd.notna(uid):
+                        uid_str = str(uid)
+                        if (uid_str in _HARDCODE_EXCLUSIONS.get("", [])
+                                or uid_str in _HARDCODE_EXCLUSIONS.get(route_name_str, [])):
+                            continue
+
                 if not is_hardcoded:
                     # 1. False-positive filter: skip Local/Other unless corridor is CR
                     if has_route_fam and not corridor_is_cr:
@@ -608,14 +620,27 @@ def _per_corridor_evac_overlay(
                         gap_region = unary_union(
                             [p.buffer(GAP_FILL_TOLERANCE_M) for p in gap_points]
                         )
+                        # Query the spatial index directly against gap_region so
+                        # segments up to GAP_FILL_TOLERANCE_M (80 m) from gap
+                        # points are considered — wider than the main 30 m
+                        # corridor buffer, which is what allows Local/Other
+                        # segments (county roads, city streets) that sit slightly
+                        # off the state-system centreline to be auto-discovered
+                        # rather than relying on hardcoded unique_ids.
+                        gap_fill_candidate_positions = seg_sindex.query(
+                            gap_region, predicate="intersects"
+                        )
                         gap_fill_count = 0
-                        for pos_idx in candidate_positions:
+                        for pos_idx in gap_fill_candidate_positions:
                             idx = segments.index[pos_idx]
                             if idx in results and route_name_str in results[idx].get("names", []):
                                 continue  # already matched
+                            # HWY_NAME exclusion (e.g. RAMP segments)
+                            if hwy_name_col is not None:
+                                hwy_val = segments.iat[pos_idx, hwy_name_col]
+                                if pd.notna(hwy_val) and str(hwy_val).strip().upper() in _EXCLUDED_HWY_NAME_VALUES:
+                                    continue
                             seg_geom = seg_geom_arr[pos_idx]
-                            if not seg_geom.intersects(gap_region):
-                                continue
                             try:
                                 overlap_geom = seg_geom.intersection(corridor_buffer)
                                 overlap_len = float(overlap_geom.length)
@@ -679,6 +704,18 @@ def _per_corridor_evac_overlay(
                 idx = segments.index[pos_idx]
                 if idx in matched_indices:
                     continue
+
+                # HWY_NAME exclusion (e.g. RAMP segments)
+                if hwy_name_col is not None:
+                    hwy_val = segments.iat[pos_idx, hwy_name_col]
+                    if pd.notna(hwy_val) and str(hwy_val).strip().upper() in _EXCLUDED_HWY_NAME_VALUES:
+                        continue
+
+                # Hard-code exclusion (global keys only — null features have no corridor name)
+                if has_unique_id:
+                    uid = segments.iat[pos_idx, uid_col_loc]
+                    if pd.notna(uid) and str(uid) in _HARDCODE_EXCLUSIONS.get("", []):
+                        continue
 
                 # Skip Local/Other
                 if has_route_fam:
@@ -807,7 +844,7 @@ def _merge_result(
 def run_automated_qc(
     diagnostics: dict[str, Any],
     contraflow_count: int,
-    baseline_total: int = 1682,
+    baseline_total: int = 1448,
     baseline_contraflow: int = 170,
 ) -> tuple[bool, list[str], list[str]]:
     """Run automated QC checks on corridor-level diagnostics.
