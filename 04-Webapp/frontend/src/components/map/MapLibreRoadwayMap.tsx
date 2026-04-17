@@ -8,6 +8,7 @@ import {
   RoadwayVisualizationOption,
 } from "../../types/api";
 import {
+  buildLegendHighlightOpacityExpression,
   buildRoadwayLineColorExpression,
   buildRoadwayLineOpacityExpression,
   buildRoadwayLineSortKeyExpression,
@@ -33,6 +34,7 @@ interface MapLibreRoadwayMapProps {
   bounds?: [number, number, number, number] | null;
   selectedVisualization?: RoadwayVisualizationOption;
   selectedRoadwayId?: string | null;
+  hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
 }
 
@@ -99,6 +101,7 @@ export function MapLibreRoadwayMap({
   bounds,
   selectedVisualization,
   selectedRoadwayId,
+  hoveredLegendValue,
   onSegmentClick,
 }: MapLibreRoadwayMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -113,6 +116,7 @@ export function MapLibreRoadwayMap({
   );
   const renderedLoadTokenRef = useRef(loadToken);
   const selectedRoadwayIdRef = useRef(selectedRoadwayId);
+  const hoveredLegendValueRef = useRef(hoveredLegendValue);
   const onSegmentClickRef = useRef(onSegmentClick);
 
   roadwayChunksRef.current = roadwayChunks;
@@ -122,6 +126,7 @@ export function MapLibreRoadwayMap({
   loadTokenRef.current = loadToken;
   selectedVisualizationRef.current = selectedVisualization;
   selectedRoadwayIdRef.current = selectedRoadwayId;
+  hoveredLegendValueRef.current = hoveredLegendValue;
   onSegmentClickRef.current = onSegmentClick;
 
   const syncBounds = useEffectEvent(() => {
@@ -246,6 +251,7 @@ export function MapLibreRoadwayMap({
             10,
           ],
           "line-opacity": 0.9,
+          "line-opacity-transition": { duration: 150, delay: 0 },
         },
         layout: {
           "line-cap": "round",
@@ -278,6 +284,7 @@ export function MapLibreRoadwayMap({
             7.2,
           ],
           "line-opacity": buildRoadwayLineOpacityExpression(selectedVisualizationRef.current),
+          "line-opacity-transition": { duration: 150, delay: 0 },
         },
         layout: {
           "line-cap": "round",
@@ -287,17 +294,22 @@ export function MapLibreRoadwayMap({
       });
     }
 
+    // Compute hover-aware opacity for both line and casing layers
+    const hoverVal = hoveredLegendValueRef.current;
+    const lineOpacity = hoverVal
+      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
+      : buildRoadwayLineOpacityExpression(selectedVisualizationRef.current);
+    const casingOpacity = hoverVal
+      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
+      : 0.9;
+
     if (map.getLayer(LINE_LAYER_ID)) {
       map.setPaintProperty(
         LINE_LAYER_ID,
         "line-color",
         buildRoadwayLineColorExpression(selectedVisualizationRef.current),
       );
-      map.setPaintProperty(
-        LINE_LAYER_ID,
-        "line-opacity",
-        buildRoadwayLineOpacityExpression(selectedVisualizationRef.current),
-      );
+      map.setPaintProperty(LINE_LAYER_ID, "line-opacity", lineOpacity);
       map.setLayoutProperty(
         LINE_LAYER_ID,
         "line-sort-key",
@@ -311,6 +323,7 @@ export function MapLibreRoadwayMap({
         "line-sort-key",
         buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
       );
+      map.setPaintProperty(CASING_LAYER_ID, "line-opacity", casingOpacity);
     }
 
     if (!map.getLayer(HIT_LAYER_ID)) {
@@ -465,6 +478,43 @@ export function MapLibreRoadwayMap({
     selectedRoadwayId,
     ensureRoadwayLayers,
   ]);
+
+  // Lightweight effect: only update paint properties when legend hover changes.
+  // Avoids the heavy GeoJSON re-push that ensureRoadwayLayers performs.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) {
+      return;
+    }
+
+    if (hoveredLegendValue) {
+      const lineOpacity = buildLegendHighlightOpacityExpression(
+        selectedVisualization,
+        hoveredLegendValue,
+      );
+      const casingOpacity = buildLegendHighlightOpacityExpression(
+        selectedVisualization,
+        hoveredLegendValue,
+      );
+      if (map.getLayer(LINE_LAYER_ID)) {
+        map.setPaintProperty(LINE_LAYER_ID, "line-opacity", lineOpacity);
+      }
+      if (map.getLayer(CASING_LAYER_ID)) {
+        map.setPaintProperty(CASING_LAYER_ID, "line-opacity", casingOpacity);
+      }
+    } else {
+      if (map.getLayer(LINE_LAYER_ID)) {
+        map.setPaintProperty(
+          LINE_LAYER_ID,
+          "line-opacity",
+          buildRoadwayLineOpacityExpression(selectedVisualization),
+        );
+      }
+      if (map.getLayer(CASING_LAYER_ID)) {
+        map.setPaintProperty(CASING_LAYER_ID, "line-opacity", 0.9);
+      }
+    }
+  }, [hoveredLegendValue, selectedVisualization]);
 
   useEffect(() => {
     syncBounds();

@@ -218,14 +218,27 @@ class RoadwayData:
 
         logger.info("Source CRS: %s", gdf.crs)
 
-        # Filter to State Highway Routes (SYSTEM_CODE = 1)
+        # Filter to State Highway Routes (SYSTEM_CODE = 1) plus any segment
+        # flagged as an evacuation corridor match (SEC_EVAC = True).  Evac
+        # gap-fill segments are often SYSTEM_CODE = 2 (county/city roads) but
+        # are physically part of a designated evacuation route and must be
+        # scored by RAPTOR alongside state highways.
         if "SYSTEM_CODE" in gdf.columns:
             original_count = len(gdf)
-            gdf = gdf[gdf["SYSTEM_CODE"] == 1].copy()
+            state_highway_mask = gdf["SYSTEM_CODE"] == 1
+            evac_mask = (
+                gdf["SEC_EVAC"].fillna(False).astype(bool)
+                if "SEC_EVAC" in gdf.columns
+                else pd.Series(False, index=gdf.index)
+            )
+            gdf = gdf[state_highway_mask | evac_mask].copy()
+            evac_only_count = int((evac_mask & ~state_highway_mask).sum())
             logger.info(
-                "Filtered to State Highway Routes: %d -> %d segments",
+                "Filtered to State Highway Routes + evac corridors: %d -> %d segments"
+                " (%d evac-only SYSTEM_CODE=2 segments included)",
                 original_count,
                 len(gdf),
+                evac_only_count,
             )
         else:
             logger.warning("SYSTEM_CODE column not found; skipping system filter")

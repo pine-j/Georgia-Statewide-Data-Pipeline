@@ -22,6 +22,7 @@ interface MapPanelProps {
   etaSeconds: number | null;
   selectedVisualization?: RoadwayVisualizationOption;
   selectedRoadwayId?: string | null;
+  hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
 }
 
@@ -52,6 +53,7 @@ export function MapPanel({
   etaSeconds,
   selectedVisualization,
   selectedRoadwayId,
+  hoveredLegendValue,
   onSegmentClick,
 }: MapPanelProps) {
   const isShowingProgress = isManifestLoading || isLoading;
@@ -79,6 +81,7 @@ export function MapPanel({
           bounds={bounds}
           selectedVisualization={selectedVisualization}
           selectedRoadwayId={selectedRoadwayId}
+          hoveredLegendValue={hoveredLegendValue}
           onSegmentClick={onSegmentClick}
         />
       </Box>

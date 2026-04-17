@@ -52,6 +52,7 @@ interface FiltersPanelProps {
   selectedVisualization?: RoadwayVisualizationOption;
   onResetFilters: () => void;
   onVisualizationChange: (visualizationId: string) => void;
+  onLegendItemHover?: (value: string | null) => void;
 }
 
 export function FiltersPanel({
@@ -73,6 +74,7 @@ export function FiltersPanel({
   onHighwayTypeDelete,
   onResetFilters,
   onVisualizationChange,
+  onLegendItemHover,
 }: FiltersPanelProps) {
   const isAllDistricts = selectedDistricts.length === 0;
   const districtOptionsWithAll = [ALL_DISTRICTS_OPTION, ...districts];
@@ -517,7 +519,7 @@ export function FiltersPanel({
 
         {selectedVisualization && (
           <Box sx={{ mt: 1 }}>
-            <RoadwayLegendCard visualization={selectedVisualization} />
+            <RoadwayLegendCard visualization={selectedVisualization} onLegendItemHover={onLegendItemHover} />
           </Box>
         )}
       </Stack>

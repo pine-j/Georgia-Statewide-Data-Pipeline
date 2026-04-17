@@ -5,10 +5,29 @@ import { getLegendItemsForDisplay } from "./roadwayVisualization";
 
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
+  onLegendItemHover?: (value: string | null) => void;
 }
 
-export function RoadwayLegendCard({ visualization }: RoadwayLegendCardProps) {
+const SWATCH_GRID = {
+  display: "grid",
+  gridTemplateColumns: "16px minmax(0, 1fr)",
+  gap: 1,
+  alignItems: "center",
+  borderRadius: "4px",
+  px: 0.5,
+  mx: -0.5,
+  cursor: "pointer",
+  transition: "background-color 0.15s ease",
+  "&:hover": {
+    bgcolor: "rgba(17, 61, 73, 0.07)",
+  },
+} as const;
+
+export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayLegendCardProps) {
   const legendItems = getLegendItemsForDisplay(visualization);
+
+  const handleEnter = (value: string | null) => () => onLegendItemHover?.(value);
+  const handleLeave = () => onLegendItemHover?.(null);
 
   return (
     <Paper
@@ -31,38 +50,41 @@ export function RoadwayLegendCard({ visualization }: RoadwayLegendCardProps) {
         </Typography>
 
         <Stack spacing={0.75}>
-          {legendItems.map((item) => (
-            <Box
-              key={`${visualization.id}-${item.label}-${item.value ?? item.min_value ?? "base"}`}
-              sx={{
-                display: "grid",
-                gridTemplateColumns: "16px minmax(0, 1fr)",
-                gap: 1,
-                alignItems: "center",
-              }}
-            >
-              <Box
-                sx={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: "2px",
-                  bgcolor: item.color,
-                  border: "1px solid rgba(16, 35, 47, 0.12)",
-                }}
-              />
-              <Typography variant="caption" sx={{ lineHeight: 1.35 }}>
-                {item.label}
-              </Typography>
-            </Box>
-          ))}
+          {legendItems.map((item) => {
+            // For categorical, use the `value` field; for numeric, use the label
+            const hoverKey =
+              visualization.kind === "categorical"
+                ? (item.value ?? item.label)
+                : item.label;
 
+            return (
+              <Box
+                key={`${visualization.id}-${item.label}-${item.value ?? item.min_value ?? "base"}`}
+                sx={SWATCH_GRID}
+                onMouseEnter={handleEnter(hoverKey)}
+                onMouseLeave={handleLeave}
+              >
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: "2px",
+                    bgcolor: item.color,
+                    border: "1px solid rgba(16, 35, 47, 0.12)",
+                  }}
+                />
+                <Typography variant="caption" sx={{ lineHeight: 1.35 }}>
+                  {item.label}
+                </Typography>
+              </Box>
+            );
+          })}
+
+          {/* "No data" row */}
           <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "16px minmax(0, 1fr)",
-              gap: 1,
-              alignItems: "center",
-            }}
+            sx={SWATCH_GRID}
+            onMouseEnter={handleEnter("__NO_DATA__")}
+            onMouseLeave={handleLeave}
           >
             <Box
               sx={{

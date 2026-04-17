@@ -92,6 +92,87 @@ export function buildRoadwayLineOpacityExpression(
   ] as unknown) as ExpressionSpecification;
 }
 
+/**
+ * When a legend item is hovered, dim all segments that don't match the
+ * hovered value so the matching ones visually pop.
+ */
+export function buildLegendHighlightOpacityExpression(
+  option: RoadwayVisualizationOption | undefined,
+  hoveredValue: string | null,
+): number | ExpressionSpecification {
+  if (!hoveredValue || !option?.property_name) {
+    return DEFAULT_ROADWAY_LINE_OPACITY;
+  }
+
+  const prop = option.property_name;
+  const DIMMED = 0.18;
+  const FULL = DEFAULT_ROADWAY_LINE_OPACITY;
+
+  // "No data" sentinel — highlight segments where the property is null
+  if (hoveredValue === "__NO_DATA__") {
+    return ([
+      "case",
+      ["==", ["get", prop], null],
+      FULL,
+      DIMMED,
+    ] as unknown) as ExpressionSpecification;
+  }
+
+  if (option.kind === "categorical") {
+    return ([
+      "case",
+      ["==", ["coalesce", ["get", prop], "__NO_DATA__"], hoveredValue],
+      FULL,
+      DIMMED,
+    ] as unknown) as ExpressionSpecification;
+  }
+
+  // Numeric — find the hovered legend item's range
+  const item = option.legend_items.find((li) => li.label === hoveredValue);
+  if (!item || typeof item.min_value !== "number") {
+    return DEFAULT_ROADWAY_LINE_OPACITY;
+  }
+
+  const minVal = item.min_value;
+  const maxVal = typeof item.max_value === "number" ? item.max_value : Infinity;
+
+  // Exact-value bucket (min === max), e.g. "1 lane", "2 lanes"
+  if (maxVal === minVal) {
+    return ([
+      "case",
+      ["all",
+        ["!=", ["get", prop], null],
+        ["==", ["to-number", ["get", prop]], minVal],
+      ],
+      FULL,
+      DIMMED,
+    ] as unknown) as ExpressionSpecification;
+  }
+
+  if (maxVal === Infinity) {
+    return ([
+      "case",
+      ["all",
+        ["!=", ["get", prop], null],
+        [">=", ["to-number", ["get", prop]], minVal],
+      ],
+      FULL,
+      DIMMED,
+    ] as unknown) as ExpressionSpecification;
+  }
+
+  return ([
+    "case",
+    ["all",
+      ["!=", ["get", prop], null],
+      [">=", ["to-number", ["get", prop]], minVal],
+      ["<=", ["to-number", ["get", prop]], maxVal],
+    ],
+    FULL,
+    DIMMED,
+  ] as unknown) as ExpressionSpecification;
+}
+
 export function buildRoadwayLineSortKeyExpression(
   option?: RoadwayVisualizationOption,
 ): number | ExpressionSpecification {

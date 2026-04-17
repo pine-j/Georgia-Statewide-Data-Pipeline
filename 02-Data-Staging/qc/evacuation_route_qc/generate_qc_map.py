@@ -808,15 +808,17 @@ def main() -> None:
         evac_flagged = gpd.GeoDataFrame(rows, crs=roads.crs)
         evac_flagged = evac_flagged.sort_values("unique_id").reset_index(drop=True)
 
-        # Clip mega-segment geometries to the corridor so the QC map shows
-        # only the portion running along evacuation routes.
+        # Clip segment geometries to the corridor buffer — segments are flagged
+        # as evacuation routes, but only the portion within the corridor is
+        # relevant.  This trims overshoot where a road segment extends beyond
+        # the evacuation route endpoints.
         from shapely.ops import unary_union as _unary_union
         evac_corridor = _unary_union(evac_routes.geometry.buffer(_CORRIDOR_BUFFER_M).values)
-        mega_mask = evac_flagged.geometry.length > MEGA_SEGMENT_LENGTH_M
-        if mega_mask.any():
-            clipped = evac_flagged.loc[mega_mask, "geometry"].intersection(evac_corridor)
-            evac_flagged.loc[mega_mask, "geometry"] = clipped
-            print(f"Clipped {mega_mask.sum()} mega-segment geometries to corridor")
+        clipped = evac_flagged.geometry.intersection(evac_corridor)
+        non_empty = ~clipped.is_empty
+        evac_flagged = evac_flagged.loc[non_empty].copy()
+        evac_flagged.loc[:, "geometry"] = clipped.loc[non_empty]
+        print(f"Clipped {len(evac_flagged)} segment geometries to corridor buffer")
     else:
         evac_flagged = gpd.GeoDataFrame(
             columns=evac_keep_cols + ["overlap_m", "overlap_ratio", "match_method", "SEC_EVAC_ROUTE_NAME", "geometry"]
@@ -866,14 +868,12 @@ def main() -> None:
     context = build_context_layer(roads, flagged_ids, tuple(evac_bounds))
 
     evac_routes_export = evac_routes.drop(columns=["_designations"], errors="ignore")
-    # Drop null-name features — they have no ROUTE_NAME and cannot be matched
-    # to any named corridor. Keeping them creates phantom blue lines in the QC
-    # map that look like false-negative gaps.
+    # Label null-name features so they are visible on the QC map
     null_name_mask = evac_routes_export["ROUTE_NAME"].isna() | (evac_routes_export["ROUTE_NAME"] == "")
     null_name_count = int(null_name_mask.sum())
     if null_name_count:
-        print(f"Excluding {null_name_count} null-name evac route features from QC map blue layer")
-        evac_routes_export = evac_routes_export.loc[~null_name_mask].reset_index(drop=True)
+        evac_routes_export.loc[null_name_mask, "ROUTE_NAME"] = "(unnamed)"
+        print(f"Including {null_name_count} null-name evac route features on QC map blue layer as '(unnamed)'")
     export_geojson(evac_routes_export, OUTPUT_DIR / "evac_routes_official.geojson")
     export_geojson(contraflow_routes, OUTPUT_DIR / "contraflow_routes_official.geojson")
     export_geojson(evac_flagged, OUTPUT_DIR / "network_evac_flagged.geojson")
