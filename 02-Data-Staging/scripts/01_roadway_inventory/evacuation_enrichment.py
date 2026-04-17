@@ -1,6 +1,6 @@
 """Enrich Georgia roadway segments with hurricane evacuation route flags.
 
-Downloads are cached under 02-Data-Staging/spatial/.
+Downloads are cached under 01-Raw-Data/Roadway-Inventory/GDOT_EOC/.
 
 Source layers (GDOT EOC Response):
 - Layer 7: GDOT Hurricane Evacuation Routes (268 polylines)
@@ -32,11 +32,10 @@ from _evac_corridor_match import per_corridor_evac_overlay
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+RAW_GDOT_EOC_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "GDOT_EOC"
 
-SPATIAL_DIR = PROJECT_ROOT / "02-Data-Staging" / "spatial"
-
-EVAC_ROUTES_GEOJSON = SPATIAL_DIR / "ga_evac_routes.geojson"
-CONTRAFLOW_ROUTES_GEOJSON = SPATIAL_DIR / "ga_contraflow_routes.geojson"
+EVAC_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_evac_routes.geojson"
+CONTRAFLOW_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_contraflow_routes.geojson"
 
 EOC_SERVICE_URL = (
     "https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer"
