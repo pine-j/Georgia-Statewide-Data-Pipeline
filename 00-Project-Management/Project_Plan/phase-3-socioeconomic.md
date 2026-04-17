@@ -138,16 +138,19 @@ Build a **nationwide** U.S. Census database (reusable for Georgia, Tennessee, an
 
 ## ETL Pipeline
 
-**`02-Data-Staging/scripts/06_socioeconomic/`**:
+**`01-Raw-Data/demographics/scripts/`**:
 
 1. `download_census.py` — Download Decennial, ACS, LODES for all states (or GA + TN initially)
 2. `download_economic_census.py` — Download Economic Census
 3. `download_opb.py` — Download OPB projections (GA-specific)
 4. `download_opportunity_zones.py` — Download OZ shapefiles
-5. `normalize.py` — Standardize geography codes (FIPS), join tables, validate
-6. `create_db.py` — Load into `socioeconomic.db` (tables: `decennial_blocks`, `acs_block_groups`, `lodes_wac`, `lodes_rac`, `economic_census`, `opportunity_zones`)
-7. `create_gpkg.py` — Write to `demographics.gpkg` layers: `tract_aggregated_blocks`, `block_groups`, `tracts`, `opportunity_zones` (EPSG:32617 for GA; consider national CRS for multi-state)
-8. `validate.py` — Population totals match published state totals, employment counts reasonable
+
+**`02-Data-Staging/scripts/06_socioeconomic/`**:
+
+1. `normalize.py` — Standardize geography codes (FIPS), join tables, validate
+2. `create_db.py` — Load into `socioeconomic.db` (tables: `decennial_blocks`, `acs_block_groups`, `lodes_wac`, `lodes_rac`, `economic_census`, `opportunity_zones`)
+3. `create_gpkg.py` — Write to `demographics.gpkg` layers: `tract_aggregated_blocks`, `block_groups`, `tracts`, `opportunity_zones` (EPSG:32617 for GA; consider national CRS for multi-state)
+4. `validate.py` — Population totals match published state totals, employment counts reasonable
 
 ---
 

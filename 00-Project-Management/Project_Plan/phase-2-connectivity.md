@@ -72,13 +72,16 @@ Download, clean, and load priority route and traffic generator data into the Geo
 
 ## ETL Pipeline
 
-**`02-Data-Staging/scripts/05_connectivity/`**:
+**`01-Raw-Data/connectivity/scripts/`**:
 
 1. `download.py` — Download SRP, NEVI, all generator shapefiles
-2. `normalize.py` — Filter to Georgia, standardize CRS, clean attributes
-3. `create_db.py` — Load tabular attributes into `connectivity.db`
-4. `create_gpkg.py` — Write to `connectivity.gpkg` layers: `priority_routes`, `nevi_corridors`, `alt_fuel_stations`, `airports`, `seaports`, `universities`, `military_bases`, `national_parks`, `rail_facilities`, `freight_generators` (all EPSG:32617)
-5. `validate.py` — Layer counts, geometry validity, known feature spot checks
+
+**`02-Data-Staging/scripts/05_connectivity/`**:
+
+1. `normalize.py` — Filter to Georgia, standardize CRS, clean attributes
+2. `create_db.py` — Load tabular attributes into `connectivity.db`
+3. `create_gpkg.py` — Write to `connectivity.gpkg` layers: `priority_routes`, `nevi_corridors`, `alt_fuel_stations`, `airports`, `seaports`, `universities`, `military_bases`, `national_parks`, `rail_facilities`, `freight_generators` (all EPSG:32617)
+4. `validate.py` — Layer counts, geometry validity, known feature spot checks
 
 ---
 
