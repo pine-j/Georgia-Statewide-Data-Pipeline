@@ -10,8 +10,8 @@ interface RoadwayLegendCardProps {
 
 const SWATCH_GRID = {
   display: "grid",
-  gridTemplateColumns: "16px minmax(0, 1fr)",
-  gap: 1,
+  gridTemplateColumns: "12px minmax(0, 1fr)",
+  gap: 0.75,
   alignItems: "center",
   borderRadius: "4px",
   px: 0.5,
@@ -34,22 +34,22 @@ export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayL
       elevation={0}
       sx={{
         width: "100%",
-        p: 1.5,
+        p: 1,
         borderRadius: 0,
         border: "1px solid rgba(17, 61, 73, 0.12)",
         bgcolor: "rgba(246, 248, 249, 0.96)",
       }}
     >
-      <Stack spacing={1.1}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+      <Stack spacing={0.6}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: "0.75rem" }}>
           {visualization.label}
         </Typography>
 
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.68rem", lineHeight: 1.3 }}>
           {visualization.description}
         </Typography>
 
-        <Stack spacing={0.75}>
+        <Stack spacing={0.4}>
           {legendItems.map((item) => {
             // For categorical, use the `value` field; for numeric, use the label
             const hoverKey =
@@ -66,14 +66,14 @@ export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayL
               >
                 <Box
                   sx={{
-                    width: 16,
-                    height: 16,
+                    width: 12,
+                    height: 12,
                     borderRadius: "2px",
                     bgcolor: item.color,
                     border: "1px solid rgba(16, 35, 47, 0.12)",
                   }}
                 />
-                <Typography variant="caption" sx={{ lineHeight: 1.35 }}>
+                <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
                   {item.label}
                 </Typography>
               </Box>
@@ -88,21 +88,21 @@ export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayL
           >
             <Box
               sx={{
-                width: 16,
-                height: 16,
+                width: 12,
+                height: 12,
                 borderRadius: "2px",
                 bgcolor: visualization.no_data_color,
                 border: "1px solid rgba(16, 35, 47, 0.12)",
               }}
             />
-            <Typography variant="caption" sx={{ lineHeight: 1.35 }}>
+            <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
               No data
             </Typography>
           </Box>
         </Stack>
 
         {visualization.notes && (
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, fontSize: "0.68rem" }}>
             {visualization.notes}
           </Typography>
         )}
