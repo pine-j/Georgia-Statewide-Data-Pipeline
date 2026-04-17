@@ -9,10 +9,10 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 
 ## Current Implementation Snapshot
 
-Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, HPMS-based signed-route verification, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. `126/126` validation checks pass. Remaining questions about supplemental roadway sources and optional GDOT live-layer corroboration are deferred follow-on improvements, not Phase 1 blockers.
+Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, HPMS-based signed-route verification, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. `116/116` validation checks pass. Remaining questions about supplemental roadway sources and optional GDOT live-layer corroboration are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
-- `roadway_inventory.db` contains `245,863` segmented roadway records with `133` columns
+- `roadway_inventory.db` contains `245,863` segmented roadway records with `118` columns
 - `base_network.gpkg` contains:
   - `roadway_segments` (`245,863` features)
   - `county_boundaries` (`159` features)
@@ -20,9 +20,14 @@ As of the current staged build:
 - Boundary layers are sourced from the official GDOT-hosted `GDOT_Boundaries` service and are now consumed by the staged web-app path
 
 Current traffic coverage in the staged roadway network:
-- Current AADT (`AADT` / `AADT_2024`) is available on `245,778` of `245,863` segments (`99.97%`) via five-tier fill chain
-- Future AADT 2044 is available on `53,215` of `245,863` segments (`21.64%`)
+- Current AADT (`AADT` / `AADT_2024`) is available on `245,766` of `245,863` segments (`99.9605%`) via five-tier fill chain
+- Current AADT covers `133,382.10` of `133,994.38` staged segment miles
+- Future AADT 2044 is available on `245,766` of `245,863` segments (`99.9605%` total post-imputation coverage; direct GDOT/HPMS/direction-mirror coverage is `46,619` / `19.0%`)
 - Historical AADT columns (2010-2020) have been removed from pipeline output; raw source files retained in `01-Raw-Data/`
+
+## Staged backend contract - SQLite + GeoPackage
+
+Phase 1 stages tabular attributes to `02-Data-Staging/databases/roadway_inventory.db` (SQLite, `segments` table) and geometry to `02-Data-Staging/spatial/base_network.gpkg` (`roadway_segments` layer, plus `county_boundaries` and `district_boundaries`). The webapp service `staged_roadways.py` reads both: SQLite for manifest, summary, detail, and filter queries, GeoPackage for geometry, bounds, and boundary layers. `RoadwayData.load_data()` merges the SQLite tabular frame with GeoPackage geometry.
 
 Related roadway strategy note:
 
@@ -117,9 +122,10 @@ scripts/
   scripts/
     01_roadway_inventory/
       normalize.py                   # Clean, normalize, build unique_id
-      route_family.py                # Georgia ROUTE_ID family crosswalk helper
+      route_family.py                # Georgia ROUTE_ID family crosswalk + shared signed-route helpers
       route_verification.py          # Official GDOT signed-route verification (GPAS layers)
       rnhp_enrichment.py             # RNHP enrichment (speed zones)
+      arcgis_client.py               # Shared ArcGIS fetch/cache helpers
       create_db.py                   # Load into SQLite
       validate.py                    # Verify row counts, nulls, CRS
     requirements.txt                 # Shared Python dependencies
@@ -284,7 +290,7 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `1` = State Highway Route
   - `2` = Public Road
 - Current segment counts:
-  - `SYSTEM_CODE = 1`: `18,499` segments
+  - `SYSTEM_CODE = 1`: `19,458` segments
   - `SYSTEM_CODE = 2`: `226,405` segments
 - Official GDOT LRS metadata also documents:
   - `3` = Private
@@ -349,12 +355,12 @@ The staged roadway network currently supports multiple kinds of classification, 
   - `SIGNED_ROUTE_VERIFY_SCORE`
   - `SIGNED_ROUTE_VERIFY_NOTES`
 - Current verification coverage:
-  - HPMS `routesigning` coverage on `223,136` segments
+  - HPMS `routesigning` coverage on `223,672` segments
   - `SIGNED_ROUTE_FAMILY_PRIMARY` distribution:
-    - `Interstate`: `3,659`
-    - `U.S. Route`: `10,169`
-    - `State Route`: `4,671`
-    - `Local/Other`: `226,405`
+    - `Interstate`: `3,667`
+    - `U.S. Route`: `10,922`
+    - `State Route`: `4,876`
+    - `Local/Other`: `226,398`
 - Current implementation note:
   - signed-route verification is currently driven by HPMS `routesigning` enrichment rather than the older GDOT live-layer verification design
 
@@ -485,6 +491,7 @@ COLUMNS_TO_KEEP = [
 - [x] GDB downloads and unpacks without errors
 - [x] `roadway_inventory.db` created with staged source columns and load metadata
 - [x] Row count validation passes: `245,863` staged rows
+- [x] The staged contract is documented as SQLite tabular + GeoPackage spatial outputs
 - [x] `unique_id` exists and is unique across all staged segments
 - [x] CRS validation passes: `EPSG:32617`
 - [x] Staged database tables and indexes are implemented through the ETL load step
@@ -492,12 +499,12 @@ COLUMNS_TO_KEEP = [
 - [x] SYSTEM_CODE filtering is supported in `Roadways.py`
 - [x] District filtering is supported in `Roadways.py`
 - [x] Georgia-specific route-family fields are implemented and staged
-- [x] Signed-route verification is operational via FHWA HPMS `routesigning` codes (`223,136` segments with signed-route coverage)
-- [x] Speed limit enrichment is operational via GDOT GPAS SpeedZone OnSystem (21,295 segments)
+- [x] Signed-route verification is operational via FHWA HPMS `routesigning` codes (`223,672` segments with signed-route coverage)
+- [x] Speed limit enrichment is operational via GDOT GPAS SpeedZone OnSystem / OffSystem plus HPMS backfill (`50,959` segments with posted speed limits)
 - [x] Critical-field null checks pass within the validation thresholds
 - [x] Post-HPMS derived column sync operational (`NUM_LANES` 98.7%, `NHS_IND` 37.6%)
 - [x] Texas RAPTOR alignment columns derived (`HWY_DES`, `LN_MILES`, `PCT_SADT`, `PCT_CADT`)
-- [x] Validation script passes all `126/126` recorded checks in `02-Data-Staging/reports/validation_results.json`
+- [x] Validation script passes all `116/116` recorded checks in `02-Data-Staging/reports/validation_results.json`
 
 ## Deferred From Phase 1
 

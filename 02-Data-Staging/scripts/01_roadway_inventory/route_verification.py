@@ -22,13 +22,19 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 import geopandas as gpd
 import pandas as pd
 
-from utils import _clean_text, _round_milepoint
+from arcgis_client import fetch_arcgis_features, fetch_arcgis_object_ids
+from route_family import (
+    SIGNED_ROUTE_FAMILIES,
+    SIGNED_ROUTE_PRIORITY,
+    parse_signed_route_family_list,
+    signed_route_family_slots,
+    sort_signed_route_families,
+)
+from utils import clean_text, round_milepoint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,17 +50,8 @@ CONFIG_PATH = (
 CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 REFERENCE_CONFIG = CONFIG["references"]
 VERIFY_SCORES = CONFIG["default_verify_scores"]
-QUERY_BATCH_SIZE = int(CONFIG.get("query_batch_size", 500))
 COVERAGE_WARNING_THRESHOLD = float(CONFIG.get("coverage_warning_threshold", 0.8))
-USER_AGENT = "Georgia-Statewide-Data-Pipeline signed-route verification"
 MILEPOINT_TOLERANCE = 1e-4
-
-SIGNED_ROUTE_PRIORITY = {
-    "Interstate": 0,
-    "U.S. Route": 1,
-    "State Route": 2,
-}
-SIGNED_ROUTE_FAMILIES = frozenset(SIGNED_ROUTE_PRIORITY)
 REFERENCE_MATCH_ORDER = ["interstates", "us_highway", "state_routes"]
 
 VERIFICATION_COLUMNS = [
@@ -80,96 +77,6 @@ def _clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns
     ]
     return df
-def _strip_extra_dims(coords: Any) -> Any:
-    """Strip M/Z dimensions beyond XY from GeoJSON coordinates."""
-    if not coords:
-        return coords
-    if isinstance(coords[0], (int, float)):
-        return coords[:2]
-    return [_strip_extra_dims(c) for c in coords]
-
-
-def _feature_collection_to_gdf(payload: dict[str, Any]) -> gpd.GeoDataFrame:
-    features = payload.get("features", [])
-    if not features:
-        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-    for feature in features:
-        geom = feature.get("geometry")
-        if geom and "coordinates" in geom:
-            geom["coordinates"] = _strip_extra_dims(geom["coordinates"])
-    return gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
-
-
-def _get_json(service_url: str, params: dict[str, Any], timeout: int) -> dict[str, Any]:
-    query = urlencode(params, doseq=True)
-    full_url = f"{service_url}?{query}"
-    if len(full_url) > 2000:
-        request = Request(
-            service_url,
-            data=query.encode("utf-8"),
-            headers={
-                "User-Agent": USER_AGENT,
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
-    else:
-        request = Request(full_url, headers={"User-Agent": USER_AGENT})
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if "error" in payload:
-        raise RuntimeError(payload["error"])
-    return payload
-
-
-def _fetch_arcgis_object_ids(service_url: str) -> list[int]:
-    query_url = f"{service_url.rstrip('/')}/query"
-    payload = _get_json(
-        query_url,
-        {
-            "f": "json",
-            "where": "1=1",
-            "returnIdsOnly": "true",
-        },
-        timeout=120,
-    )
-    object_ids = payload.get("objectIds") or []
-    return sorted(int(object_id) for object_id in object_ids)
-
-
-def _fetch_arcgis_features(
-    service_url: str,
-    object_ids: list[int],
-) -> gpd.GeoDataFrame:
-    query_url = f"{service_url.rstrip('/')}/query"
-    frames: list[gpd.GeoDataFrame] = []
-
-    for start in range(0, len(object_ids), QUERY_BATCH_SIZE):
-        batch = object_ids[start : start + QUERY_BATCH_SIZE]
-        payload = _get_json(
-            query_url,
-            {
-                "f": "geojson",
-                "where": "1=1",
-                "objectIds": ",".join(str(object_id) for object_id in batch),
-                "outFields": "*",
-                "returnGeometry": "true",
-                "returnM": "false",
-                "returnZ": "false",
-                "outSR": 4326,
-            },
-            timeout=180,
-        )
-        gdf = _feature_collection_to_gdf(payload)
-        if not gdf.empty:
-            frames.append(gdf)
-
-    if not frames:
-        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-
-    merged = pd.concat(frames, ignore_index=True)
-    return gpd.GeoDataFrame(merged, geometry="geometry", crs=frames[0].crs)
-
-
 def _reference_local_path(reference_key: str) -> Path:
     return PROJECT_ROOT / REFERENCE_CONFIG[reference_key]["local_geojson"]
 
@@ -186,8 +93,8 @@ def fetch_reference_layer(reference_key: str, refresh: bool = False) -> gpd.GeoD
     LOGGER.info("Fetching signed-route reference from GDOT service: %s", reference_key)
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
-    object_ids = _fetch_arcgis_object_ids(reference_spec["service_url"])
-    gdf = _fetch_arcgis_features(reference_spec["service_url"], object_ids)
+    object_ids = fetch_arcgis_object_ids(reference_spec["service_url"])
+    gdf = fetch_arcgis_features(reference_spec["service_url"], object_ids)
     if gdf.empty:
         LOGGER.warning("Reference layer %s returned no features", reference_key)
         return gdf
@@ -278,10 +185,10 @@ def normalize_reference_layer(gdf: gpd.GeoDataFrame, reference_key: str) -> pd.D
             else ""
         )
     normalized["FROM_MILEPOINT"] = (
-        normalized[from_col].map(_round_milepoint) if from_col is not None else None
+        normalized[from_col].map(round_milepoint) if from_col is not None else None
     )
     normalized["TO_MILEPOINT"] = (
-        normalized[to_col].map(_round_milepoint) if to_col is not None else None
+        normalized[to_col].map(round_milepoint) if to_col is not None else None
     )
     normalized["PRIMARY_LABEL"] = (
         normalized[primary_label_col].astype(str).str.strip()
@@ -313,12 +220,12 @@ def derive_rclink_candidates(
 ) -> list[str]:
     """Derive one or more 10-character RCLINK candidates from GDOT ROUTE_ID."""
 
-    raw_route_id = _clean_text(route_id).upper()
+    raw_route_id = clean_text(route_id).upper()
     if len(raw_route_id) < 13:
         return []
 
-    parsed_function = _clean_text(function_type) or raw_route_id[0:1]
-    parsed_system = _clean_text(system_code) or raw_route_id[4:5]
+    parsed_function = clean_text(function_type) or raw_route_id[0:1]
+    parsed_system = clean_text(system_code) or raw_route_id[4:5]
     county_code = raw_route_id[1:4]
     route_code = raw_route_id[5:11]
     suffix = raw_route_id[11:13]
@@ -378,7 +285,7 @@ def _match_reference_record(
 ) -> dict[str, Any] | None:
     candidates: list[str] = []
 
-    route_id = _clean_text(row.get("ROUTE_ID")).upper()
+    route_id = clean_text(row.get("ROUTE_ID")).upper()
     if len(route_id) >= 13:
         candidates.append(route_id[:13])
 
@@ -393,8 +300,8 @@ def _match_reference_record(
     for candidate in candidates:
         for record in reference_lookup.get(candidate, []):
             if _intervals_overlap(
-                _round_milepoint(row.get("FROM_MILEPOINT")),
-                _round_milepoint(row.get("TO_MILEPOINT")),
+                round_milepoint(row.get("FROM_MILEPOINT")),
+                round_milepoint(row.get("TO_MILEPOINT")),
                 record.get("FROM_MILEPOINT"),
                 record.get("TO_MILEPOINT"),
             ):
@@ -438,11 +345,6 @@ def initialize_signed_route_fields(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return verified
 
 
-def _sorted_route_families(families: set[str]) -> list[str]:
-    cleaned = [family for family in families if family in SIGNED_ROUTE_FAMILIES]
-    return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
-
-
 def _is_gpas_source(source: Any) -> bool:
     return isinstance(source, str) and source.startswith("gdot_")
 
@@ -471,25 +373,6 @@ def _should_promote_reference_family_to_primary(
         SIGNED_ROUTE_PRIORITY[reference_family]
         <= SIGNED_ROUTE_PRIORITY[current_primary_family]
     )
-
-
-def _signed_route_family_slots(ordered_families: list[str]) -> tuple[str | None, str | None, str | None]:
-    primary = ordered_families[0] if len(ordered_families) > 0 else None
-    secondary = ordered_families[1] if len(ordered_families) > 1 else None
-    tertiary = ordered_families[2] if len(ordered_families) > 2 else None
-    return primary, secondary, tertiary
-
-
-def _parse_signed_route_family_list(value: Any) -> set[str]:
-    if not isinstance(value, str) or not value.strip():
-        return set()
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return set()
-    if not isinstance(parsed, list):
-        return set()
-    return {str(item).strip() for item in parsed if str(item).strip()}
 
 
 def _reset_signed_route_fields_for_gpas(row: pd.Series) -> pd.Series:
@@ -530,7 +413,7 @@ def _update_row_with_reference_match(
     row[GPAS_OVERRIDE_MARKER] = True
 
     reference_family = REFERENCE_CONFIG[reference_key]["reference_family"]
-    families = _parse_signed_route_family_list(row.get("SIGNED_ROUTE_FAMILY_ALL"))
+    families = parse_signed_route_family_list(row.get("SIGNED_ROUTE_FAMILY_ALL"))
     if prior_primary_family in SIGNED_ROUTE_FAMILIES:
         families.add(prior_primary_family)
     if reference_family:
@@ -544,12 +427,12 @@ def _update_row_with_reference_match(
     new_primary_family = reference_family if promotes else prior_primary_family
 
     # Build ordered list with primary first, remainder sorted by priority
-    ordered_families = _sorted_route_families(families)
+    ordered_families = sort_signed_route_families(families)
     if new_primary_family in SIGNED_ROUTE_FAMILIES:
         ordered_families = [new_primary_family] + [
             family for family in ordered_families if family != new_primary_family
         ]
-    new_primary_family, secondary_family, tertiary_family = _signed_route_family_slots(
+    new_primary_family, secondary_family, tertiary_family = signed_route_family_slots(
         ordered_families
     )
     row["SIGNED_ROUTE_FAMILY_ALL"] = json.dumps(ordered_families)
@@ -572,11 +455,11 @@ def _update_row_with_reference_match(
         row["SIGNED_ROUTE_VERIFY_SCORE"] = saved_provenance["score"]
 
     note_parts = [f"official_{reference_key}_match"]
-    if _clean_text(match_record.get("PRIMARY_LABEL")):
-        note_parts.append(f"label={_clean_text(match_record.get('PRIMARY_LABEL'))}")
-    if _clean_text(match_record.get("SECONDARY_LABEL")):
-        note_parts.append(f"state_label={_clean_text(match_record.get('SECONDARY_LABEL'))}")
-    existing_notes = _clean_text(row.get("SIGNED_ROUTE_VERIFY_NOTES"))
+    if clean_text(match_record.get("PRIMARY_LABEL")):
+        note_parts.append(f"label={clean_text(match_record.get('PRIMARY_LABEL'))}")
+    if clean_text(match_record.get("SECONDARY_LABEL")):
+        note_parts.append(f"state_label={clean_text(match_record.get('SECONDARY_LABEL'))}")
+    existing_notes = clean_text(row.get("SIGNED_ROUTE_VERIFY_NOTES"))
     combined_notes = "; ".join(part for part in [existing_notes, *note_parts] if part)
     row["SIGNED_ROUTE_VERIFY_NOTES"] = combined_notes or None
 

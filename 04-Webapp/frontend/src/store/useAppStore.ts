@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { RoadwayDetail } from '../types/api';
 
 type LayerKey = 'roadways';
-export const DEFAULT_HIGHWAY_TYPES = ['IH'];
+export const DEFAULT_HIGHWAY_TYPES = ['IH', 'US', 'SH'];
 interface AppState {
   selectedDistricts: number[];
   selectedCounties: string[];

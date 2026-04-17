@@ -1,8 +1,9 @@
-"""Georgia Roadway Inventory data loader for RAPTOR pipeline.
+"""Georgia roadway loader for the RAPTOR pipeline.
 
-Loads Georgia GDOT roadway inventory data from the processed SQLite database
-(tabular) and GeoPackage (geometry), applies standard filtering for
-RAPTOR analysis, and provides the data as a GeoDataFrame.
+Phase 1 stages tabular attributes in SQLite and geometry in the GeoPackage.
+This loader keeps the staged SQLite loader available for the Phase 1 contract,
+uses the GeoPackage as its primary geometry source, and falls back to the raw
+road inventory GDB only for geometry when the GeoPackage is unavailable.
 """
 
 import logging
@@ -27,10 +28,12 @@ TARGET_CRS = "EPSG:32617"
 class RoadwayData:
     """Load and filter Georgia roadway inventory data for RAPTOR analysis.
 
-    Reads tabular data from roadway_inventory.db and geometry from
-    base_network.gpkg (or the original GDB as fallback). Filters to
-    State Highway Routes (SYSTEM_CODE=1) by default and optionally
-    by GDOT district.
+    The Phase 1 staged contract stores tabular attributes in
+    `roadway_inventory.db` and geometry in `base_network.gpkg`.
+    This class preserves the staged SQLite loader, reads geometry from the
+    GeoPackage (or the original GDB as a geometry-only fallback), filters to
+    state-system roadway segments plus evacuation-corridor additions, and can
+    optionally restrict the result to one GDOT district.
 
     Attributes:
         Roadway_Inventory: GeoDataFrame of filtered roadway segments.
@@ -159,7 +162,7 @@ class RoadwayData:
             conn.close()
 
     def _load_geometry(self) -> gpd.GeoDataFrame:
-        """Load geometry from GeoPackage or the official road inventory GDB."""
+        """Load geometry from the staged GeoPackage or raw road inventory GDB."""
         gpkg_path = SPATIAL_DIR / "base_network.gpkg"
 
         if gpkg_path.exists():
@@ -208,24 +211,41 @@ class RoadwayData:
     def load_data(self) -> None:
         """Load and filter roadway inventory data for RAPTOR analysis.
 
-        Merges tabular data from the database with geometry, filters to
-        State Highway Routes, applies optional district filter, selects
-        RAPTOR-relevant columns, and reprojects to the target CRS.
+        Loads the staged geometry source, applies the RAPTOR roadway filter
+        (state-system routes plus staged evacuation-corridor additions),
+        applies any district filter, selects RAPTOR-relevant columns, and
+        reprojects the result to the target CRS. The staged SQLite loader is
+        retained alongside this method because the Phase 1 contract still
+        depends on the staged roadway database.
         """
-        # Load geometry source (has both tabular + geometry)
+        # Primary geometry comes from the staged GeoPackage; raw GDB is only a
+        # geometry fallback when the staged layer is unavailable.
         gdf = self._load_geometry()
         gdf = self._normalize_numeric_columns(gdf)
 
         logger.info("Source CRS: %s", gdf.crs)
 
-        # Filter to State Highway Routes (SYSTEM_CODE = 1)
+        # Filter to State Highway Routes (SYSTEM_CODE = 1) plus any segment
+        # flagged as an evacuation corridor match (SEC_EVAC = True).  Evac
+        # gap-fill segments are often SYSTEM_CODE = 2 (county/city roads) but
+        # are physically part of a designated evacuation route and must be
+        # scored by RAPTOR alongside state highways.
         if "SYSTEM_CODE" in gdf.columns:
             original_count = len(gdf)
-            gdf = gdf[gdf["SYSTEM_CODE"] == 1].copy()
+            state_highway_mask = gdf["SYSTEM_CODE"] == 1
+            evac_mask = (
+                gdf["SEC_EVAC"].fillna(False).astype(bool)
+                if "SEC_EVAC" in gdf.columns
+                else pd.Series(False, index=gdf.index)
+            )
+            gdf = gdf[state_highway_mask | evac_mask].copy()
+            evac_only_count = int((evac_mask & ~state_highway_mask).sum())
             logger.info(
-                "Filtered to State Highway Routes: %d -> %d segments",
+                "Filtered to State Highway Routes + evac corridors: %d -> %d segments"
+                " (%d evac-only SYSTEM_CODE=2 segments included)",
                 original_count,
                 len(gdf),
+                evac_only_count,
             )
         else:
             logger.warning("SYSTEM_CODE column not found; skipping system filter")

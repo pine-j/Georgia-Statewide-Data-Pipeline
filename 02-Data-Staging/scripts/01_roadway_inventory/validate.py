@@ -13,6 +13,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
+from route_family import SIGNED_ROUTE_FAMILIES
 from utils import decode_lookup_value
 
 logger = logging.getLogger(__name__)
@@ -131,8 +132,6 @@ EXPECTED_SIGNED_ROUTE_VERIFICATION_COLUMNS = [
     "SIGNED_ROUTE_VERIFY_SCORE",
     "SIGNED_ROUTE_VERIFY_NOTES",
 ]
-SIGNED_ROUTE_FAMILIES = frozenset({"Interstate", "U.S. Route", "State Route"})
-
 EXPECTED_CURRENT_AADT_PROVENANCE_COLUMNS = [
     "AADT",
     "AADT_2024_OFFICIAL",

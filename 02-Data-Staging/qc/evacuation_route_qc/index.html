@@ -65,16 +65,74 @@
   <div id="map"></div>
   <script>
     const QC_SUMMARY = {
-  "total_evac_flagged": 1835,
-  "total_contraflow_flagged": 220,
+  "total_evac_flagged": 1540,
+  "total_contraflow_flagged": 170,
+  "evac_routes_null_name_excluded": 36,
   "evac_route_family_breakdown": {
-    "Interstate": 261,
-    "Local/Other": 266,
-    "State Route": 240,
-    "U.S. Route": 1068
+    "Interstate": 129,
+    "Local/Other": 111,
+    "State Route": 243,
+    "U.S. Route": 1057
   },
   "contraflow_route_family_breakdown": {
-    "Interstate": 220
+    "Interstate": 170
+  },
+  "evac_match_method_breakdown": {
+    "spatial": 1540
+  },
+  "per_corridor_counts": {
+    "CR 780": 0,
+    "CR 785": 8,
+    "I 16 Spur": 15,
+    "I 185 North": 8,
+    "I 75": 0,
+    "I 75 North": 138,
+    "I 75 South": 15,
+    "Liberty Expy": 13,
+    "Ocean Hwy": 4,
+    "SR 1 Business": 1,
+    "SR 1/US 27": 118,
+    "SR 11": 5,
+    "SR 111": 28,
+    "SR 133": 8,
+    "SR 135": 1,
+    "SR 144": 18,
+    "SR 15": 17,
+    "SR 17": 2,
+    "SR 196": 5,
+    "SR 21": 38,
+    "SR 21 Business": 16,
+    "SR 241": 2,
+    "SR 25": 9,
+    "SR 26": 184,
+    "SR 27": 12,
+    "SR 3": 122,
+    "SR 30": 95,
+    "SR 300": 17,
+    "SR 300 Connector": 2,
+    "SR 302": 2,
+    "SR 31": 28,
+    "SR 32": 55,
+    "SR 333": 13,
+    "SR 35": 34,
+    "SR 376": 3,
+    "SR 4": 45,
+    "SR 520": 111,
+    "SR 57": 17,
+    "SR 62": 11,
+    "SR 7": 2,
+    "SR 76": 9,
+    "SR 89": 35,
+    "SR 91": 18,
+    "SR 93": 12,
+    "SR 94": 3,
+    "SR 97": 9,
+    "US 19": 19,
+    "US 23": 13,
+    "US 319": 23,
+    "US 341": 4,
+    "US 82": 19,
+    "US 84": 11
   }
 };
   </script>
@@ -99,14 +157,30 @@
       const contraBreakdown = Object.entries(QC_SUMMARY.contraflow_route_family_breakdown)
         .map(([name, count]) => `<li>${name}: ${count}</li>`)
         .join('');
+      const matchMethodBreakdown = QC_SUMMARY.evac_match_method_breakdown
+        ? Object.entries(QC_SUMMARY.evac_match_method_breakdown)
+            .map(([name, count]) => `<li>${name}: ${count}</li>`)
+            .join('')
+        : '';
+      const corridorCounts = QC_SUMMARY.per_corridor_counts
+        ? Object.entries(QC_SUMMARY.per_corridor_counts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => `<li>${name}: ${count}</li>`)
+            .join('')
+        : '';
       div.innerHTML = `
         <h3>QC Summary</h3>
         <div class="metric"><strong>Total evacuation flagged:</strong> ${QC_SUMMARY.total_evac_flagged}</div>
         <div class="metric"><strong>Total contraflow flagged:</strong> ${QC_SUMMARY.total_contraflow_flagged}</div>
+        ${QC_SUMMARY.evac_routes_null_name_excluded ? `<div class="metric" style="color:#888"><em>Unnamed evac route features excluded from blue layer: ${QC_SUMMARY.evac_routes_null_name_excluded}</em></div>` : ''}
         <div class="breakdown-title">Evacuation by ROUTE_FAMILY</div>
         <ul>${evacBreakdown || '<li>None</li>'}</ul>
         <div class="breakdown-title">Contraflow by ROUTE_FAMILY</div>
         <ul>${contraBreakdown || '<li>None</li>'}</ul>
+        <div class="breakdown-title">Evac Match Method</div>
+        <ul>${matchMethodBreakdown || '<li>None</li>'}</ul>
+        <div class="breakdown-title">Per-Corridor Counts</div>
+        <ul style="max-height:200px;overflow-y:auto">${corridorCounts || '<li>None</li>'}</ul>
       `;
       return div;
     };
@@ -143,7 +217,7 @@
       });
 
       const evacRoutesLayer = L.geoJSON(evacRoutesData, {
-        style: styleFactory({ color: '#2196F3', weight: 4, opacity: 0.8 }),
+        style: styleFactory({ color: '#2196F3', weight: 3, opacity: 0.6 }),
         onEachFeature: (feature, layer) => {
           layer.bindPopup(makePopup(feature.properties, [['ROUTE_NAME', 'ROUTE_NAME']]));
         }
@@ -157,7 +231,7 @@
       });
 
       const evacFlaggedLayer = L.geoJSON(evacFlaggedData, {
-        style: styleFactory({ color: '#d32f2f', weight: 3, opacity: 0.7 }),
+        style: styleFactory({ color: '#d32f2f', weight: 5, opacity: 0.9 }),
         onEachFeature: (feature, layer) => {
           const p = feature.properties;
           const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
@@ -166,9 +240,11 @@
             makePopup(p, [
               ['HWY_NAME', 'HWY_NAME'],
               ['ROUTE_FAMILY', 'ROUTE_FAMILY'],
+              ['Evac Route', 'SEC_EVAC_ROUTE_NAME'],
               ['AADT', 'AADT'],
               ['COUNTY_NAME', 'COUNTY_NAME'],
-              ['DISTRICT_LABEL', 'DISTRICT_LABEL']
+              ['DISTRICT_LABEL', 'DISTRICT_LABEL'],
+              ['Match Method', 'match_method']
             ]) + `<div><strong>Overlap:</strong> ${overlapM} (${ratio})</div>`
           );
         }
@@ -210,6 +286,108 @@
       } else {
         map.setView([32.5, -83.5], 7);
       }
+
+      // --- Per-corridor dropdown filter ---
+      const corridorControl = L.control({ position: 'topleft' });
+      corridorControl.onAdd = function() {
+        const div = L.DomUtil.create('div', 'info-box');
+        div.style.marginTop = '60px';
+        const label = L.DomUtil.create('div', '', div);
+        label.innerHTML = '<strong style="font-size:13px">Filter by Corridor</strong>';
+        const select = L.DomUtil.create('select', '', div);
+        select.id = 'corridor-filter';
+        select.style.cssText = 'width:100%;margin-top:4px;padding:3px;font-size:13px';
+        select.innerHTML = '<option value="">All corridors</option>';
+
+        const corridorNames = new Set();
+        evacFlaggedLayer.eachLayer(layer => {
+          const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME;
+          if (name) {
+            name.split('; ').forEach(n => corridorNames.add(n));
+          }
+        });
+        [...corridorNames].sort().forEach(name => {
+          select.innerHTML += `<option value="${name}">${name}</option>`;
+        });
+
+        select.onchange = function() {
+          filterByCorridor(this.value);
+        };
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+      };
+      corridorControl.addTo(map);
+
+      window.filterByCorridor = function(corridorName) {
+        // Filter flagged segments (red)
+        evacFlaggedLayer.eachLayer(layer => {
+          const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
+          const visible = !corridorName || name.includes(corridorName);
+          if (visible) {
+            layer.setStyle({ opacity: 0.9, weight: 5 });
+          } else {
+            layer.setStyle({ opacity: 0, weight: 0 });
+          }
+        });
+
+        // Filter official evac routes (blue)
+        evacRoutesLayer.eachLayer(layer => {
+          const rn = layer.feature.properties.ROUTE_NAME || '';
+          const visible = !corridorName || rn === corridorName;
+          if (visible) {
+            layer.setStyle({ opacity: 0.6, weight: 3 });
+          } else {
+            layer.setStyle({ opacity: 0, weight: 0 });
+          }
+        });
+
+        // Filter contraflow routes (purple) — hide when filtering
+        contraRoutesLayer.eachLayer(layer => {
+          if (corridorName) {
+            layer.setStyle({ opacity: 0, weight: 0 });
+          } else {
+            layer.setStyle({ opacity: 0.8, weight: 5 });
+          }
+        });
+
+        // Filter contraflow flagged segments (orange) — hide when filtering
+        contraFlaggedLayer.eachLayer(layer => {
+          if (corridorName) {
+            layer.setStyle({ opacity: 0, weight: 0 });
+          } else {
+            layer.setStyle({ opacity: 0.8, weight: 4 });
+          }
+        });
+
+        if (corridorName) {
+          const cbounds = L.latLngBounds();
+          evacFlaggedLayer.eachLayer(layer => {
+            const name = layer.feature.properties.SEC_EVAC_ROUTE_NAME || '';
+            if (name.includes(corridorName)) {
+              cbounds.extend(layer.getBounds());
+            }
+          });
+          // Also include the official route bounds
+          evacRoutesLayer.eachLayer(layer => {
+            const rn = layer.feature.properties.ROUTE_NAME || '';
+            if (rn === corridorName) {
+              cbounds.extend(layer.getBounds());
+            }
+          });
+          if (cbounds.isValid()) {
+            map.fitBounds(cbounds.pad(0.1));
+          }
+          document.querySelector('.title-banner').textContent =
+            `GDOT Evacuation Route QC — ${corridorName}`;
+          contextLayer.remove();
+        } else {
+          const allBounds = evacRoutesLayer.getBounds();
+          if (allBounds.isValid()) map.fitBounds(allBounds.pad(0.08));
+          document.querySelector('.title-banner').textContent =
+            'GDOT Evacuation Route QC Map';
+          contextLayer.addTo(map);
+        }
+      };
     }).catch((error) => {
       console.error(error);
       alert(`Failed to load one or more QC layers: ${error.message}`);

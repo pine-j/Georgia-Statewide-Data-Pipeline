@@ -134,19 +134,19 @@ Phases 2-6 are ordered by current data availability after Phase 1: Connectivity,
 
 ### Phase 1 Status Snapshot
 
-Phase 1 is complete for the current project scope and serves as the closed roadway-foundation baseline for downstream phases.
+Phase 1 is complete for the current project scope and serves as the closed roadway-foundation baseline for downstream phases. The staged contract is split across SQLite for tabular attributes and GeoPackage for geometry and boundary layers; see `phase-1-foundation.md` for the current backend split.
 
 Current staged outputs:
-- `02-Data-Staging/databases/roadway_inventory.db`: `244,904` segmented roadway rows
+- `02-Data-Staging/databases/roadway_inventory.db`: `245,863` segmented roadway rows
 - `02-Data-Staging/spatial/base_network.gpkg`:
-  - `roadway_segments` (`244,904` features)
+  - `roadway_segments` (`245,863` features)
   - `county_boundaries` (`159` features)
   - `district_boundaries` (`7` features)
 
 Current traffic coverage in the staged roadway network:
-- Current AADT is present on `244,819` of `244,904` segments (`99.97%`)
-- Current AADT covers `133,830.64` of `133,994.38` staged segment miles (`99.88%`)
-- Future AADT 2044 is present on `52,236` of `244,904` segments (`21.3%`)
+- Current AADT is present on `245,766` of `245,863` segments (`99.9605%`)
+- Current AADT covers `133,382.10` of `133,994.38` staged segment miles
+- Future AADT 2044 is present on `245,766` of `245,863` segments (`99.9605%` total post-imputation coverage; direct GDOT/HPMS/direction-mirror coverage is `46,619` / `19.0%`)
 - Historical AADT columns were removed from staged output; raw source files are retained for future trend work
 
 Current classification available in Phase 1:

@@ -26,6 +26,14 @@ from typing import Any
 import pandas as pd
 import geopandas as gpd
 
+from route_family import (
+    SIGNED_ROUTE_FAMILIES,
+    SIGNED_ROUTE_PRIORITY,
+    parse_signed_route_family_list,
+    signed_route_family_slots,
+    sort_signed_route_families,
+)
+
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -43,45 +51,9 @@ ROUTE_SIGNING_MAP = {
     4: "State Route",
     5: "Interstate",
 }
-SIGNED_ROUTE_PRIORITY = {
-    "Interstate": 0,
-    "U.S. Route": 1,
-    "State Route": 2,
-}
-SIGNED_ROUTE_FAMILIES = frozenset(SIGNED_ROUTE_PRIORITY)
 
 
-def _sorted_signed_route_families(families: set[str]) -> list[str]:
-    cleaned = [family for family in families if family in SIGNED_ROUTE_FAMILIES]
-    return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
-
-
-def _signed_route_family_slots(ordered_families: list[str]) -> tuple[str | None, str | None, str | None]:
-    primary = ordered_families[0] if len(ordered_families) > 0 else None
-    secondary = ordered_families[1] if len(ordered_families) > 1 else None
-    tertiary = ordered_families[2] if len(ordered_families) > 2 else None
-    return primary, secondary, tertiary
-
-
-def _parse_signed_route_family_list(value: Any) -> set[str]:
-    if not isinstance(value, str) or not value.strip():
-        return set()
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return set()
-    if not isinstance(parsed, list):
-        return set()
-    return {str(item).strip() for item in parsed if str(item).strip()}
-
-
-def _signed_route_priority_value(family: str | None) -> int | None:
-    if family not in SIGNED_ROUTE_PRIORITY:
-        return None
-    return SIGNED_ROUTE_PRIORITY[family]
-
-
-def _ordered_signed_route_families_for_hpms(
+def ordered_signed_route_families_for_hpms(
     hpms_family: str,
     current_primary: str | None,
     existing_families: set[str],
@@ -91,9 +63,9 @@ def _ordered_signed_route_families_for_hpms(
         families.add(current_primary)
     families.add(hpms_family)
 
-    current_rank = _signed_route_priority_value(current_primary)
-    hpms_rank = _signed_route_priority_value(hpms_family)
-    remaining = [family for family in _sorted_signed_route_families(families) if family != hpms_family]
+    current_rank = SIGNED_ROUTE_PRIORITY.get(current_primary)
+    hpms_rank = SIGNED_ROUTE_PRIORITY.get(hpms_family)
+    remaining = [family for family in sort_signed_route_families(families) if family != hpms_family]
 
     if current_rank is not None and hpms_rank is not None and current_rank < hpms_rank:
         return [current_primary] + [family for family in remaining if family != current_primary] + [hpms_family]
@@ -307,10 +279,10 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             if hpms_family:
                 current_primary = enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"]
                 current_method = enriched.at[idx, "SIGNED_ROUTE_VERIFY_METHOD"]
-                existing_all = _parse_signed_route_family_list(
+                existing_all = parse_signed_route_family_list(
                     enriched.at[idx, "SIGNED_ROUTE_FAMILY_ALL"]
                 )
-                ordered_families = _ordered_signed_route_families_for_hpms(
+                ordered_families = ordered_signed_route_families_for_hpms(
                     hpms_family,
                     current_primary,
                     existing_all,
@@ -319,7 +291,7 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                     primary_family,
                     secondary_family,
                     tertiary_family,
-                ) = _signed_route_family_slots(ordered_families)
+                ) = signed_route_family_slots(ordered_families)
                 enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"] = primary_family
                 enriched.at[idx, "SECONDARY_SIGNED_ROUTE_FAMILY"] = secondary_family
                 enriched.at[idx, "TERTIARY_SIGNED_ROUTE_FAMILY"] = tertiary_family
