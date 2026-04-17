@@ -120,28 +120,20 @@ export function FiltersPanel({
     <Paper
       elevation={0}
       sx={{
-        p: 2,
         borderRadius: 0,
         border: "0",
         bgcolor: "#ffffff",
         height: "100%",
-        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
       }}
     >
-      <Stack spacing={2}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          spacing={1}
-        >
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-            Filters
-          </Typography>
-        </Stack>
-
+      {/* Scrollable filters area */}
+      <Box sx={{ flex: 1, overflowY: "auto", p: 1.5, pb: 1 }}>
+      <Stack spacing={1}>
         {thematicOptions.length > 0 && (
-          <Stack spacing={1}>
+          <Stack spacing={0.5}>
             <TextField
               select
               label="Map Theme"
@@ -155,29 +147,28 @@ export function FiltersPanel({
                   },
                 },
               }}
+              inputProps={{ sx: { fontSize: "0.78rem", py: "5px" } }}
+              InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
               fullWidth
             >
               {thematicOptions.map((option) => (
-                <MenuItem key={option.id} value={option.id}>
+                <MenuItem key={option.id} value={option.id} sx={{ fontSize: "0.78rem", py: 0.5 }}>
                   {option.label}
                 </MenuItem>
               ))}
             </TextField>
 
-            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45, fontStyle: "italic" }}>
-              All traffic data represents 2024 values unless otherwise noted.
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, fontStyle: "italic", fontSize: "0.68rem" }}>
+              2024 traffic data
+              {themeCoveragePercent !== null && (
+                <> · <strong>{themeCoveragePercent}%</strong> coverage</>
+              )}
             </Typography>
-
-            {themeCoveragePercent !== null && (
-              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
-                Data coverage: <strong>{themeCoveragePercent}%</strong> of shown road network
-              </Typography>
-            )}
           </Stack>
         )}
 
         {hasActiveFilters && (
-          <Stack spacing={0.5} sx={{ pt: 0.25 }}>
+          <Stack spacing={0.25} sx={{ pt: 0 }}>
             <Box
               sx={{
                 display: "flex",
@@ -396,25 +387,26 @@ export function FiltersPanel({
           onChange={(_, values) => onHighwayTypeChange(values.map((value) => value.id))}
           disableCloseOnSelect
           renderOption={(props, option, { selected }) => (
-            <li {...props}>
+            <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
               <Checkbox
                 icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
                 checkedIcon={<CheckBoxIcon fontSize="small" />}
-                style={{ marginRight: 8 }}
+                style={{ marginRight: 6, padding: 2 }}
                 checked={selected}
               />
-              {option.label}
+              {option.label} ({option.id})
             </li>
           )}
           isOptionEqualToValue={(option, value) => option.id === value.id}
-          getOptionLabel={(option) => option.label}
+          getOptionLabel={(option) => `${option.label} (${option.id})`}
           renderTags={() => null}
           renderInput={(params) => (
             <TextField
               {...params}
               label="Highway Type"
               placeholder="Select highway types"
-              helperText="IH = Interstate, US = U.S. Route, SH = State Route, Local = Local/Other."
+              inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
+              InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
             />
           )}
         />
@@ -429,11 +421,11 @@ export function FiltersPanel({
           renderOption={(props, option, { selected }) => {
             const isAll = option.id === ALL_DISTRICTS_OPTION.id;
             return (
-              <li {...props}>
+              <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
                 <Checkbox
                   icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
                   checkedIcon={<CheckBoxIcon fontSize="small" />}
-                  style={{ marginRight: 8 }}
+                  style={{ marginRight: 6, padding: 2 }}
                   checked={isAll ? isAllDistricts : selected}
                 />
                 <span style={{ fontWeight: isAll ? 600 : 400 }}>
@@ -452,6 +444,8 @@ export function FiltersPanel({
               {...params}
               label="District"
               placeholder={isAllDistricts ? "All districts shown" : "Select districts"}
+              inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
+              InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
             />
           )}
         />
@@ -496,11 +490,11 @@ export function FiltersPanel({
             </li>
           )}
           renderOption={(props, option, { selected }) => (
-            <li {...props}>
+            <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
               <Checkbox
                 icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
                 checkedIcon={<CheckBoxIcon fontSize="small" />}
-                style={{ marginRight: 8 }}
+                style={{ marginRight: 6, padding: 2 }}
                 checked={selected}
               />
               {option.county}
@@ -512,17 +506,23 @@ export function FiltersPanel({
               {...params}
               label="County"
               placeholder="Search counties"
-              helperText="Matches segments crossing the selected county, including segments continuing beyond it."
+              helperText="Includes segments crossing county boundaries."
+              inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
+              InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
+              FormHelperTextProps={{ sx: { fontSize: "0.65rem", mt: 0.25, lineHeight: 1.3 } }}
             />
           )}
         />
 
-        {selectedVisualization && (
-          <Box sx={{ mt: 1 }}>
-            <RoadwayLegendCard visualization={selectedVisualization} onLegendItemHover={onLegendItemHover} />
-          </Box>
-        )}
       </Stack>
+      </Box>
+
+      {/* Legend pinned to bottom, always visible */}
+      {selectedVisualization && (
+        <Box sx={{ flexShrink: 0 }}>
+          <RoadwayLegendCard visualization={selectedVisualization} onLegendItemHover={onLegendItemHover} />
+        </Box>
+      )}
     </Paper>
   );
 }
