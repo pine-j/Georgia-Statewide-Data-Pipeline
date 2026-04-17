@@ -16,7 +16,7 @@ _ENRICHMENT_DIR = str(Path(__file__).resolve().parents[2] / "scripts" / "01_road
 if _ENRICHMENT_DIR not in sys.path:
     sys.path.insert(0, _ENRICHMENT_DIR)
 from _evac_corridor_match import (
-    _per_corridor_evac_overlay,
+    per_corridor_evac_overlay,
     run_automated_qc,
     ROUTE_BUFFER_M as _CORRIDOR_BUFFER_M,
 )
@@ -790,7 +790,7 @@ def main() -> None:
     evac_keep_cols = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"]
 
     # --- Per-corridor evacuation matching via shared module ---
-    evac_matches, evac_diagnostics = _per_corridor_evac_overlay(
+    evac_matches, evac_diagnostics = per_corridor_evac_overlay(
         roads, evac_routes, name_field="ROUTE_NAME",
     )
 

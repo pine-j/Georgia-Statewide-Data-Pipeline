@@ -68,7 +68,7 @@ _SUFFIX_ABBREV: dict[str, str] = {
 # Per-corridor matching engine
 # ===================================================================
 
-def _per_corridor_evac_overlay(
+def per_corridor_evac_overlay(
     segments: gpd.GeoDataFrame,
     evac_routes: gpd.GeoDataFrame,
     name_field: str,
@@ -248,6 +248,10 @@ def _per_corridor_evac_overlay(
     )
 
     return results, diagnostics
+
+
+# Backward-compatible alias while callers move to the public helper name.
+_per_corridor_evac_overlay = per_corridor_evac_overlay
 
 
 # ===================================================================

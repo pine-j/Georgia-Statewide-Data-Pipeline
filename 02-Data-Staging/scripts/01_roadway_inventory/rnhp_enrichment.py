@@ -19,11 +19,8 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 
-from route_verification import (
-    _fetch_arcgis_features,
-    _fetch_arcgis_object_ids,
-)
-from utils import _clean_text, _round_milepoint
+from arcgis_client import fetch_arcgis_features, fetch_arcgis_object_ids
+from utils import clean_text, round_milepoint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -58,8 +55,8 @@ def fetch_enrichment_layer(layer_key: str, refresh: bool = False) -> gpd.GeoData
     LOGGER.info("Fetching enrichment layer from RNHP: %s", layer_key)
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
-    object_ids = _fetch_arcgis_object_ids(spec["service_url"])
-    gdf = _fetch_arcgis_features(spec["service_url"], object_ids)
+    object_ids = fetch_arcgis_object_ids(spec["service_url"])
+    gdf = fetch_arcgis_features(spec["service_url"], object_ids)
 
     if gdf.empty:
         LOGGER.warning("Enrichment layer %s returned no features", layer_key)
@@ -100,8 +97,8 @@ def _normalize_speed_zones(gdf: gpd.GeoDataFrame) -> pd.DataFrame:
 
     result = pd.DataFrame()
     result["ROUTE_ID_BASE"] = df[route_id_field].astype(str).str.strip().str.upper().str[:13]
-    result["FROM_MP"] = df[from_field].map(_round_milepoint) if from_field in df.columns else None
-    result["TO_MP"] = df[to_field].map(_round_milepoint) if to_field in df.columns else None
+    result["FROM_MP"] = df[from_field].map(round_milepoint) if from_field in df.columns else None
+    result["TO_MP"] = df[to_field].map(round_milepoint) if to_field in df.columns else None
     result["SPEED_LIMIT"] = pd.to_numeric(
         df["SPEED_LIMIT_CD"].astype(str).str.strip(), errors="coerce"
     ).astype("Int64")
@@ -138,7 +135,7 @@ def _match_speed_zone(
 ) -> dict[str, Any] | None:
     """Find the best-covering speed zone for a segment."""
 
-    route_id = _clean_text(row.get("ROUTE_ID")).upper()
+    route_id = clean_text(row.get("ROUTE_ID")).upper()
     if len(route_id) < 13:
         return None
 
@@ -147,8 +144,8 @@ def _match_speed_zone(
     if not candidates:
         return None
 
-    seg_from = _round_milepoint(row.get("FROM_MILEPOINT"))
-    seg_to = _round_milepoint(row.get("TO_MILEPOINT"))
+    seg_from = round_milepoint(row.get("FROM_MILEPOINT"))
+    seg_to = round_milepoint(row.get("TO_MILEPOINT"))
 
     best_match = None
     best_overlap = -1.0

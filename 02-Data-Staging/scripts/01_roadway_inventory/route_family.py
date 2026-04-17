@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -45,11 +46,45 @@ FUNCTION_TYPE_DETAILS = {
     "R": "Roundabout",
 }
 
+SIGNED_ROUTE_PRIORITY = {
+    "Interstate": 0,
+    "U.S. Route": 1,
+    "State Route": 2,
+}
+SIGNED_ROUTE_FAMILIES = frozenset(SIGNED_ROUTE_PRIORITY)
+
 
 def _clean_text(value) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value).strip().upper()
+
+
+def sort_signed_route_families(families: set[str]) -> list[str]:
+    """Return signed-route families ordered from highest to lowest priority."""
+    cleaned = [family for family in families if family in SIGNED_ROUTE_FAMILIES]
+    return sorted(cleaned, key=lambda family: SIGNED_ROUTE_PRIORITY.get(family, 99))
+
+
+def signed_route_family_slots(
+    ordered_families: list[str],
+) -> tuple[str | None, str | None, str | None]:
+    primary = ordered_families[0] if len(ordered_families) > 0 else None
+    secondary = ordered_families[1] if len(ordered_families) > 1 else None
+    tertiary = ordered_families[2] if len(ordered_families) > 2 else None
+    return primary, secondary, tertiary
+
+
+def parse_signed_route_family_list(value: Any) -> set[str]:
+    if not isinstance(value, str) or not value.strip():
+        return set()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    return {str(item).strip() for item in parsed if str(item).strip()}
 
 
 def extract_base_route_number(route_id: str, function_type: str | None = None) -> int | None:

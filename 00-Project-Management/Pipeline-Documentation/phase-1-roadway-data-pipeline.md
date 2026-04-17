@@ -23,7 +23,7 @@ Current closeout position:
 | 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads (81,778 features). Most records lack geometry; matched by normalized road name + county FIPS code. |
 | 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
 | 7 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
-| 8 | **GDOT EOC Hurricane Evacuation Routes** | [EOC MapServer/7](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/7) | Hurricane evacuation route polylines (268 features) used to flag roadway segments as evacuation routes via spatial overlay. Also includes contraflow routes ([Layer 8](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/8), 12 features). |
+| 8 | **GDOT EOC Hurricane Evacuation Routes** | [EOC MapServer/7](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/7) | Optional Phase 1 enrichment that flags roadway segments as `SEC_EVAC` via spatial overlay. Hurricane evacuation route polylines (268 features) and contraflow routes ([Layer 8](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/8), 12 features) are used when present. |
 
 ### How the sources come together
 
@@ -46,7 +46,7 @@ FHWA HPMS 2024 -> Gap-fill: AADT, attributes, pavement condition; set initial si
 GDOT GPAS Reference -> Verify: signed-route family (Interstate / US / State); override HPMS where GPAS matches
          |
          v
-GDOT EOC Evacuation -> Flag: SEC_EVAC from spatial overlay with hurricane evacuation routes (268 + 12 contraflow)
+Optional Phase 1 evacuation enrichment -> Flag: `SEC_EVAC` from spatial overlay with hurricane evacuation routes (268 + 12 contraflow)
          |
          v
 Route Classification -> Derive: ROUTE_FAMILY, ROUTE_TYPE_GDOT, HWY_NAME from ROUTE_ID structure + verification
@@ -81,6 +81,8 @@ The Phase 1 pipeline produces two primary staged outputs:
 
 - `02-Data-Staging/databases/roadway_inventory.db`
 - `02-Data-Staging/spatial/base_network.gpkg`
+
+Note: `02-Data-Staging/spatial/_quarantine/roadway_inventory.db` is a quarantined stale duplicate and is not part of the active Phase 1 output contract.
 
 Together, these provide:
 
@@ -178,7 +180,7 @@ These files are retained for future use but are no longer loaded into the pipeli
 
 ### Signed-route verification (HPMS first, GPAS authoritative)
 
-HPMS `routesigning` codes provide the broad-coverage first pass for signed-route family classification, covering 223,136 segments (91%). GPAS reference layers remain the final authoritative verifier where they match, even though their direct coverage is narrower at 6,590 segments (2.7%).
+HPMS `routesigning` codes provide the broad-coverage first pass for signed-route family classification, covering 223,672 segments (91.0%). GPAS reference layers remain the final authoritative verifier where they match, even though their direct coverage is narrower at 6,854 segments (2.8%).
 
 ### RNHP enrichment snapshots
 
@@ -200,14 +202,14 @@ Downloaded snapshot:
 
 - `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
 
-Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. Direct official current-year coverage is `45,938` of `245,863` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `245,778` segments.
+Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. Direct official current-year coverage is `45,938` of `245,863` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `245,766` segments.
 
 HPMS contributes:
 
 - AADT gap-fill for segments not covered by the GDOT traffic GDB
 - Pavement condition: IRI, PSR, rutting, cracking percent
 - Safety attributes: access control, terrain type
-- Initial signed-route classification via `routesigning` codes (223,136 segments, 91%)
+- Initial signed-route classification via `routesigning` codes (223,672 segments, 91.0%)
 - GPAS reference layers provide the final authoritative signed-route family where they match
 - Roadway attribute gap-fill for 13 GDOT fields where GDOT values are null (never overwrites existing values)
 
@@ -446,8 +448,8 @@ family.
 
 Current verification results:
 
-- `223,136` segments seeded by `hpms_2024` (broad coverage)
-- `6,590` segments overridden or confirmed by `gdot_*` GPAS references (authoritative where matched)
+- `223,672` segments seeded by `hpms_2024` (broad coverage)
+- `6,854` segments overridden or confirmed by `gdot_*` GPAS references (authoritative where matched)
 - remaining segments retain baseline `route_id_crosswalk`
 
 Current signed-route verification fields:
@@ -483,15 +485,15 @@ Matching method:
 
 Current enrichment results:
 
-- `14,766` segments with posted speed limits
-- `494` school zone segments flagged
+- `15,709` segments with posted speed limits
+- `523` school zone segments flagged
 
 Speed limit distribution:
 
-- 25 mph: `484` segments
-- 35 mph: `1,352` segments
-- 45 mph: `1,836` segments
-- 55 mph: `8,316` segments (most common)
+- 25 mph: `563` segments
+- 35 mph: `1,378` segments
+- 45 mph: `2,078` segments
+- 55 mph: `8,847` segments (most common)
 - 65 mph: `940` segments
 - 70 mph: `629` segments
 
@@ -542,11 +544,12 @@ direct `ROUTE_ID` + milepoint interval overlap — no spatial matching needed.
 AADT gap-fill priority chain (each step only fills segments not yet covered):
 
 1. **GDOT official exact** (45,938 segments) — direct traffic GDB match, confidence `high`
-2. **HPMS 2024** (196,238 segments) — FHWA HPMS route_id + milepoint match, confidence `medium`
-3. **Direction mirror** (3,091 segments) — INC→DEC copy for all routes, confidence `high`
-4. **Analytical gap-fill** (511 segments) — interpolation + nearest-neighbor on state highways, confidence `medium`
+2. **HPMS 2024** (196,095 segments) — FHWA HPMS route_id + milepoint match, confidence `medium`
+3. **Direction mirror** (3,085 segments) — INC→DEC copy for all routes, confidence `high`
+4. **Analytical gap-fill** (511 segments) — interpolation on the same route, confidence `medium`
+5. **Nearest-neighbor** (137 segments) — same-route nearest-neighbor fill, confidence `medium`
 
-Final 2024 AADT coverage: 245,778 / 245,863 segments (99.97%).
+Final 2024 AADT coverage: 245,766 / 245,863 segments (99.9605%).
 
 Future AADT 2044 fill chain:
 
@@ -555,7 +558,7 @@ Future AADT 2044 fill chain:
 3. **Direction mirror** — INC→DEC copy for divided highways, confidence `high`
 4. **Official implied growth projection** — applies GDOT's own implied growth rate to AADT_2024 for all remaining gaps. The rate is back-derived from the ~53K segments where GDOT/HPMS provides both AADT_2024 and FUTURE_AADT_2044 (statewide median ~1.17% annual). Grouped by county+system code, district+system code, system code, or statewide median. Formula: `FUTURE_AADT_2044 = AADT_2024 × (1 + rate)^20`. Confidence `low`.
 
-Steps 1-3 provide direct or proximate official values. Step 4 extends coverage to nearly all remaining segments, achieving near-complete Future AADT 2044 coverage wherever AADT_2024 exists.
+Steps 1-3 provide direct or proximate official values on `46,619` segments (`19.0%`). Step 4 extends total `FUTURE_AADT_2044` coverage to `245,766` segments (`99.96%`) wherever `AADT_2024` exists.
 
 HPMS signed-route enrichment:
 
@@ -570,7 +573,7 @@ HPMS gap-fills 13 GDOT roadway attributes where GDOT values are null (never over
 - `FACILITY_TYPE`: +19,684 segments
 - `SURFACE_TYPE`: +10,462 segments
 - `NHS`: +6,680 segments
-- `SPEED_LIMIT`: +5,577 segments (backfills gaps left by GPAS SpeedZone OnSystem + OffSystem)
+- `SPEED_LIMIT`: +5,578 segments (backfills gaps left by GPAS SpeedZone OnSystem + OffSystem)
 - `LANE_WIDTH`: +3,805 segments
 - `SHOULDER_TYPE` / `SHOULDER_WIDTH_R`: +3,866 segments
 - `MEDIAN_TYPE`: +3,866 segments
@@ -583,7 +586,7 @@ HPMS also contributes pavement and safety attributes:
 - `HPMS_CRACKING_PCT` — pavement cracking percent (10,410 segments)
 - `HPMS_ACCESS_CONTROL` — access control type (10,519 segments)
 - `HPMS_TERRAIN_TYPE` — terrain classification (891 segments)
-- `HPMS_ROUTE_SIGNING` — route signing type (223,136 segments)
+- `HPMS_ROUTE_SIGNING` — route signing type (223,672 segments)
 - `HPMS_ROUTE_NUMBER` — signed route number
 - `HPMS_ROUTE_NAME` — road name from HPMS
 
@@ -783,7 +786,7 @@ Tables:
 Current contents:
 
 - `245,863` roadway segment rows
-- `133` columns in `segments`
+- `118` columns in `segments`
 
 The SQLite database is the staged tabular source of truth. It contains roadway and traffic attributes but no geometry.
 
@@ -842,23 +845,26 @@ The staged network now treats `AADT_2024` as the single canonical 2024 traffic v
 
 Current 2024 AADT coverage in the staged roadway network:
 
-- **Final canonical coverage: `245,778` of `245,863` segments (`99.97%`)**
-- Only `85` segments remain uncovered (unmaintained local roads with no traffic data in any source)
+- **Final canonical coverage: `245,766` of `245,863` segments (`99.9605%`)**
+- Current AADT covers `133,382.10` of `133,994.38` staged segment miles
+- Only `97` segments remain uncovered (unmaintained local roads with no traffic data in any source)
 
 Coverage by source (priority order):
 
 | Source | Segments | Confidence | Method |
 |--------|----------|-----------|--------|
 | GDOT official exact | 45,938 | high | Direct GDOT traffic GDB match |
-| FHWA HPMS 2024 | 196,238 | medium | Route_id + milepoint match |
-| Direction mirror | 3,091 | high | INC→DEC copy for all routes |
-| Analytical gap-fill | 511 | medium | Interpolation + nearest-neighbor on same route (20-mile cap) |
+| FHWA HPMS 2024 | 196,095 | medium | Route_id + milepoint match |
+| Direction mirror | 3,085 | high | INC→DEC copy for all routes |
+| Analytical gap-fill | 511 | medium | Interpolation on the same route |
+| Nearest-neighbor | 137 | medium | Same-route nearest-neighbor fill (20-mile cap) |
 
 Key validation: HPMS AADT values are 99.7% identical to GDOT official values where both sources overlap, confirming HPMS is the same GDOT data submitted to FHWA.
 
 ### Future AADT 2044 coverage
 
-- Direct coverage (GDOT official + HPMS + direction mirror): `53,215` of `245,863` segments (`21.64%`)
+- Direct coverage (GDOT official + HPMS + direction mirror): `46,619` of `245,863` segments (`19.0%`)
+- Total post-imputation coverage after the official implied growth projection: `245,766` of `245,863` segments (`99.96%`)
 - **Official implied growth projection (step 4) extends coverage to near-complete** — applies GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to AADT_2024 for all remaining segments
 
 ### State-system null county and district diagnosis
@@ -904,7 +910,7 @@ Documented GDOT system codes include:
 
 Current values actually present in the staged Phase 1 build:
 
-- `SYSTEM_CODE = 1`: `18,499` segments
+- `SYSTEM_CODE = 1`: `19,458` segments
 - `SYSTEM_CODE = 2`: `226,405` segments
 
 `SYSTEM_CODE` is the broadest route-system bucket. `OWNERSHIP` is a separate legal/jurisdiction classification and is now also carried into the staged outputs with `OWNERSHIP_LABEL`.
@@ -1006,8 +1012,8 @@ Official verification is operational for Interstates, US Routes, and State Route
 
 Current verification coverage:
 
-- `223,136` segments seeded by `hpms_2024` (91% of network)
-- `6,590` segments overridden or confirmed by `gdot_*` GPAS references (2.7% of network, authoritative where matched)
+- `223,672` segments seeded by `hpms_2024` (91.0% of network)
+- `6,854` segments overridden or confirmed by `gdot_*` GPAS references (2.8% of network, authoritative where matched)
 - remaining segments retain `route_id_crosswalk` baseline
 
 GPAS has final authority because it is the direct GDOT live reference source. HPMS signed-route values are a federal derivative of GDOT reporting and are used first for coverage, not final precedence.
@@ -1026,7 +1032,7 @@ Current enrichment coverage (combined OnSystem + OffSystem + HPMS backfill):
 - OnSystem: `15,709` segments (route ID + milepoint)
 - OffSystem: `29,672` segments (road name + county)
 - HPMS backfill: `5,578` segments
-- `582` school zone segments flagged (OnSystem + OffSystem)
+- `1,105` school zone segments flagged (OnSystem + OffSystem)
 
 Detailed design note:
 
@@ -1118,7 +1124,7 @@ Archived but retained for future use:
 
 ### 1. Traffic coverage is near-complete
 
-Current 2024 AADT coverage is `245,778` of `245,863` segments (`99.97%`). Only `85` segments remain uncovered — these are unmaintained local roads with no traffic data in any source (GDOT, HPMS, or adjacent segments).
+Current 2024 AADT coverage is `245,766` of `245,863` segments (`99.9605%`). Only `97` segments remain uncovered — these are unmaintained local roads with no traffic data in any source (GDOT, HPMS, or adjacent segments).
 
 AADT source distribution:
 
@@ -1129,7 +1135,7 @@ AADT source distribution:
 
 The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
 
-Future AADT 2044 direct coverage (GDOT official + HPMS + direction mirror) is `53,215` of `245,863` segments (`21.64%`). The official implied growth projection extends this to near-complete coverage by applying GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to AADT_2024 for all remaining segments.
+Future AADT 2044 direct coverage (GDOT official + HPMS + direction mirror) is `46,619` of `245,863` segments (`19.0%`). Total post-imputation coverage is `245,766` of `245,863` segments (`99.96%`) after the official implied growth projection applies GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to `AADT_2024` for the remaining covered segments.
 
 ### 2. Historical AADT removed from output
 
@@ -1151,8 +1157,8 @@ That may reflect sparse source publication, segmentation differences, or both. I
 
 Signed-route verification for Interstates, US Routes, and State Routes is now
 operational through HPMS `routesigning` coverage plus authoritative GPAS
-reference verification. HPMS covers 223,136 segments (91% of the network) and
-GPAS directly verifies 6,590 segments (2.7%) with final precedence where it
+reference verification. HPMS covers 223,672 segments (91.0% of the network) and
+GPAS directly verifies 6,854 segments (2.8%) with final precedence where it
 matches. Segments not matched by either source retain the baseline
 `route_id_crosswalk` values.
 
@@ -1187,9 +1193,9 @@ Phase 1 is complete and usable as the foundation for downstream work.
 
 Closed with Phase 1:
 
-- statewide staged roadway ETL with 245,863 segments and 133 columns
-- 2024 AADT coverage at 99.97% (`245,778` segments) via five-tier fill chain
-- Future AADT 2044 coverage extended to near-complete via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with AADT_2024
+- statewide staged roadway ETL with 245,863 segments and 118 columns
+- 2024 AADT coverage at 99.9605% (`245,766` segments) via five-tier fill chain
+- Future AADT 2044 coverage extended from `46,619` direct-forecast segments (`19.0%`) to `245,766` total post-imputation segments (`99.96%`) via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with `AADT_2024`
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
 - HPMS gap-fill for 13 GDOT roadway attributes
@@ -1197,9 +1203,10 @@ Closed with Phase 1:
 - staged SQLite database, GeoPackage, and table CSV outputs
 - county and district boundaries with spatial backfill for statewide routes
 - RAPTOR `RoadwayData` loader
-- `126/126` validation checks passing
+- `116/116` validation checks passing
 
 Deferred beyond Phase 1:
 
 - crash and fatality data enrichment from FCRS layers (data available on `rnhp.dot.ga.gov`)
 - statewide roadway supplementation from TIGER / OSM unless later QA shows a planning-relevant omission pattern
+

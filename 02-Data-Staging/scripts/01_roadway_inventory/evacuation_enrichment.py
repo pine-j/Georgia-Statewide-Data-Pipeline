@@ -27,7 +27,7 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
-from _evac_corridor_match import _per_corridor_evac_overlay
+from _evac_corridor_match import per_corridor_evac_overlay
 
 LOGGER = logging.getLogger(__name__)
 
@@ -890,7 +890,7 @@ def apply_evacuation_enrichment(
         LOGGER.warning("Evacuation route enrichment unavailable: %s", exc)
         return enriched
 
-    evac_matches, evac_diagnostics = _per_corridor_evac_overlay(
+    evac_matches, evac_diagnostics = per_corridor_evac_overlay(
         enriched, evac, name_field="ROUTE_NAME",
     )
     # Corridor proximity post-filter is now applied per-corridor inside

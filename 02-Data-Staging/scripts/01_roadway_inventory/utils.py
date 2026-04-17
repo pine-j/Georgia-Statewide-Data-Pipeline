@@ -45,14 +45,19 @@ def decode_lookup_value(value: Any, lookup: dict, zero_pad: int | None = None) -
     return lookup.get(numeric_value) or lookup.get(str(numeric_value))
 
 
-def _clean_text(value: Any) -> str:
+def clean_text(value: Any) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value).strip()
 
 
-def _round_milepoint(value: Any) -> float | None:
+def round_milepoint(value: Any) -> float | None:
     if value is None or pd.isna(value):
         return None
     rounded = round(float(value), 4)
     return 0.0 if abs(rounded) < MILEPOINT_TOLERANCE else rounded
+
+
+# Backward-compatible aliases while modules migrate to the public names.
+_clean_text = clean_text
+_round_milepoint = round_milepoint

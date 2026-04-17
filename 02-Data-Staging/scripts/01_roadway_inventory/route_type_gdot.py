@@ -17,7 +17,7 @@ from collections import Counter
 
 import pandas as pd
 
-from utils import _clean_text
+from utils import clean_text
 
 INTERSTATE_ROUTE_NUMBER_TO_SIGNED = {
     401: 75,
@@ -105,7 +105,7 @@ def _fallback_signed_family(
     signed_route_verify_source: str,
     hpms_route_signing,
 ) -> str | None:
-    verify_source = _clean_text(signed_route_verify_source).lower()
+    verify_source = clean_text(signed_route_verify_source).lower()
     hpms_family = _hpms_signed_family(hpms_route_signing)
 
     if verify_source.startswith("gdot_"):
@@ -291,7 +291,7 @@ def apply_gdot_route_type_classification(df: pd.DataFrame) -> pd.DataFrame:
     working["ROUTE_SUFFIX"] = df.get(
         "ROUTE_SUFFIX",
         pd.Series(index=df.index, dtype="object"),
-    ).map(lambda value: _clean_text(value).upper())
+    ).map(lambda value: clean_text(value).upper())
     working["ROUTE_FAMILY"] = df.get("ROUTE_FAMILY", pd.Series(index=df.index, dtype="object")).fillna("").astype(str)
     working["SIGNED_ROUTE_FAMILY_PRIMARY"] = df.get(
         "SIGNED_ROUTE_FAMILY_PRIMARY",

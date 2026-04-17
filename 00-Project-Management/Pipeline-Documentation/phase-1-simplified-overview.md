@@ -1,5 +1,7 @@
 # Phase 1 Roadway Data Pipeline — Simplified Overview
 
+Status: Complete for current project scope.
+
 ## What This Pipeline Does
 
 Phase 1 builds the foundational roadway layer that RAPTOR scoring runs on top of. It takes raw GDOT data sources, combines them into a single statewide roadway network with traffic and roadway attributes, and outputs a database and spatial file ready for analysis.
@@ -47,7 +49,7 @@ Match GDOT SpeedZone permits to segments:
 ### 6. Gap-fill with HPMS
 
 Join FHWA HPMS 2024 data by route ID + milepoint overlap:
-- Fill AADT gaps (raises coverage from 19% to 99.97%)
+- Fill AADT gaps (raises coverage from 19% to 99.9605%)
 - Fill missing roadway attributes (lanes, ownership, functional class, etc.)
 - Add pavement condition metrics (IRI, rutting, cracking)
 - Set initial signed-route flags from HPMS `routesigning` codes (91% coverage)
@@ -63,6 +65,8 @@ Build `FUTURE_AADT_2044` through a four-step fill chain:
 2. HPMS future AADT values
 3. Direction mirror (copy from opposite travel direction)
 4. Apply GDOT's implied growth rate (~1.17%/year) to current AADT for remaining gaps
+
+Direct GDOT/HPMS/direction-mirror forecast coverage is `46,619` segments (`19.0%`); the official implied-growth step raises total `FUTURE_AADT_2044` coverage to `245,766` segments (`99.96%`).
 
 ### 9. Backfill county/district gaps
 
@@ -81,6 +85,8 @@ Calculate fields that align with the Texas RAPTOR format: `PCT_SADT`, `PCT_CADT`
 - `roadway_inventory.db` — SQLite database with all 245,863 segments (tabular, no geometry)
 - `base_network.gpkg` — GeoPackage with segment geometry + county/district boundary layers
 - `roadway_inventory_cleaned.csv` — flat table export
+
+The tabular attributes live in SQLite and the geometry/boundary layers live in GeoPackage, so the staged backend cleanly separates the two storage roles.
 
 ---
 
@@ -128,7 +134,9 @@ RAPTOR RoadwayData loader → scoring categories
 ## Key Numbers
 
 - **245,863** roadway segments in the final output
-- **99.97%** AADT coverage (only 85 segments have no traffic data at all)
+- **99.9605%** AADT coverage (Only 97 segments have no traffic data at all)
 - **8 data sources** combined into one network
-- **133 columns** in the staged database
+- **118 columns** in the staged database
 - **7 GDOT districts**, **159 counties** covered statewide
+
+
