@@ -1,16 +1,5 @@
-import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
-import CheckBoxIcon from "@mui/icons-material/CheckBox";
-import {
-  Autocomplete,
-  Avatar,
-  Box,
-  Checkbox,
-  Chip,
-  Slider,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import type { ReactElement } from "react";
+import { Box, Slider, Stack, Typography } from "@mui/material";
 
 import type { ThemeFilterState, ThemeFilterValue } from "../../store/useAppStore";
 import { RoadwayVisualizationOption, ThemeFilterSpec } from "../../types/api";
@@ -34,12 +23,6 @@ interface FilterControlProps {
     patch: Partial<ThemeFilterValue>,
   ) => void;
   resetThemeFilter: (visualizationId: string) => void;
-}
-
-interface SelectableBinOption {
-  key: string;
-  label: string;
-  color: string;
 }
 
 function getThemeFilterBinKey(bin: { value?: string | null; label: string }): string {
@@ -86,66 +69,6 @@ function getEffectiveThemeFilterValue(
   };
 }
 
-function getLegendColor(
-  option: RoadwayVisualizationOption,
-  value: string | null | undefined,
-  fallbackColor: string,
-): string {
-  if (typeof value !== "string") {
-    return fallbackColor;
-  }
-
-  return (
-    option.legend_items.find(
-      (item) => item.value === value || item.label === value,
-    )?.color ?? fallbackColor
-  );
-}
-
-function getChipTextColor(color: string): string {
-  const normalized = color.replace("#", "");
-  if (normalized.length !== 6) {
-    return "#10232f";
-  }
-
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-
-  return luminance >= 0.68 ? "#10232f" : "#ffffff";
-}
-
-function ColorSwatch({ color }: { color: string }) {
-  return (
-    <Avatar
-      variant="rounded"
-      sx={{
-        width: 16,
-        height: 16,
-        bgcolor: color,
-        border: "1px solid rgba(16, 35, 47, 0.16)",
-      }}
-    />
-  );
-}
-
-function buildSelectableBinOptions(
-  option: RoadwayVisualizationOption,
-  spec: ThemeFilterSpec,
-): SelectableBinOption[] {
-  return spec.bins.map((bin) => {
-    const selectionKey = getThemeFilterBinKey(bin);
-    const legendValue = typeof bin.value === "string" ? bin.value : bin.label;
-
-    return {
-      key: selectionKey,
-      label: bin.label,
-      color: getLegendColor(option, legendValue, option.no_data_color),
-    };
-  });
-}
-
 function updateThemeFilter(
   optionId: string,
   filterValue: ThemeFilterValue,
@@ -156,126 +79,6 @@ function updateThemeFilter(
     range: filterValue.range,
     includeNoData: filterValue.includeNoData,
   });
-}
-
-function NoDataChip({
-  color,
-  isSelected,
-  onClick,
-}: {
-  color: string;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Chip
-      clickable
-      size="small"
-      label="No data"
-      avatar={<ColorSwatch color={color} />}
-      onClick={onClick}
-      variant={isSelected ? "filled" : "outlined"}
-      sx={{
-        borderColor: isSelected ? color : "rgba(17, 61, 73, 0.22)",
-        bgcolor: isSelected ? color : "rgba(255, 255, 255, 0.78)",
-        color: isSelected ? getChipTextColor(color) : "#35505a",
-        "& .MuiChip-label": {
-          fontWeight: 600,
-        },
-        "& .MuiChip-avatar": {
-          bgcolor: color,
-        },
-        "&:hover": {
-          bgcolor: isSelected ? color : "rgba(17, 61, 73, 0.06)",
-        },
-      }}
-    />
-  );
-}
-
-function MultiSelectFilter({
-  option,
-  spec,
-  themeFilterValue,
-  setThemeFilter,
-}: FilterControlProps) {
-  const filterValue = getEffectiveThemeFilterValue(option, themeFilterValue);
-  const selectOptions = buildSelectableBinOptions(option, spec);
-  const selectedSet = new Set(filterValue.selectedValues);
-  const selectedOptions = selectOptions.filter((item) => selectedSet.has(item.key));
-
-  return (
-    <Stack spacing={0.5}>
-      <Autocomplete
-        multiple
-        size="small"
-        options={selectOptions}
-        value={selectedOptions}
-        onChange={(_, values) =>
-          updateThemeFilter(
-            option.id,
-            {
-              ...filterValue,
-              selectedValues: values.map((value) => value.key),
-            },
-            setThemeFilter,
-          )
-        }
-        disableCloseOnSelect
-        isOptionEqualToValue={(left, right) => left.key === right.key}
-        getOptionLabel={(item) => item.label}
-        renderTags={() => null}
-        renderOption={(props, item, { selected }) => (
-          <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
-            <Checkbox
-              icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-              checkedIcon={<CheckBoxIcon fontSize="small" />}
-              style={{ marginRight: 6, padding: 2 }}
-              checked={selected}
-            />
-            <Box
-              sx={{
-                mr: 0.75,
-                display: "inline-flex",
-                alignItems: "center",
-              }}
-            >
-              <ColorSwatch color={item.color} />
-            </Box>
-            {item.label}
-          </li>
-        )}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label={spec.label ?? "Category"}
-            placeholder="Select categories"
-            inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
-            InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
-          />
-        )}
-      />
-
-      {spec.no_data_selectable && (
-        <Stack direction="row" spacing={0.75}>
-          <NoDataChip
-            color={option.no_data_color}
-            isSelected={filterValue.includeNoData}
-            onClick={() =>
-              updateThemeFilter(
-                option.id,
-                {
-                  ...filterValue,
-                  includeNoData: !filterValue.includeNoData,
-                },
-                setThemeFilter,
-              )
-            }
-          />
-        </Stack>
-      )}
-    </Stack>
-  );
 }
 
 function formatSliderValue(value: number, unit: string | null): string {
@@ -371,10 +174,6 @@ function RangeSliderFilter({
   );
 }
 
-function HwyDesMatrixFilter(_props: FilterControlProps) {
-  return null;
-}
-
 export function ThemeContextFilter({
   option,
   themeFilters,
@@ -385,46 +184,27 @@ export function ThemeContextFilter({
     return null;
   }
 
-  return (
-    <Stack spacing={0.75}>
-      {option.filters.map((spec, index) => {
-        const sharedProps: FilterControlProps = {
-          option,
-          spec,
-          themeFilterValue: themeFilters[option.id],
-          setThemeFilter,
-          resetThemeFilter,
-        };
+  const rendered = option.filters
+    .map((spec, index) => {
+      if (spec.control !== "range_slider") {
+        return null;
+      }
+      return (
+        <RangeSliderFilter
+          key={`${option.id}-${spec.property_name}-${index}`}
+          option={option}
+          spec={spec}
+          themeFilterValue={themeFilters[option.id]}
+          setThemeFilter={setThemeFilter}
+          resetThemeFilter={resetThemeFilter}
+        />
+      );
+    })
+    .filter((node): node is ReactElement => node !== null);
 
-        switch (spec.control) {
-          case "toggle_chips":
-          case "multi_select":
-          case "bin_multi_select":
-            return (
-              <MultiSelectFilter
-                key={`${option.id}-${spec.property_name}-${index}`}
-                {...sharedProps}
-              />
-            );
-          case "range_slider":
-            return (
-              <RangeSliderFilter
-                key={`${option.id}-${spec.property_name}-${index}`}
-                {...sharedProps}
-              />
-            );
-          case "hwy_des_matrix":
-            return (
-              <HwyDesMatrixFilter
-                key={`${option.id}-${spec.property_name}-${index}`}
-                {...sharedProps}
-              />
-            );
-          case "none":
-          default:
-            return null;
-        }
-      })}
-    </Stack>
-  );
+  if (rendered.length === 0) {
+    return null;
+  }
+
+  return <Stack spacing={0.75}>{rendered}</Stack>;
 }

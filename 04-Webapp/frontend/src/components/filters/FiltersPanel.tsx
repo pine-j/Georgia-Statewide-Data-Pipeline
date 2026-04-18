@@ -28,11 +28,6 @@ import { RoadwayLegendCard } from "../map/RoadwayLegendCard";
 import { LegendPresence } from "../map/roadwayVisualization";
 import { ThemeContextFilter } from "./ThemeContextFilter";
 
-function displayDistrictLabel(label: string): string {
-  const separatorIndex = label.indexOf(" - ");
-  return separatorIndex >= 0 ? label.slice(separatorIndex + 3) : label;
-}
-
 const ALL_DISTRICTS_OPTION: DistrictOption = { id: -1, label: "All Districts" };
 
 interface ActiveThemeFilterChip {
@@ -165,7 +160,7 @@ export function FiltersPanel({
       ? counties.filter((county) => selectedDistricts.includes(county.district))
       : counties;
 
-  const districtLabelMap = new Map(districts.map((district) => [district.id, displayDistrictLabel(district.label)]));
+  const districtLabelMap = new Map(districts.map((district) => [district.id, district.label]));
 
   const sortedCountyOptions = [...countyOptions].sort((left, right) => {
     if (left.district !== right.district) {
@@ -538,12 +533,12 @@ export function FiltersPanel({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {displayDistrictLabel(district.label)}
+                          {district.label}
                         </Typography>
                         <IconButton
                           size="small"
                           onClick={() => onDistrictDelete(district.id)}
-                          aria-label={`Remove ${displayDistrictLabel(district.label)} district filter`}
+                          aria-label={`Remove ${district.label} district filter`}
                           sx={{ p: 0.25 }}
                         >
                           <CloseRoundedIcon fontSize="inherit" />
@@ -668,14 +663,14 @@ export function FiltersPanel({
                     checked={isAll ? isAllDistricts : selected}
                   />
                   <span style={{ fontWeight: isAll ? 600 : 400 }}>
-                    {isAll ? "Show all districts" : displayDistrictLabel(option.label)}
+                    {isAll ? "Show all districts" : option.label}
                   </span>
                 </li>
               );
             }}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) =>
-              option.id === ALL_DISTRICTS_OPTION.id ? "All Districts" : displayDistrictLabel(option.label)
+              option.id === ALL_DISTRICTS_OPTION.id ? "All Districts" : option.label
             }
             renderTags={() => null}
             renderInput={(params) => (
@@ -756,11 +751,14 @@ export function FiltersPanel({
       </Box>
 
       {selectedVisualization && (
-        <Box sx={{ flexShrink: 0 }}>
+        <Box sx={{ flexShrink: 0, px: 1.5, pt: 1, pb: 1.5 }}>
           <RoadwayLegendCard
             visualization={selectedVisualization}
             legendPresence={legendPresence}
             onLegendItemHover={onLegendItemHover}
+            themeFilterValue={themeFilters[selectedVisualization.id]}
+            defaultThemeFilterValue={defaultThemeFilterValue}
+            setThemeFilter={setThemeFilter}
           />
         </Box>
       )}
