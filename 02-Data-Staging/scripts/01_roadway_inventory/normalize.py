@@ -6,11 +6,25 @@ then attaches current GDOT traffic fields by route ID and milepoint intervals.
 The only canonical future projection kept in the normalized network is
 `FUTURE_AADT` from the current 2024 GDOT traffic record.
 
+AADT 2024 is sourced from two parallel GDOT publications:
+1. The state-system 2024 traffic GDB (`TRAFFIC_Data_2024.gdb`) — captured
+   verbatim into `AADT_2024_OFFICIAL`.
+2. GDOT's federal HPMS 2024 submission — captured into `AADT_2024_HPMS`.
+
+Both columns are populated wherever the source has a value, regardless of
+which one ultimately wins the canonical `AADT` / `AADT_2024` field. The two
+are cross-validated into `AADT_2024_SOURCE_AGREEMENT` so downstream consumers
+can distinguish state-only, hpms-only, agreeing, and disagreeing segments.
+The remaining `direction_mirror`, `analytical_gap_fill`, and
+`nearest_neighbor` fills are pipeline-derived (not GDOT-published) and are
+treated as low-confidence for the `AADT_2024_CONFIDENCE` tier.
+
 Data sources:
 1. `Road_Inventory_2024.gdb` layer `GA_2024_Routes`
    Official full roadway geometry.
 2. `TRAFFIC_Data_2024.gdb` layer `TRAFFIC_DataYear2024`
-   Current traffic segmentation with AADT, truck counts, VMT, and factors.
+   Current traffic segmentation with AADT, truck counts, VMT, factors,
+   and per-record measurement metadata (`Statistics_Type`, `SampleStatus`).
 
 Output:
 - `02-Data-Staging/tables/roadway_inventory_cleaned.csv`
@@ -158,6 +172,11 @@ CURRENT_TRAFFIC_FIELDS = {
     "TruckVMT": "TRUCK_VMT_2024",
     "Traffic_Class": "TRAFFIC_CLASS_2024",
     "TC_NUMBER": "TC_NUMBER",
+    # GDOT measurement metadata for the state-system AADT record.
+    # Statistics_Type values: Actual / Estimated / Calculated.
+    # SampleStatus is a free-text descriptor, mostly None.
+    "Statistics_Type": "AADT_2024_STATS_TYPE",
+    "SampleStatus": "AADT_2024_SAMPLE_STATUS",
 }
 
 
@@ -674,9 +693,13 @@ def build_segment_row(
     row["AADT"] = np.nan
     row["AADT_2024"] = np.nan
     row["AADT_2024_OFFICIAL"] = np.nan
+    row["AADT_2024_HPMS"] = np.nan
     row["AADT_2024_SOURCE"] = "missing"
+    row["AADT_2024_SOURCE_AGREEMENT"] = None
     row["AADT_2024_CONFIDENCE"] = None
     row["AADT_2024_FILL_METHOD"] = None
+    row["AADT_2024_STATS_TYPE"] = None
+    row["AADT_2024_SAMPLE_STATUS"] = None
     row["AADT_YEAR"] = np.nan
     row["TRUCK_AADT"] = np.nan
     row["TRUCK_PCT"] = np.nan
@@ -722,6 +745,12 @@ def build_segment_row(
         row["D_FACTOR"] = current_record.get("D_FACTOR")
         row["TC_NUMBER"] = current_record.get("TC_NUMBER")
         row["TRAFFIC_CLASS_2024"] = current_record.get("TRAFFIC_CLASS_2024")
+        row["AADT_2024_STATS_TYPE"] = _clean_optional_text(
+            current_record.get("AADT_2024_STATS_TYPE")
+        )
+        row["AADT_2024_SAMPLE_STATUS"] = _clean_optional_text(
+            current_record.get("AADT_2024_SAMPLE_STATUS")
+        )
         if pd.isna(row.get("COUNTY_ID")) and pd.notna(current_record.get("CURRENT_COUNTY_ID")):
             row["COUNTY_ID"] = current_record.get("CURRENT_COUNTY_ID")
         if pd.isna(row.get("GDOT_District")) and pd.notna(current_record.get("CURRENT_GDOT_DISTRICT")):
@@ -1413,6 +1442,155 @@ def apply_future_aadt_official_growth_projection(gdf: gpd.GeoDataFrame) -> gpd.G
     filled["future_aadt_covered"] = filled["FUTURE_AADT_2044"].notna()
 
     return filled
+
+
+# Cross-validation thresholds between the two GDOT-published AADT sources.
+# A pair is considered "agreeing" if the absolute difference is within
+# AADT_2024_AGREEMENT_ABS_TOL veh/day OR the relative difference (vs. the
+# state value) is within AADT_2024_AGREEMENT_REL_TOL.
+AADT_2024_AGREEMENT_REL_TOL = 0.15
+AADT_2024_AGREEMENT_ABS_TOL = 200
+
+
+def compute_aadt_2024_source_agreement(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Derive `AADT_2024_SOURCE_AGREEMENT` from the two GDOT-published sources.
+
+    Operates on the audit columns `AADT_2024_OFFICIAL` (state-system 2024 GDB)
+    and `AADT_2024_HPMS` (federal HPMS submission). Both are inputs published
+    by GDOT; this function does not change which source ultimately wins the
+    canonical `AADT` / `AADT_2024` field.
+
+    Values:
+      - state_only      — state has a value, HPMS does not
+      - hpms_only       — HPMS has a value, state does not
+      - both_agree      — both populated and within rel/abs tolerance
+      - both_disagree   — both populated but outside the tolerance band
+      - missing         — neither source has a value
+    """
+
+    out = gdf.copy()
+
+    if "AADT_2024_OFFICIAL" not in out.columns:
+        out["AADT_2024_OFFICIAL"] = np.nan
+    if "AADT_2024_HPMS" not in out.columns:
+        out["AADT_2024_HPMS"] = np.nan
+
+    state = pd.to_numeric(out["AADT_2024_OFFICIAL"], errors="coerce")
+    hpms = pd.to_numeric(out["AADT_2024_HPMS"], errors="coerce")
+
+    has_state = state.notna()
+    has_hpms = hpms.notna()
+    both = has_state & has_hpms
+
+    diff = (hpms - state).abs()
+    # Avoid divide-by-zero on the relative band when state == 0; treat any
+    # non-zero hpms in that case as a disagreement (handled by abs band).
+    rel_diff = diff / state.where(state.abs() > 0)
+    within_band = (diff <= AADT_2024_AGREEMENT_ABS_TOL) | (
+        rel_diff.abs() <= AADT_2024_AGREEMENT_REL_TOL
+    )
+
+    agreement = pd.Series("missing", index=out.index, dtype="object")
+    agreement[has_state & ~has_hpms] = "state_only"
+    agreement[has_hpms & ~has_state] = "hpms_only"
+    agreement[both & within_band.fillna(False)] = "both_agree"
+    agreement[both & ~within_band.fillna(False)] = "both_disagree"
+
+    out["AADT_2024_SOURCE_AGREEMENT"] = agreement
+
+    counts = agreement.value_counts(dropna=False).to_dict()
+    logger.info(
+        "AADT 2024 source agreement: state_only=%d, hpms_only=%d, both_agree=%d, both_disagree=%d, missing=%d",
+        int(counts.get("state_only", 0)),
+        int(counts.get("hpms_only", 0)),
+        int(counts.get("both_agree", 0)),
+        int(counts.get("both_disagree", 0)),
+        int(counts.get("missing", 0)),
+    )
+    return out
+
+
+# AADT_2024_SOURCE values that originate from a GDOT-published source.
+# Everything else (direction_mirror, analytical_gap_fill, nearest_neighbor) is
+# pipeline-derived and treated as low confidence under the hygiene rules.
+_AADT_2024_DERIVED_SOURCES = {
+    "direction_mirror",
+    "analytical_gap_fill",
+    "nearest_neighbor",
+}
+
+
+def recompute_aadt_2024_confidence(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Recompute `AADT_2024_CONFIDENCE` using the hygiene-pass tier rules.
+
+    Tiers (evaluated top-down):
+      - high    — `AADT_2024_STATS_TYPE == 'Actual'` OR
+                  `AADT_2024_SOURCE_AGREEMENT == 'both_agree'`
+      - medium  — `AADT_2024_STATS_TYPE` in {'Estimated', 'Calculated'} OR
+                  single-source GDOT-official (state_only / hpms_only)
+      - low     — pipeline-derived source (direction_mirror /
+                  analytical_gap_fill / nearest_neighbor) OR
+                  `AADT_2024_SOURCE_AGREEMENT == 'both_disagree'`
+      - missing — `AADT_2024_SOURCE == 'missing'` (no value)
+
+    This intentionally downgrades `direction_mirror` (previously labeled
+    `high`) and `analytical_gap_fill` (previously labeled `medium`) to `low`
+    so that the confidence tier reflects whether the value was published by
+    GDOT or derived by this pipeline.
+    """
+
+    out = gdf.copy()
+
+    for col in ("AADT_2024_SOURCE", "AADT_2024_SOURCE_AGREEMENT", "AADT_2024_STATS_TYPE"):
+        if col not in out.columns:
+            out[col] = None
+
+    source = out["AADT_2024_SOURCE"].astype("string")
+    agreement = out["AADT_2024_SOURCE_AGREEMENT"].astype("string")
+    stats_type = out["AADT_2024_STATS_TYPE"].astype("string").str.strip()
+
+    confidence = pd.Series(pd.NA, index=out.index, dtype="object")
+
+    # Precedence (top wins on ties):
+    #   1. missing  — no AADT value at all
+    #   2. low      — pipeline-derived OR cross-source disagreement
+    #                 (a bad-signal override that beats positive stats_type/agreement)
+    #   3. high     — Actual state measurement OR both sources agree
+    #                 (positive signal; beats medium when both criteria match)
+    #   4. medium   — Estimated/Calculated state measurement, OR single-source official
+
+    confidence[source == "missing"] = "missing"
+
+    derived_mask = source.isin(_AADT_2024_DERIVED_SOURCES)
+    disagree_mask = agreement == "both_disagree"
+    confidence[(derived_mask | disagree_mask) & confidence.isna()] = "low"
+
+    high_mask = (stats_type == "Actual") | (agreement == "both_agree")
+    confidence[high_mask & confidence.isna()] = "high"
+
+    medium_mask = stats_type.isin(["Estimated", "Calculated"]) | agreement.isin(
+        ["state_only", "hpms_only"]
+    )
+    confidence[medium_mask & confidence.isna()] = "medium"
+
+    # Anything still null gets the previous value if present, else medium as a
+    # safe default for GDOT-published rows that lack stats metadata.
+    fallback_existing = out.get("AADT_2024_CONFIDENCE")
+    if fallback_existing is not None:
+        confidence = confidence.where(confidence.notna(), fallback_existing)
+    confidence = confidence.where(confidence.notna(), "medium")
+
+    out["AADT_2024_CONFIDENCE"] = confidence
+
+    counts = confidence.value_counts(dropna=False).to_dict()
+    logger.info(
+        "AADT 2024 confidence tiers: high=%d, medium=%d, low=%d, missing=%d",
+        int(counts.get("high", 0)),
+        int(counts.get("medium", 0)),
+        int(counts.get("low", 0)),
+        int(counts.get("missing", 0)),
+    )
+    return out
 
 
 def write_match_summary(gdf: gpd.GeoDataFrame) -> None:
@@ -2521,6 +2699,11 @@ def main() -> None:
         county_boundaries_for_backfill,
     )
     segmented = apply_hpms_enrichment(segmented)
+    # Cross-validate the two GDOT-published AADT 2024 sources (state GDB vs
+    # federal HPMS submission). Both inputs are now captured on every row, so
+    # we can derive the agreement bucket before the pipeline-derived gap-fill
+    # chain runs and overwrites the canonical AADT field.
+    segmented = compute_aadt_2024_source_agreement(segmented)
     segmented = apply_off_system_speed_zone_enrichment(segmented)
     # Signed-route verification precedence:
     # 1. HPMS enrichment runs first — broad coverage, gap-fills AADT and
@@ -2541,6 +2724,9 @@ def main() -> None:
     segmented = apply_nearest_neighbor_aadt(segmented)
     segmented = apply_future_aadt_fill_chain(segmented)
     segmented = apply_future_aadt_official_growth_projection(segmented)
+    # Recompute confidence tier now that AADT_2024_SOURCE is final and the
+    # cross-source agreement has been derived.
+    segmented = recompute_aadt_2024_confidence(segmented)
     segmented = derive_texas_alignment_columns(segmented)
     segmented = add_decoded_label_columns(segmented)
     segmented = add_county_all_from_geometry(segmented, county_boundaries_for_backfill)
