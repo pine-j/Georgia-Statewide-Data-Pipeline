@@ -65,7 +65,7 @@ ROADWAY_COLUMNS = [
     "ROUTE_TYPE_GDOT",
     "BASE_ROUTE_NUMBER",
     "AADT",
-    "DISTRICT_LABEL",
+    "DISTRICT_NAME",
     "COUNTY_NAME",
     "segment_length_m",
     "geometry",
@@ -618,7 +618,7 @@ def html_template(summary: dict[str, object]) -> str:
               ['Evac Route', 'SEC_EVAC_ROUTE_NAME'],
               ['AADT', 'AADT'],
               ['COUNTY_NAME', 'COUNTY_NAME'],
-              ['DISTRICT_LABEL', 'DISTRICT_LABEL'],
+              ['DISTRICT_NAME', 'DISTRICT_NAME'],
               ['Match Method', 'match_method']
             ]) + `<div><strong>Overlap:</strong> ${{overlapM}} (${{ratio}})</div>`
           );
@@ -789,7 +789,7 @@ def main() -> None:
     )
     roads = load_roadway_subset(roadway_bounds)
 
-    evac_keep_cols = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"]
+    evac_keep_cols = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_NAME", "COUNTY_NAME"]
 
     # --- Per-corridor evacuation matching via shared module ---
     evac_matches, evac_diagnostics = per_corridor_evac_overlay(
@@ -844,7 +844,7 @@ def main() -> None:
     contraflow_flagged = flag_matches(
         roads,
         contraflow_routes,
-        ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_LABEL", "COUNTY_NAME"],
+        ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "AADT", "DISTRICT_NAME", "COUNTY_NAME"],
         route_name_field="TITLE",
         interstate_only=True,
         buffer_m=CONTRAFLOW_BUFFER_M,
