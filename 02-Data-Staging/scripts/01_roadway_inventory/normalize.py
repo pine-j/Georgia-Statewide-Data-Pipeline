@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 import geopandas as gpd
@@ -452,6 +453,45 @@ def build_interval_lookup(df: pd.DataFrame) -> dict[str, list[dict]]:
     for route_id, group in df.groupby("ROUTE_ID", sort=False):
         lookup[route_id] = group.to_dict("records")
     return lookup
+
+
+def mirror_inc_breakpoints_to_dec(
+    current_lookup: dict[str, list[dict]],
+    route_ids: Iterable[str],
+) -> dict[str, list[dict]]:
+    """For each DEC route with no traffic records, seed geometry-only
+    breakpoint entries from its INC sibling so segment_routes can split it.
+
+    GDOT publishes AADT on the INC direction only for divided highways, which
+    leaves DEC routes without breakpoints and causes them to emit as a single
+    whole-route feature. The seeded records here carry only
+    FROM_MILEPOINT/TO_MILEPOINT -- no traffic attributes -- so downstream AADT
+    logic stays INC-only until the dedicated direction mirror runs later.
+
+    Returns a new dict; does not mutate ``current_lookup``.
+    """
+    mirrored = dict(current_lookup)
+    added = 0
+    for route_id in route_ids:
+        if not isinstance(route_id, str) or not route_id.endswith("DEC"):
+            continue
+        if mirrored.get(route_id):
+            continue
+        inc_partner = route_id[:-3] + "INC"
+        inc_records = mirrored.get(inc_partner)
+        if not inc_records:
+            continue
+        mirrored[route_id] = [
+            {
+                "ROUTE_ID": route_id,
+                "FROM_MILEPOINT": rec["FROM_MILEPOINT"],
+                "TO_MILEPOINT": rec["TO_MILEPOINT"],
+            }
+            for rec in inc_records
+        ]
+        added += 1
+    logger.info("Mirrored INC->DEC breakpoints for %d DEC routes", added)
+    return mirrored
 
 
 def build_county_to_district_lookup(current_traffic: pd.DataFrame) -> dict[int, int]:
@@ -2482,6 +2522,10 @@ def main() -> None:
     routes = build_unique_id(routes)
 
     current_lookup = build_interval_lookup(current_traffic)
+    current_lookup = mirror_inc_breakpoints_to_dec(
+        current_lookup,
+        routes["ROUTE_ID"].dropna().astype(str).unique().tolist(),
+    )
     segmented = segment_routes(routes, current_lookup)
     segmented = build_unique_id(segmented)
 
@@ -2509,10 +2553,12 @@ def main() -> None:
     #    final authority for signed-route family. GPAS can upgrade or confirm
     #    but never downgrade a higher-priority family.
     segmented = apply_signed_route_verification(segmented)
-    segmented = apply_evacuation_enrichment(segmented)
-    segmented = sync_derived_alias_fields(segmented)
+    # Classify ROUTE_TYPE_GDOT / HWY_NAME before evacuation enrichment so the
+    # matcher's RAMP-skip filter has HWY_NAME populated and does not flag ramps.
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
+    segmented = apply_evacuation_enrichment(segmented)
+    segmented = sync_derived_alias_fields(segmented)
     segmented = apply_direction_mirror_aadt(segmented)
     segmented = apply_state_system_current_aadt_gap_fill(segmented)
     segmented = apply_nearest_neighbor_aadt(segmented)
