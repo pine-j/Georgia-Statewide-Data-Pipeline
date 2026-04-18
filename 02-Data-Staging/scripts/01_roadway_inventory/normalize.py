@@ -1573,12 +1573,18 @@ def recompute_aadt_2024_confidence(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
     confidence[medium_mask & confidence.isna()] = "medium"
 
-    # Anything still null gets the previous value if present, else medium as a
-    # safe default for GDOT-published rows that lack stats metadata.
-    fallback_existing = out.get("AADT_2024_CONFIDENCE")
-    if fallback_existing is not None:
-        confidence = confidence.where(confidence.notna(), fallback_existing)
-    confidence = confidence.where(confidence.notna(), "medium")
+    # Every row should have matched one of the four explicit rules above; if
+    # any remain null after a future rule change, log and default to medium so
+    # the regression is visible instead of silently reviving pre-hygiene
+    # AADT_2024_CONFIDENCE values.
+    unclassified = confidence.isna().sum()
+    if unclassified:
+        logger.warning(
+            "AADT 2024 confidence: %d rows did not match any tier rule; "
+            "defaulting them to 'medium'",
+            int(unclassified),
+        )
+        confidence = confidence.where(confidence.notna(), "medium")
 
     out["AADT_2024_CONFIDENCE"] = confidence
 
