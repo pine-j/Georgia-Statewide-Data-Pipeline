@@ -4,7 +4,7 @@ HWY,ROUTE_ID,HWY_NAME,Proxy,Proxy,Present,"HWY_NAME is the closest final-output 
 FRM_DFO,FROM_MILEPOINT,FROM_MILEPOINT,Exact-ish,Exact-ish,Present,"Direct begin-measure analogue exists."
 TO_DFO,TO_MILEPOINT,TO_MILEPOINT,Exact-ish,Exact-ish,Present,"Direct end-measure analogue exists."
 HSYS,SYSTEM_CODE,SYSTEM_CODE,Proxy,Proxy,Present,"SYSTEM_CODE is the closest Georgia route-system field. NHS_IND may also be needed depending on Texas logic."
-DI,DIRECTION,DIRECTION,Proxy,Proxy,Present,"ROUTE_DIRECTION is also available in final output if a normalized directional field is preferred."
+DI,DIRECTION,DIRECTION,Proxy,Proxy,Present,"DIRECTION is the normalized directional field in final output."
 CO,COUNTY_ID,COUNTY_CODE,Exact-ish,Exact-ish,Present,"Georgia normalizes county into COUNTY_CODE and COUNTY_NAME in final output."
 NUM_LANES,THROUGH_LANES,NUM_LANES,Derived,Derived,Present,"NUM_LANES is the normalized final lane field after ETL sync."
 ADT_CUR,AADTRound,AADT,Derived,Derived,Present,"AADT is the canonical current traffic field in Georgia final output."

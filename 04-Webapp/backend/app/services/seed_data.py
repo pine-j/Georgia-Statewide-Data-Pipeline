@@ -18,14 +18,14 @@ SEED_STATES = [
     StateOption(code="ga", name="Georgia"),
 ]
 
-SEED_DISTRICT_LABELS = {
-    1: "District 1 - Gainesville",
-    2: "District 2 - Tennille",
-    3: "District 3 - Thomaston",
-    4: "District 4 - Tifton",
-    5: "District 5 - Jesup",
-    6: "District 6 - Cartersville",
-    7: "District 7 - Chamblee",
+SEED_DISTRICT_NAMES = {
+    1: "Gainesville",
+    2: "Tennille",
+    3: "Thomaston",
+    4: "Tifton",
+    5: "Jesup",
+    6: "Cartersville",
+    7: "Chamblee",
 }
 
 SEED_ROADWAYS = [
@@ -263,7 +263,7 @@ def get_seed_roadways(
                     aadt=item["aadt"],
                     length_miles=float(item["length_miles"]),
                     district=int(item["district"]),
-                    district_label=SEED_DISTRICT_LABELS[int(item["district"])],
+                    district_name=SEED_DISTRICT_NAMES[int(item["district"])],
                     county=item["county"],
                 ),
             )

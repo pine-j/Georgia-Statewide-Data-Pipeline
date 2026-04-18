@@ -49,7 +49,6 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   COUNTY_CODE: { label: "County Code", description: "FIPS county code where the segment is located" },
   county_all: { label: "All Counties", description: "All counties this segment passes through" },
   DISTRICT: { label: "District", description: "GDOT district number" },
-  DISTRICT_LABEL: { label: "District Name", description: "GDOT district name and number" },
   LENGTH_MILES: { label: "Length (Miles)", description: "Segment length in miles" },
   HPMS_ACCESS_CONTROL: { label: "Access Control", description: "HPMS access control type (full, partial, or no control)" },
   SEC_EVAC: { label: "Evacuation Route", description: "Whether this segment is on a GDOT-designated hurricane evacuation route" },
@@ -61,18 +60,39 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   SINGLE_UNIT_AADT_2024: { label: "Single-Unit Truck AADT", description: "Annual average daily count of single-unit trucks (2024)" },
   COMBO_UNIT_AADT_2024: { label: "Combo-Unit Truck AADT", description: "Annual average daily count of combination trucks (2024)" },
   URBAN_CODE: { label: "Urban Area Code", description: "Census urban area code for the segment location" },
+  URBAN_CODE_LABEL: { label: "Urban Area", description: "Census urban area name (or Rural Area) for the segment location" },
+  SYSTEM_CODE_LABEL: { label: "System Code", description: "Road system classification (State Highway, County, Local, etc.)" },
+  FUNCTION_TYPE_LABEL: { label: "Function Type", description: "Segment function type (Main Line, Ramp, Connector, etc.)" },
+  FUNCTIONAL_CLASS_LABEL: { label: "Functional Class", description: "FHWA functional classification of the roadway" },
+  FACILITY_TYPE_LABEL: { label: "Facility Type", description: "Type of road facility (one-way, two-way, etc.)" },
+  NHS_IND_LABEL: { label: "NHS Indicator", description: "Whether this segment is part of the National Highway System" },
+  OWNERSHIP_LABEL: { label: "Ownership", description: "Agency or entity that owns the roadway" },
+  STRAHNET_LABEL: { label: "STRAHNET", description: "Strategic Highway Network designation (military mobility)" },
+  MEDIAN_TYPE_LABEL: { label: "Median Type", description: "Type of median separating opposing traffic" },
+  SHOULDER_TYPE_LABEL: { label: "Shoulder Type", description: "Type of shoulder along the segment" },
+  SURFACE_TYPE_LABEL: { label: "Surface Type", description: "Road surface material type (asphalt, concrete, etc.)" },
+  DIRECTION_LABEL: { label: "Direction", description: "Direction of travel for the segment" },
+  ROUTE_TYPE_GDOT_LABEL: { label: "GDOT Route Type", description: "GDOT route type classification (mainline, ramp, connector, etc.)" },
+  COUNTY_NAME: { label: "County Name", description: "County where the segment is located" },
+  DISTRICT_NAME: { label: "District Name", description: "GDOT district name" },
   unique_id: { label: "Unique ID", description: "Internal unique segment identifier" },
 };
 
-/** Labels that end with _label are display-friendly versions of coded columns. */
+/** Labels that end with _LABEL are display-friendly versions of coded columns. */
 const LABEL_SUFFIX_PAIRS: Record<string, string> = {
-  MEDIAN_TYPE: "median_type_label",
-  SURFACE_TYPE: "surface_type_label",
-  NHS_IND: "nhs_ind_label",
-  OWNERSHIP: "ownership_label",
-  FACILITY_TYPE: "facility_type_label",
-  SYSTEM_CODE: "system_code_label",
-  DIRECTION: "direction_label",
+  MEDIAN_TYPE: "MEDIAN_TYPE_LABEL",
+  SURFACE_TYPE: "SURFACE_TYPE_LABEL",
+  SHOULDER_TYPE: "SHOULDER_TYPE_LABEL",
+  NHS_IND: "NHS_IND_LABEL",
+  OWNERSHIP: "OWNERSHIP_LABEL",
+  FACILITY_TYPE: "FACILITY_TYPE_LABEL",
+  SYSTEM_CODE: "SYSTEM_CODE_LABEL",
+  DIRECTION: "DIRECTION_LABEL",
+  FUNCTION_TYPE: "FUNCTION_TYPE_LABEL",
+  FUNCTIONAL_CLASS: "FUNCTIONAL_CLASS_LABEL",
+  STRAHNET: "STRAHNET_LABEL",
+  URBAN_CODE: "URBAN_CODE_LABEL",
+  ROUTE_TYPE_GDOT: "ROUTE_TYPE_GDOT_LABEL",
 };
 
 /** Keys that are redundant or internal — always hidden. */
@@ -82,18 +102,25 @@ const HIDDEN_KEYS = new Set([
   "road_name",
   "COUNTY_CODE",
   "DISTRICT",
-  "DISTRICT_LABEL",
   "ROUTE_ID",
   "HWY_NAME",
   "county_all",
-  // Raw coded columns when a _label version exists
+  "COUNTY_NAME",
+  "DISTRICT_NAME",
+  // Raw coded columns superseded by _LABEL versions
   "MEDIAN_TYPE",
   "SURFACE_TYPE",
+  "SHOULDER_TYPE",
   "NHS_IND",
   "OWNERSHIP",
   "FACILITY_TYPE",
   "SYSTEM_CODE",
   "DIRECTION",
+  "FUNCTION_TYPE",
+  "FUNCTIONAL_CLASS",
+  "STRAHNET",
+  "URBAN_CODE",
+  "ROUTE_TYPE_GDOT",
   // Duplicate traffic columns
   "SINGLE_UNIT_AADT_2024",
   "COMBO_UNIT_AADT_2024",
@@ -136,18 +163,22 @@ const DISPLAY_ORDER: string[] = [
   "K_FACTOR",
   "D_FACTOR",
   "VMT",
-  "FUNCTIONAL_CLASS",
+  "FUNCTIONAL_CLASS_LABEL",
+  "FUNCTION_TYPE_LABEL",
   "NUM_LANES",
   "SPEED_LIMIT",
   "HWY_DES",
   "ROUTE_FAMILY",
-  "median_type_label",
-  "surface_type_label",
-  "facility_type_label",
-  "nhs_ind_label",
-  "ownership_label",
-  "system_code_label",
-  "direction_label",
+  "MEDIAN_TYPE_LABEL",
+  "SURFACE_TYPE_LABEL",
+  "SHOULDER_TYPE_LABEL",
+  "FACILITY_TYPE_LABEL",
+  "NHS_IND_LABEL",
+  "STRAHNET_LABEL",
+  "OWNERSHIP_LABEL",
+  "SYSTEM_CODE_LABEL",
+  "ROUTE_TYPE_GDOT_LABEL",
+  "DIRECTION_LABEL",
   "HPMS_ACCESS_CONTROL",
   "SEC_EVAC",
   "SEC_EVAC_CONTRAFLOW",
@@ -155,7 +186,7 @@ const DISPLAY_ORDER: string[] = [
   "LENGTH_MILES",
   "FROM_MILEPOINT",
   "TO_MILEPOINT",
-  "URBAN_CODE",
+  "URBAN_CODE_LABEL",
 ];
 
 interface AttributeRow {
@@ -234,11 +265,6 @@ function buildDisplayRows(attributes: Record<string, string | number | boolean |
   return rows;
 }
 
-function displayDistrictLabel(label: string): string {
-  const separatorIndex = label.indexOf(" - ");
-  return separatorIndex >= 0 ? label.slice(separatorIndex + 3) : label;
-}
-
 function formatCountyMeta(county: string, countyAll?: string | null): string {
   if (!countyAll) return `${county} County`;
   const normalized = countyAll.trim();
@@ -262,11 +288,11 @@ const SECTIONS: AttributeSection[] = [
   },
   {
     title: "Road Characteristics",
-    keys: new Set(["FUNCTIONAL_CLASS", "functional_class_viz", "NUM_LANES", "SPEED_LIMIT", "HWY_DES", "ROUTE_FAMILY", "median_type_label", "surface_type_label", "facility_type_label", "nhs_ind_label", "HPMS_ACCESS_CONTROL", "SEC_EVAC", "SEC_EVAC_CONTRAFLOW", "SEC_EVAC_ROUTE_NAME"]),
+    keys: new Set(["FUNCTIONAL_CLASS_LABEL", "FUNCTION_TYPE_LABEL", "functional_class_viz", "NUM_LANES", "SPEED_LIMIT", "HWY_DES", "ROUTE_FAMILY", "MEDIAN_TYPE_LABEL", "SURFACE_TYPE_LABEL", "SHOULDER_TYPE_LABEL", "FACILITY_TYPE_LABEL", "NHS_IND_LABEL", "STRAHNET_LABEL", "HPMS_ACCESS_CONTROL", "SEC_EVAC", "SEC_EVAC_CONTRAFLOW", "SEC_EVAC_ROUTE_NAME"]),
   },
   {
     title: "Administration",
-    keys: new Set(["ownership_label", "system_code_label", "direction_label", "URBAN_CODE"]),
+    keys: new Set(["OWNERSHIP_LABEL", "SYSTEM_CODE_LABEL", "ROUTE_TYPE_GDOT_LABEL", "DIRECTION_LABEL", "URBAN_CODE_LABEL"]),
   },
   {
     title: "Segment Geometry",
@@ -341,7 +367,7 @@ export function RoadwayDetailSidebar({ detail, isLoading, hasError, onClose }: R
             </Typography>
             {detail && (
               <Typography variant="body2" sx={{ color: "#47626b", mt: 0.25, fontSize: "0.8rem" }}>
-                {formatCountyMeta(detail.county, countyAll)} | {displayDistrictLabel(detail.district_label)}
+                {formatCountyMeta(detail.county, countyAll)} | {detail.district_name}
               </Typography>
             )}
           </Box>

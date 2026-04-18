@@ -66,17 +66,6 @@ DISTRICT_BOUNDARIES_URL = (
     f"{GDOT_BOUNDARIES_SERVICE}/3/query?where=1%3D1&outFields=*&f=geojson"
 )
 
-DISTRICT_NAME_LOOKUP = {
-    1: "District 1 - Gainesville",
-    2: "District 2 - Tennille",
-    3: "District 3 - Thomaston",
-    4: "District 4 - Tifton",
-    5: "District 5 - Jesup",
-    6: "District 6 - Cartersville",
-    7: "District 7 - Chamblee",
-}
-
-
 def load_json_mapping(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -276,9 +265,6 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf["DISTRICT_NAME"] = get_or_empty_series(gdf, "DISTRICT").map(
         lambda value: decode_lookup_value(value, DISTRICT_SHORT_NAME_LOOKUP)
     )
-    gdf["DISTRICT_LABEL"] = get_or_empty_series(gdf, "DISTRICT").map(
-        lambda value: decode_lookup_value(value, DISTRICT_NAME_LOOKUP)
-    )
 
     gdf["SYSTEM_CODE_LABEL"] = get_or_empty_series(gdf, "SYSTEM_CODE").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
@@ -316,12 +302,6 @@ def add_decoded_label_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     gdf["DIRECTION_LABEL"] = get_or_empty_series(gdf, "DIRECTION").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
-    gdf["ROUTE_DIRECTION_LABEL"] = get_or_empty_series(gdf, "ROUTE_DIRECTION").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_direction"])
-    )
-    gdf["ROUTE_TYPE_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE").map(
-        lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["system_code"])
     )
     gdf["ROUTE_TYPE_GDOT_LABEL"] = get_or_empty_series(gdf, "ROUTE_TYPE_GDOT").map(
         lambda value: decode_lookup_value(value, ROADWAY_DOMAIN_LABELS["route_type_gdot"])
@@ -531,10 +511,8 @@ def prepare_route_attributes(routes: gpd.GeoDataFrame, current_traffic: pd.DataF
 
     routes = sync_derived_alias_fields(routes)
     routes["FUNCTION_TYPE"] = routes["PARSED_FUNCTION_TYPE"]
-    routes["ROUTE_TYPE"] = routes["PARSED_SYSTEM_CODE"]
     routes["ROUTE_NUMBER"] = routes["PARSED_ROUTE_NUMBER"]
     routes["ROUTE_SUFFIX"] = routes["PARSED_SUFFIX"]
-    routes["ROUTE_DIRECTION"] = routes["PARSED_DIRECTION"]
     route_families = classify_route_families(routes)
     routes = pd.concat([routes, route_families], axis=1)
     return routes
@@ -2305,8 +2283,8 @@ def fetch_official_district_boundaries() -> gpd.GeoDataFrame:
     gdf = gdf[available].copy()
     if "GDOT_DISTRICT" in gdf.columns:
         gdf["GDOT_DISTRICT"] = pd.to_numeric(gdf["GDOT_DISTRICT"], errors="coerce").astype("Int64")
-        gdf["DISTRICT_LABEL"] = gdf["GDOT_DISTRICT"].map(DISTRICT_NAME_LOOKUP)
-        gdf["DISTRICT_NAME"] = gdf["DISTRICT_LABEL"].fillna(gdf.get("DISTRICT_NAME"))
+        mapped_name = gdf["GDOT_DISTRICT"].map(DISTRICT_SHORT_NAME_LOOKUP)
+        gdf["DISTRICT_NAME"] = mapped_name.fillna(gdf.get("DISTRICT_NAME"))
     gdf = gdf.to_crs(TARGET_CRS)
     invalid_count = int((~gdf.geometry.is_valid).sum())
     if invalid_count:
@@ -2372,8 +2350,7 @@ def fetch_official_county_boundaries(district_boundaries: gpd.GeoDataFrame | Non
     gdf = gdf[available].copy()
     if "GDOT_DISTRICT" in gdf.columns:
         gdf["GDOT_DISTRICT"] = pd.to_numeric(gdf["GDOT_DISTRICT"], errors="coerce").astype("Int64")
-        gdf["DISTRICT_LABEL"] = gdf["GDOT_DISTRICT"].map(DISTRICT_NAME_LOOKUP)
-        gdf["DISTRICT_NAME"] = gdf["DISTRICT_LABEL"]
+        gdf["DISTRICT_NAME"] = gdf["GDOT_DISTRICT"].map(DISTRICT_SHORT_NAME_LOOKUP)
     if "COUNTYFP" in gdf.columns:
         gdf["COUNTYFP"] = gdf["COUNTYFP"].astype(str).str.zfill(3)
     if "NAME" in gdf.columns:

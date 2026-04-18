@@ -35,10 +35,6 @@ DISTRICT_SHORT_NAME_LOOKUP = {
     int(code): name
     for code, name in json.loads((CONFIG_DIR / "district_codes.json").read_text(encoding="utf-8")).items()
 }
-DISTRICT_LABEL_LOOKUP = {
-    code: f"District {code} - {name}"
-    for code, name in DISTRICT_SHORT_NAME_LOOKUP.items()
-}
 ROADWAY_DOMAIN_LABELS = json.loads(
     (CONFIG_DIR / "roadway_domain_labels.json").read_text(encoding="utf-8")
 )
@@ -55,7 +51,6 @@ CRITICAL_COLUMNS = [
 DECODED_LABEL_COLUMNS = {
     "COUNTY_NAME": "COUNTY_CODE",
     "DISTRICT_NAME": "DISTRICT",
-    "DISTRICT_LABEL": "DISTRICT",
     "SYSTEM_CODE_LABEL": "SYSTEM_CODE",
     "FUNCTION_TYPE_LABEL": "FUNCTION_TYPE",
     "FUNCTIONAL_CLASS_LABEL": "FUNCTIONAL_CLASS",
@@ -68,15 +63,12 @@ DECODED_LABEL_COLUMNS = {
     "SURFACE_TYPE_LABEL": "SURFACE_TYPE",
     "URBAN_CODE_LABEL": "URBAN_CODE",
     "DIRECTION_LABEL": "DIRECTION",
-    "ROUTE_DIRECTION_LABEL": "ROUTE_DIRECTION",
-    "ROUTE_TYPE_LABEL": "ROUTE_TYPE",
     "ROUTE_TYPE_GDOT_LABEL": "ROUTE_TYPE_GDOT",
 }
 
 DECODED_LABEL_LOOKUPS = {
     "COUNTY_NAME": (COUNTY_CODE_LOOKUP, 3),
     "DISTRICT_NAME": (DISTRICT_SHORT_NAME_LOOKUP, None),
-    "DISTRICT_LABEL": (DISTRICT_LABEL_LOOKUP, None),
     "SYSTEM_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
     "FUNCTION_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["function_type"], None),
     "FUNCTIONAL_CLASS_LABEL": (ROADWAY_DOMAIN_LABELS["functional_class"], None),
@@ -89,8 +81,6 @@ DECODED_LABEL_LOOKUPS = {
     "SURFACE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["surface_type"], None),
     "URBAN_CODE_LABEL": (ROADWAY_DOMAIN_LABELS["urban_code"], 5),
     "DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
-    "ROUTE_DIRECTION_LABEL": (ROADWAY_DOMAIN_LABELS["route_direction"], None),
-    "ROUTE_TYPE_LABEL": (ROADWAY_DOMAIN_LABELS["system_code"], None),
     "ROUTE_TYPE_GDOT_LABEL": (ROADWAY_DOMAIN_LABELS["route_type_gdot"], None),
 }
 

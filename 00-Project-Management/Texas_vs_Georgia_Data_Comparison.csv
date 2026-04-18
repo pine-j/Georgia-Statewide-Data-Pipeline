@@ -4,7 +4,7 @@ HWY,Texas highway / route join field,"HWY_NAME, ROUTE_ID, RouteId",HWY_NAME,Prox
 FRM_DFO,Texas begin measure for segment matching,"FROM_MILEPOINT, START_M, BeginPoint",FROM_MILEPOINT,Exact-ish,Present,Direct interval-begin analogue exists
 TO_DFO,Texas end measure for segment matching,"TO_MILEPOINT, END_M, EndPoint",TO_MILEPOINT,Exact-ish,Present,Direct interval-end analogue exists
 HSYS,Texas highway-system classification,"SYSTEM_CODE, F_SYSTEM, NHS",SYSTEM_CODE,Proxy,Present,System classification is proxied by SYSTEM_CODE and sometimes NHS_IND
-DI,Texas direction indicator,"DIRECTION, ROUTE_DIRECTION",DIRECTION,Proxy,Present,ROUTE_DIRECTION is also available in final output
+DI,Texas direction indicator,DIRECTION,DIRECTION,Proxy,Present,DIRECTION is the normalized directional field in final output
 CO,Texas county code / county grouping field,"COUNTY, COUNTY_ID",COUNTY_CODE,Exact-ish,Present,Georgia final output normalizes county into COUNTY_CODE and COUNTY_NAME
 NUM_LANES,Texas lane count,THROUGH_LANES,NUM_LANES,Derived,Present,NUM_LANES is the normalized final-output lane field
 ADT_CUR,Texas current AADT,AADTRound,AADT,Derived,Present,AADT is the canonical current traffic field in the Georgia final output

@@ -63,7 +63,7 @@ class RoadwayFeatureProperties(BaseModel):
     aadt: int | None
     length_miles: float
     district: int
-    district_label: str
+    district_name: str
     county: str
     system_code_label: str | None = None
     direction_label: str | None = None
@@ -113,7 +113,7 @@ class RoadwayDetailResponse(BaseModel):
     unique_id: str
     road_name: str
     district: int
-    district_label: str
+    district_name: str
     county: str
     attributes: dict[str, Any]
 

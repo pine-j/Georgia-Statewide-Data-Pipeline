@@ -22,10 +22,8 @@ SURFACE_TYPE,Pavement surface type code for the roadway segment.,
 URBAN_CODE,Urban area code identifying the FHWA urbanized or rural area assignment.,99999.0
 COUNTY_CODE,Zero-padded 3-digit county code assigned to the segment.,209
 DISTRICT,GDOT district number assigned to the segment based on county or spatial backfill.,5.0
-ROUTE_TYPE,Route system type parsed from ROUTE_ID and aligned with GDOT system code categories.,1
 ROUTE_NUMBER,Route number parsed from ROUTE_ID and retained as a numeric field.,29
 ROUTE_SUFFIX,"Two-character GDOT route suffix identifying a branch, business, spur, loop, or other subtype.",00
-ROUTE_DIRECTION,Route calibration direction parsed from ROUTE_ID and stored separately from the source direction field.,INC
 BASE_ROUTE_NUMBER,"Base route number used to classify the segment into Interstate, U.S. Route, or State Route families.",29
 ROUTE_SUFFIX_LABEL,"Human-readable meaning of ROUTE_SUFFIX, such as business, bypass, spur, or loop, when available.",
 ROUTE_FAMILY,"Broad route family assigned from GDOT route structure, such as Interstate, U.S. Route, State Route, or Local/Other.",U.S. Route
@@ -92,7 +90,6 @@ HWY_NAME,Standardized highway name or signed route label generated from the deri
 COUNTY_NAME,Human-readable county name for COUNTY_CODE.,Montgomery
 county_all,"Comma-separated list of counties intersected by the segment, ordered by overlap and anchored to the primary county.","Montgomery, Toombs, Treutlen"
 DISTRICT_NAME,Short GDOT district office name for DISTRICT.,Jesup
-DISTRICT_LABEL,Full human-readable GDOT district label including district number and office name.,District 5 - Jesup
 SYSTEM_CODE_LABEL,Human-readable label for the GDOT roadway system code.,State Highway Route
 FUNCTION_TYPE_LABEL,Human-readable label for the GDOT route function code.,Main Line
 FUNCTIONAL_CLASS_LABEL,Human-readable label for the FHWA functional classification.,Minor Arterial
@@ -105,8 +102,6 @@ SHOULDER_TYPE_LABEL,Human-readable label for the shoulder type code.,
 SURFACE_TYPE_LABEL,Human-readable label for the pavement surface type code.,
 URBAN_CODE_LABEL,Human-readable label for the urban area code.,
 DIRECTION_LABEL,Human-readable label for the route calibration direction.,Increasing
-ROUTE_DIRECTION_LABEL,Human-readable label for the stored route direction field.,Increasing
-ROUTE_TYPE_LABEL,Human-readable label for the route system type parsed from ROUTE_ID.,State Highway Route
 ROUTE_TYPE_GDOT_LABEL,Human-readable label for the derived GDOT route subtype.,State Route Mainline
 SEC_EVAC,Boolean flag indicating the segment overlaps a GDOT-designated hurricane evacuation route.,True
 SEC_EVAC_CONTRAFLOW,Boolean flag indicating the segment overlaps a GDOT hurricane evacuation contraflow route.,False

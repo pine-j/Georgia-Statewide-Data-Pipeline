@@ -15,7 +15,7 @@ from app.schemas import (
 from app.services.roadway_visualizations import get_roadway_visualization_catalog
 from app.services.seed_data import get_seed_roadways
 from app.services.staged_roadways import (
-    get_district_label,
+    get_district_name,
     get_staged_boundary_features,
     get_staged_roadway_detail,
     get_staged_roadway_features,
@@ -106,7 +106,7 @@ def get_roadway_features(
                     aadt=row["aadt"],
                     length_miles=float(row["length_miles"]),
                     district=int(row["district"]),
-                    district_label=get_district_label(int(row["district"])),
+                    district_name=get_district_name(int(row["district"])),
                     county=row["county"],
                 ),
             )

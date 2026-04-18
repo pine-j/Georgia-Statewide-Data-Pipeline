@@ -53,7 +53,7 @@ export interface RoadwayFeatureProperties {
   aadt: number | null;
   length_miles: number;
   district: number;
-  district_label: string;
+  district_name: string;
   county: string;
   system_code_label?: string | null;
   direction_label?: string | null;
@@ -111,7 +111,7 @@ export interface RoadwayDetail {
   unique_id: string;
   road_name: string;
   district: number;
-  district_label: string;
+  district_name: string;
   county: string;
   attributes: Record<string, string | number | boolean | null>;
 }

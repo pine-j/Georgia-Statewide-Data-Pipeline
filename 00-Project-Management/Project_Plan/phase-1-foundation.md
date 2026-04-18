@@ -258,8 +258,8 @@ The staged roadway network is built from the official GDOT route geometry, then 
   `PARSED_ROUTE_NUMBER`, `PARSED_SUFFIX`, `PARSED_DIRECTION`
 - Standardized or recoded fields:
   `COUNTY_CODE`, `GDOT_District`, `DISTRICT`, `FUNCTIONAL_CLASS`,
-  `NUM_LANES`, `URBAN_CODE`, `NHS_IND`, `ROUTE_TYPE`, `ROUTE_NUMBER`,
-  `ROUTE_SUFFIX`, `ROUTE_DIRECTION`
+  `NUM_LANES`, `URBAN_CODE`, `NHS_IND`, `ROUTE_NUMBER`,
+  `ROUTE_SUFFIX`
 - Georgia route-family fields:
   `BASE_ROUTE_NUMBER`, `ROUTE_SUFFIX_LABEL`, `ROUTE_FAMILY`,
   `ROUTE_FAMILY_DETAIL`, `ROUTE_FAMILY_CONFIDENCE`,
@@ -308,10 +308,8 @@ The staged roadway network currently supports multiple kinds of classification, 
 - Existing fields derived from `ROUTE_ID`:
   - `PARSED_FUNCTION_TYPE`
   - `PARSED_SYSTEM_CODE`
-  - `ROUTE_TYPE`
   - `ROUTE_NUMBER`
   - `ROUTE_SUFFIX`
-  - `ROUTE_DIRECTION`
 - New Georgia route-family fields:
   - `BASE_ROUTE_NUMBER`
   - `ROUTE_SUFFIX_LABEL`

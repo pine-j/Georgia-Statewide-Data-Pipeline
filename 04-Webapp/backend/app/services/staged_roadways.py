@@ -39,14 +39,14 @@ GEORGIA_FILTERS_PATH = Path(__file__).resolve().parent.parent / "data" / "georgi
 SOURCE_CRS = "EPSG:32617"
 TARGET_CRS = "EPSG:4326"
 SUPPORTED_STATE = "ga"
-DISTRICT_LABELS = {
-    1: "District 1 - Gainesville",
-    2: "District 2 - Tennille",
-    3: "District 3 - Thomaston",
-    4: "District 4 - Tifton",
-    5: "District 5 - Jesup",
-    6: "District 6 - Cartersville",
-    7: "District 7 - Chamblee",
+DISTRICT_NAMES = {
+    1: "Gainesville",
+    2: "Tennille",
+    3: "Thomaston",
+    4: "Tifton",
+    5: "Jesup",
+    6: "Cartersville",
+    7: "Chamblee",
 }
 HIGHWAY_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("IH", "IH", "Interstate"),
@@ -165,11 +165,11 @@ def _format_road_name(hwy_name: Any, route_id: Any) -> str:
     return "Roadway segment"
 
 
-def get_district_label(district_id: int | None) -> str:
+def get_district_name(district_id: int | None) -> str:
     if district_id is None:
         return "District"
 
-    return DISTRICT_LABELS.get(district_id, f"District {district_id}")
+    return DISTRICT_NAMES.get(district_id, f"District {district_id}")
 
 
 def list_highway_type_options() -> list[HighwayTypeOption]:
@@ -638,7 +638,7 @@ def get_staged_roadway_features(
             "HWY_NAME AS hwy_name,",
             "COUNTY_CODE AS county_code,",
             "DISTRICT AS district_id,",
-            "DISTRICT_LABEL AS district_label,",
+            "DISTRICT_NAME AS district_name,",
             "FUNCTIONAL_CLASS AS functional_class,",
             "AADT AS aadt,",
             "segment_length_mi AS length_miles,",
@@ -665,9 +665,9 @@ def get_staged_roadway_features(
         county_code = _normalize_county_code(getattr(row, "county_code", None))
         county_name = county_code_to_name.get(county_code or "", "Unknown")
         district_id = _normalize_int(getattr(row, "district_id", None)) or 0
-        district_label = (
-            _normalize_text(getattr(row, "district_label", None))
-            or get_district_label(district_id)
+        district_name = (
+            _normalize_text(getattr(row, "district_name", None))
+            or get_district_name(district_id)
         )
         aadt = _normalize_int(getattr(row, "aadt", None))
         length_miles = _normalize_float(getattr(row, "length_miles", None))
@@ -690,7 +690,7 @@ def get_staged_roadway_features(
                     aadt=aadt,
                     length_miles=length_miles,
                     district=district_id,
-                    district_label=district_label,
+                    district_name=district_name,
                     county=county_name,
                     system_code_label=_normalize_text(
                         getattr(row, "system_code_label", None)
@@ -821,7 +821,7 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
 
     return GeorgiaFilterOptionsResponse(
         districts=[
-            DistrictOption(id=district_id, label=get_district_label(district_id))
+            DistrictOption(id=district_id, label=get_district_name(district_id))
             for district_id in districts
         ],
         counties=sorted(counties, key=lambda item: item.county),
@@ -866,15 +866,15 @@ def get_staged_roadway_detail(unique_id: str) -> RoadwayDetailResponse | None:
         row["ROUTE_FAMILY"] if "ROUTE_FAMILY" in row.keys() else None,
         row["HPMS_ACCESS_CONTROL"] if "HPMS_ACCESS_CONTROL" in row.keys() else None,
     )
-    district_label = (
-        _normalize_text(row["DISTRICT_LABEL"]) if "DISTRICT_LABEL" in row.keys() else None
-    ) or get_district_label(district_id)
+    district_name = (
+        _normalize_text(row["DISTRICT_NAME"]) if "DISTRICT_NAME" in row.keys() else None
+    ) or get_district_name(district_id)
 
     return RoadwayDetailResponse(
         unique_id=unique_id,
         road_name=_format_road_name(hwy_name, route_id),
         district=district_id,
-        district_label=district_label,
+        district_name=district_name,
         county=county_name,
         attributes=attributes,
     )

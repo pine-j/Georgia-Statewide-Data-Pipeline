@@ -382,10 +382,8 @@ It also derives standardized fields used downstream:
 - `NUM_LANES`
 - `URBAN_CODE`
 - `NHS_IND`
-- `ROUTE_TYPE`
 - `ROUTE_NUMBER`
 - `ROUTE_SUFFIX`
-- `ROUTE_DIRECTION`
 - `BASE_ROUTE_NUMBER`
 - `ROUTE_SUFFIX_LABEL`
 - `ROUTE_FAMILY`
@@ -944,10 +942,8 @@ Fields:
 
 - `PARSED_FUNCTION_TYPE`
 - `PARSED_SYSTEM_CODE`
-- `ROUTE_TYPE`
 - `ROUTE_NUMBER`
 - `ROUTE_SUFFIX`
-- `ROUTE_DIRECTION`
 - `BASE_ROUTE_NUMBER`
 - `ROUTE_SUFFIX_LABEL`
 - `ROUTE_FAMILY`
@@ -1050,7 +1046,6 @@ The county layer currently includes:
 - `NAME`
 - `GDOT_DISTRICT`
 - `DISTRICT_NAME`
-- `DISTRICT_LABEL`
 
 This allows counties to be filtered and labeled consistently with district metadata.
 
@@ -1060,17 +1055,16 @@ The district layer currently includes:
 
 - `GDOT_DISTRICT`
 - `DISTRICT_NAME`
-- `DISTRICT_LABEL`
 
-District names have been normalized to a consistent format:
+District names use the short office name:
 
-- `District 1 - Gainesville`
-- `District 2 - Tennille`
-- `District 3 - Thomaston`
-- `District 4 - Tifton`
-- `District 5 - Jesup`
-- `District 6 - Cartersville`
-- `District 7 - Chamblee`
+- `Gainesville`
+- `Tennille`
+- `Thomaston`
+- `Tifton`
+- `Jesup`
+- `Cartersville`
+- `Chamblee`
 
 ---
 
