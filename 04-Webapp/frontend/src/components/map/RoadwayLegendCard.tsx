@@ -18,7 +18,6 @@ import {
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
   legendPresence?: LegendPresence | null;
-  onLegendItemHover?: (value: string | null) => void;
   themeFilterValue?: ThemeFilterValue;
   defaultThemeFilterValue?: ThemeFilterValue | null;
   setThemeFilter?: (
@@ -26,8 +25,6 @@ interface RoadwayLegendCardProps {
     patch: Partial<ThemeFilterValue>,
   ) => void;
 }
-
-const NO_DATA_HOVER_KEY = "__NO_DATA__";
 
 const SWATCH_GRID = {
   display: "grid",
@@ -37,11 +34,6 @@ const SWATCH_GRID = {
   borderRadius: "4px",
   px: 0.5,
   mx: -0.5,
-  cursor: "pointer",
-  transition: "background-color 0.15s ease",
-  "&:hover": {
-    bgcolor: "rgba(17, 61, 73, 0.07)",
-  },
 } as const;
 
 const FILTER_ROW_GRID = {
@@ -79,16 +71,6 @@ function getBinSelectionKey(bin: {
   return typeof bin.value === "string" ? bin.value : bin.label;
 }
 
-function getHoverKeyForLegendItem(
-  visualization: RoadwayVisualizationOption,
-  item: RoadwayLegendItem,
-): string {
-  if (visualization.kind === "categorical") {
-    return item.value ?? item.label;
-  }
-  return item.label;
-}
-
 function findLegendItemForBin(
   visualization: RoadwayVisualizationOption,
   bin: { value?: string | null; label: string; min_value?: number | null; max_value?: number | null },
@@ -109,7 +91,6 @@ function findLegendItemForBin(
 export function RoadwayLegendCard({
   visualization,
   legendPresence,
-  onLegendItemHover,
   themeFilterValue,
   defaultThemeFilterValue,
   setThemeFilter,
@@ -121,9 +102,6 @@ export function RoadwayLegendCard({
       setThemeFilter &&
       filterSpec.bins.length > 0,
   );
-
-  const handleEnter = (value: string | null) => () => onLegendItemHover?.(value);
-  const handleLeave = () => onLegendItemHover?.(null);
 
   let content: ReactNode;
 
@@ -141,15 +119,11 @@ export function RoadwayLegendCard({
       const selectionKey = getBinSelectionKey(bin);
       const legendItem = findLegendItemForBin(visualization, bin);
       const color = legendItem?.color ?? visualization.no_data_color;
-      const hoverKey = legendItem
-        ? getHoverKeyForLegendItem(visualization, legendItem)
-        : selectionKey;
       return {
         key: `bin-${selectionKey}`,
         selectionKey,
         label: bin.label,
         color,
-        hoverKey,
         checked: selectedSet.has(selectionKey),
       };
     });
@@ -261,8 +235,6 @@ export function RoadwayLegendCard({
               role="button"
               onClick={() => toggleBin(row.selectionKey, !row.checked)}
               sx={FILTER_ROW_GRID}
-              onMouseEnter={handleEnter(row.hoverKey)}
-              onMouseLeave={handleLeave}
             >
               <Checkbox
                 icon={<CheckBoxOutlineBlankIcon fontSize="inherit" />}
@@ -302,8 +274,6 @@ export function RoadwayLegendCard({
                   : undefined
               }
               sx={filterSpec.no_data_selectable ? FILTER_ROW_GRID : SWATCH_GRID}
-              onMouseEnter={handleEnter(NO_DATA_HOVER_KEY)}
-              onMouseLeave={handleLeave}
             >
               {filterSpec.no_data_selectable && (
                 <Checkbox
@@ -348,37 +318,28 @@ export function RoadwayLegendCard({
 
     content = (
       <Stack spacing={0.4}>
-        {legendItems.map((item) => {
-          const hoverKey = getHoverKeyForLegendItem(visualization, item);
-          return (
+        {legendItems.map((item) => (
+          <Box
+            key={`${visualization.id}-${item.label}-${item.value ?? item.min_value ?? "base"}`}
+            sx={SWATCH_GRID}
+          >
             <Box
-              key={`${visualization.id}-${item.label}-${item.value ?? item.min_value ?? "base"}`}
-              sx={SWATCH_GRID}
-              onMouseEnter={handleEnter(hoverKey)}
-              onMouseLeave={handleLeave}
-            >
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: "2px",
-                  bgcolor: item.color,
-                  border: "1px solid rgba(16, 35, 47, 0.12)",
-                }}
-              />
-              <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
-                {item.label}
-              </Typography>
-            </Box>
-          );
-        })}
+              sx={{
+                width: 12,
+                height: 12,
+                borderRadius: "2px",
+                bgcolor: item.color,
+                border: "1px solid rgba(16, 35, 47, 0.12)",
+              }}
+            />
+            <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
+              {item.label}
+            </Typography>
+          </Box>
+        ))}
 
         {showNoDataRow && (
-          <Box
-            sx={SWATCH_GRID}
-            onMouseEnter={handleEnter(NO_DATA_HOVER_KEY)}
-            onMouseLeave={handleLeave}
-          >
+          <Box sx={SWATCH_GRID}>
             <Box
               sx={{
                 width: 12,

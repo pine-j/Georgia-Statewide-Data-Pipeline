@@ -121,7 +121,6 @@ interface FiltersPanelProps {
   legendPresence?: LegendPresence | null;
   onResetFilters: () => void;
   onVisualizationChange: (visualizationId: string) => void;
-  onLegendItemHover?: (value: string | null) => void;
 }
 
 export function FiltersPanel({
@@ -148,7 +147,6 @@ export function FiltersPanel({
   resetThemeFilter,
   onResetFilters,
   onVisualizationChange,
-  onLegendItemHover,
 }: FiltersPanelProps) {
   const isAllDistricts = selectedDistricts.length === 0;
   const districtOptionsWithAll = [ALL_DISTRICTS_OPTION, ...districts];
@@ -755,7 +753,6 @@ export function FiltersPanel({
           <RoadwayLegendCard
             visualization={selectedVisualization}
             legendPresence={legendPresence}
-            onLegendItemHover={onLegendItemHover}
             themeFilterValue={themeFilters[selectedVisualization.id]}
             defaultThemeFilterValue={defaultThemeFilterValue}
             setThemeFilter={setThemeFilter}

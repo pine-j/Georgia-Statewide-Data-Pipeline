@@ -9,8 +9,6 @@ import {
 } from "../../types/api";
 import type { ThemeFilterValue } from "../../store/useAppStore";
 import {
-  buildLegendHighlightColorExpression,
-  buildLegendHighlightOpacityExpression,
   buildRoadwayLineSortKeyExpression,
   buildThemeContextFilterColorExpression,
   buildThemeContextFilterOpacityExpression,
@@ -37,7 +35,6 @@ interface MapLibreRoadwayMapProps {
   selectedVisualization?: RoadwayVisualizationOption;
   themeFilterState?: ThemeFilterValue;
   selectedRoadwayId?: string | null;
-  hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
   onBackgroundClick?: () => void;
 }
@@ -106,7 +103,6 @@ export function MapLibreRoadwayMap({
   selectedVisualization,
   themeFilterState,
   selectedRoadwayId,
-  hoveredLegendValue,
   onSegmentClick,
   onBackgroundClick,
 }: MapLibreRoadwayMapProps) {
@@ -123,7 +119,6 @@ export function MapLibreRoadwayMap({
   const themeFilterStateRef = useRef<ThemeFilterValue | undefined>(themeFilterState);
   const renderedLoadTokenRef = useRef(loadToken);
   const selectedRoadwayIdRef = useRef(selectedRoadwayId);
-  const hoveredLegendValueRef = useRef(hoveredLegendValue);
   const onSegmentClickRef = useRef(onSegmentClick);
   const onBackgroundClickRef = useRef(onBackgroundClick);
 
@@ -135,7 +130,6 @@ export function MapLibreRoadwayMap({
   selectedVisualizationRef.current = selectedVisualization;
   themeFilterStateRef.current = themeFilterState;
   selectedRoadwayIdRef.current = selectedRoadwayId;
-  hoveredLegendValueRef.current = hoveredLegendValue;
   onSegmentClickRef.current = onSegmentClick;
   onBackgroundClickRef.current = onBackgroundClick;
 
@@ -238,28 +232,15 @@ export function MapLibreRoadwayMap({
       });
     }
 
-    const hoverVal = hoveredLegendValueRef.current;
-    const baseColor = buildThemeContextFilterColorExpression(
+    const lineColor = buildThemeContextFilterColorExpression(
       selectedVisualizationRef.current,
       themeFilterStateRef.current,
     );
-    const lineColor = hoverVal
-      ? buildLegendHighlightColorExpression(
-          selectedVisualizationRef.current,
-          hoverVal,
-          baseColor,
-        )
-      : baseColor;
-    const baseOpacity = buildThemeContextFilterOpacityExpression(
+    const lineOpacity = buildThemeContextFilterOpacityExpression(
       selectedVisualizationRef.current,
       themeFilterStateRef.current,
     );
-    const lineOpacity = hoverVal
-      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
-      : baseOpacity;
-    const casingOpacity = hoverVal
-      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
-      : baseOpacity;
+    const casingOpacity = lineOpacity;
 
     if (!map.getLayer(CASING_LAYER_ID)) {
       map.addLayer({
@@ -520,36 +501,22 @@ export function MapLibreRoadwayMap({
     ensureRoadwayLayers,
   ]);
 
-  // Lightweight effect: only update paint properties when theme filters or
-  // legend hover change. Avoids the heavy GeoJSON re-push that
-  // ensureRoadwayLayers performs.
+  // Lightweight effect: update paint properties when theme filters change.
+  // Avoids the heavy GeoJSON re-push that ensureRoadwayLayers performs.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) {
       return;
     }
 
-    const baseColor = buildThemeContextFilterColorExpression(
+    const lineColor = buildThemeContextFilterColorExpression(
       selectedVisualization,
       themeFilterState,
     );
-    const lineColor = hoveredLegendValue
-      ? buildLegendHighlightColorExpression(
-          selectedVisualization,
-          hoveredLegendValue,
-          baseColor,
-        )
-      : baseColor;
-    const baseOpacity = buildThemeContextFilterOpacityExpression(
+    const lineOpacity = buildThemeContextFilterOpacityExpression(
       selectedVisualization,
       themeFilterState,
     );
-    const lineOpacity = hoveredLegendValue
-      ? buildLegendHighlightOpacityExpression(
-          selectedVisualization,
-          hoveredLegendValue,
-        )
-      : baseOpacity;
 
     if (map.getLayer(LINE_LAYER_ID)) {
       map.setPaintProperty(LINE_LAYER_ID, "line-color", lineColor);
@@ -559,7 +526,7 @@ export function MapLibreRoadwayMap({
       map.setPaintProperty(CASING_LAYER_ID, "line-color", lineColor);
       map.setPaintProperty(CASING_LAYER_ID, "line-opacity", lineOpacity);
     }
-  }, [hoveredLegendValue, selectedVisualization, themeFilterState]);
+  }, [selectedVisualization, themeFilterState]);
 
   useEffect(() => {
     syncBounds();

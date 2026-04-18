@@ -24,7 +24,6 @@ interface MapPanelProps {
   selectedVisualization?: RoadwayVisualizationOption;
   themeFilterState?: ThemeFilterValue;
   selectedRoadwayId?: string | null;
-  hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
   onBackgroundClick?: () => void;
 }
@@ -57,7 +56,6 @@ export function MapPanel({
   selectedVisualization,
   themeFilterState,
   selectedRoadwayId,
-  hoveredLegendValue,
   onSegmentClick,
   onBackgroundClick,
 }: MapPanelProps) {
@@ -87,7 +85,6 @@ export function MapPanel({
           selectedVisualization={selectedVisualization}
           themeFilterState={themeFilterState}
           selectedRoadwayId={selectedRoadwayId}
-          hoveredLegendValue={hoveredLegendValue}
           onSegmentClick={onSegmentClick}
           onBackgroundClick={onBackgroundClick}
         />

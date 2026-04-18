@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, Box, Stack, Typography } from "@mui/material";
 
 import { FiltersPanel } from "../filters/FiltersPanel";
@@ -82,8 +82,6 @@ export function AppShell() {
   const setRoadwayDetail = useAppStore((state) => state.setRoadwayDetail);
   const setDetailError = useAppStore((state) => state.setDetailError);
   const closeRoadwayDetail = useAppStore((state) => state.closeRoadwayDetail);
-
-  const [hoveredLegendValue, setHoveredLegendValue] = useState<string | null>(null);
 
   const georgiaFiltersQuery = useGeorgiaFiltersQuery();
   const roadwayVisualizationsQuery = useRoadwayVisualizationCatalogQuery();
@@ -232,7 +230,6 @@ export function AppShell() {
   };
 
   const handleVisualizationChange = (visualizationId: string) => {
-    setHoveredLegendValue(null);
     setSelectedVisualizationId(visualizationId);
   };
 
@@ -366,7 +363,6 @@ export function AppShell() {
                 resetThemeFilter={resetThemeFilter}
                 onResetFilters={handleResetFilters}
                 onVisualizationChange={handleVisualizationChange}
-                onLegendItemHover={setHoveredLegendValue}
               />
             </Box>
 
@@ -386,7 +382,6 @@ export function AppShell() {
                 selectedVisualization={selectedVisualization}
                 themeFilterState={selectedThemeFilterState}
                 selectedRoadwayId={selectedRoadwayId}
-                hoveredLegendValue={hoveredLegendValue}
                 onSegmentClick={handleSegmentClick}
                 onBackgroundClick={closeRoadwayDetail}
               />
