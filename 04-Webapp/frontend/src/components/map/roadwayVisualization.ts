@@ -579,7 +579,7 @@ export function buildThemeContextFilterOpacityExpression(
     ["==", ["get", option.property_name], null],
     noDataOpacity,
     failCondition,
-    NO_DATA_OPACITY,
+    0,
     DEFAULT_ROADWAY_LINE_OPACITY,
   ] as unknown) as ExpressionSpecification;
 }
