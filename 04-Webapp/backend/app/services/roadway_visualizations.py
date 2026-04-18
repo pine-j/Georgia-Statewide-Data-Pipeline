@@ -44,6 +44,88 @@ def _categorical_legend(
     ]
 
 
+def _categorical_filter_bins(
+    legend_items: list[RoadwayLegendItem],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "value": item.value,
+            "label": item.label,
+            "default_selected": True,
+        }
+        for item in legend_items
+        if item.value is not None
+    ]
+
+
+def _numeric_filter_bins(
+    legend_items: list[RoadwayLegendItem],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "min_value": item.min_value,
+            "max_value": item.max_value,
+            "label": item.label,
+            "default_selected": True,
+        }
+        for item in legend_items
+        if item.min_value is not None
+    ]
+
+
+def _categorical_filter_specs(
+    property_name: str,
+    legend_items: list[RoadwayLegendItem],
+    *,
+    control: str = "multi_select",
+    label: str = "Category",
+    include_no_data_default: bool = True,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "control": control,
+            "property_name": property_name,
+            "label": label,
+            "bins": _categorical_filter_bins(legend_items),
+            "no_data_selectable": True,
+            "include_no_data_default": include_no_data_default,
+        }
+    ]
+
+
+def _numeric_filter_specs(
+    property_name: str,
+    legend_items: list[RoadwayLegendItem],
+    *,
+    include_range: bool = True,
+    label: str = "Category",
+    range_label: str = "Range",
+    include_no_data_default: bool = True,
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = [
+        {
+            "control": "bin_multi_select",
+            "property_name": property_name,
+            "label": label,
+            "bins": _numeric_filter_bins(legend_items),
+            "no_data_selectable": True,
+            "include_no_data_default": include_no_data_default,
+        }
+    ]
+    if include_range:
+        specs.append(
+            {
+                "control": "range_slider",
+                "property_name": property_name,
+                "label": range_label,
+                "bins": [],
+                "no_data_selectable": False,
+                "include_no_data_default": include_no_data_default,
+            }
+        )
+    return specs
+
+
 def get_hwy_des_sql_expression(
     *,
     num_lanes_column: str = "NUM_LANES",
@@ -139,7 +221,7 @@ THEMATIC_PROPERTY_SQL: dict[str, str] = {
     "surface_type_label": "SURFACE_TYPE_LABEL",
     "ownership_label": "OWNERSHIP_LABEL",
     "facility_type_label": "FACILITY_TYPE_LABEL",
-    "sec_evac": "CASE WHEN CAST(SEC_EVAC AS INTEGER) = 1 THEN 'Evacuation Route' WHEN CAST(SEC_EVAC_CONTRAFLOW AS INTEGER) = 1 THEN 'Contraflow Route' ELSE NULL END",
+    "sec_evac": "CASE WHEN CAST(SEC_EVAC_CONTRAFLOW AS INTEGER) = 1 THEN 'Contraflow Route' WHEN CAST(SEC_EVAC AS INTEGER) = 1 THEN 'Evacuation Route' ELSE NULL END",
 }
 
 
@@ -501,10 +583,31 @@ THEMATIC_FIELD_CONFIGS: dict[str, dict[str, Any]] = {
         "property_name": "sec_evac",
         "legend_items": _categorical_legend(
             [
-                ("Evacuation Route", "Evacuation Route", "#d32f2f"),
                 ("Contraflow Route", "Contraflow Route", "#f57c00"),
+                ("Evacuation Route", "Evacuation Route", "#d32f2f"),
             ]
         ),
+        "filters": [
+            {
+                "control": "toggle_chips",
+                "property_name": "sec_evac",
+                "label": "Route class",
+                "bins": [
+                    {
+                        "value": "Contraflow Route",
+                        "label": "Contraflow",
+                        "default_selected": True,
+                    },
+                    {
+                        "value": "Evacuation Route",
+                        "label": "Evacuation",
+                        "default_selected": True,
+                    },
+                ],
+                "no_data_selectable": True,
+                "include_no_data_default": False,
+            }
+        ],
     },
     "FAC_TYPE": {
         "id": "facility_type",
@@ -565,6 +668,130 @@ DETAILS_ONLY_FIELD_CONFIGS: dict[str, dict[str, Any]] = {
 }
 
 
+TOGGLE_CHIP_THEME_IDS = {"system_code", "direction"}
+MULTI_SELECT_THEME_IDS = {
+    "nhs_ind",
+    "median_type",
+    "hwy_des",
+    "functional_class_viz",
+    "surface_type",
+    "ownership",
+    "facility_type",
+}
+NUMERIC_BIN_ONLY_THEME_IDS = {"num_lanes"}
+NUMERIC_BIN_AND_RANGE_THEME_IDS = {
+    "aadt",
+    "future_aadt_2044",
+    "k_factor",
+    "d_factor",
+    "truck_aadt",
+    "pct_sadt",
+    "pct_cadt",
+    "vmt",
+    "speed_limit",
+    "truck_pct",
+}
+INTEGER_STEP_THEME_IDS = {
+    "num_lanes",
+    "aadt",
+    "future_aadt_2044",
+    "truck_aadt",
+    "vmt",
+    "speed_limit",
+}
+DECIMAL_STEP_THEME_IDS = {
+    "k_factor",
+    "d_factor",
+    "pct_sadt",
+    "pct_cadt",
+    "truck_pct",
+}
+
+
+def _apply_theme_filter_configs() -> None:
+    for config in THEMATIC_FIELD_CONFIGS.values():
+        theme_id = config["id"]
+        if theme_id == "sec_evac":
+            continue
+
+        property_name = config.get("property_name")
+        legend_items = config.get("legend_items", [])
+        if not property_name or not legend_items:
+            continue
+
+        if theme_id in TOGGLE_CHIP_THEME_IDS:
+            config["filters"] = _categorical_filter_specs(
+                property_name,
+                legend_items,
+                control="toggle_chips",
+            )
+            continue
+
+        if theme_id in MULTI_SELECT_THEME_IDS:
+            config["filters"] = _categorical_filter_specs(property_name, legend_items)
+            continue
+
+        if theme_id in NUMERIC_BIN_ONLY_THEME_IDS:
+            config["filters"] = _numeric_filter_specs(
+                property_name,
+                legend_items,
+                include_range=False,
+            )
+            continue
+
+        if theme_id in NUMERIC_BIN_AND_RANGE_THEME_IDS:
+            config["filters"] = _numeric_filter_specs(property_name, legend_items)
+
+
+def _default_numeric_filter_step(option_id: str) -> float | None:
+    if option_id in INTEGER_STEP_THEME_IDS:
+        return 1.0
+    if option_id in DECIMAL_STEP_THEME_IDS:
+        return 0.1
+    return None
+
+
+def _clone_filter_specs(filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **spec,
+            "bins": [dict(bin_config) for bin_config in spec.get("bins", [])],
+        }
+        for spec in filters
+    ]
+
+
+def _build_filters_with_bounds(config: dict[str, Any]) -> list[dict[str, Any]]:
+    filters = _clone_filter_specs(config.get("filters", []))
+    if config.get("kind") != "numeric" or not filters:
+        return filters
+
+    if not any(spec.get("control") == "range_slider" for spec in filters):
+        return filters
+
+    property_name = config.get("property_name")
+    property_sql = THEMATIC_PROPERTY_SQL.get(property_name or "")
+    if not property_sql:
+        return filters
+
+    from app.services.staged_roadways import get_property_min_max
+
+    min_bound, max_bound = get_property_min_max(property_sql)
+    step = _default_numeric_filter_step(config["id"])
+
+    for spec in filters:
+        if spec.get("control") != "range_slider":
+            continue
+        spec["min_bound"] = min_bound
+        spec["max_bound"] = max_bound
+        spec["step"] = step
+
+    return filters
+
+
+_apply_theme_filter_configs()
+
+
 def _configured_texas_headers() -> list[str]:
     return list(THEMATIC_FIELD_CONFIGS) + list(DETAILS_ONLY_FIELD_CONFIGS)
 
@@ -609,6 +836,7 @@ def _build_option(
         default=bool(config.get("default", False)),
         no_data_color=config.get("no_data_color", NO_DATA_COLOR),
         legend_items=config.get("legend_items", []),
+        filters=_build_filters_with_bounds(config),
     )
 
 

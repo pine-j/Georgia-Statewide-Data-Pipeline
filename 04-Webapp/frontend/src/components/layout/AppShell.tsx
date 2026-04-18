@@ -8,21 +8,72 @@ import { useBoundaryLayersQuery } from "../../hooks/useBoundaryLayersQuery";
 import { useGeorgiaFiltersQuery } from "../../hooks/useGeorgiaFiltersQuery";
 import { useRoadwayLoader } from "../../hooks/useRoadwayLoader";
 import { useRoadwayVisualizationCatalogQuery } from "../../hooks/useRoadwayVisualizationCatalogQuery";
-import { DEFAULT_HIGHWAY_TYPES, useAppStore } from "../../store/useAppStore";
+import {
+  DEFAULT_HIGHWAY_TYPES,
+  useAppStore,
+} from "../../store/useAppStore";
+import type { ThemeFilterValue } from "../../store/useAppStore";
 import { getRoadwayDetail } from "../../services/api";
-import { RoadwayDetail } from "../../types/api";
+import { RoadwayDetail, RoadwayVisualizationOption } from "../../types/api";
+import {
+  computeLegendPresence,
+  computeLegendPresenceFiltered,
+} from "../map/roadwayVisualization";
+
+function getThemeFilterBinKey(bin: { value?: string | null; label: string }): string {
+  return typeof bin.value === "string" ? bin.value : bin.label;
+}
+
+function buildDefaultThemeFilterValue(
+  option?: RoadwayVisualizationOption,
+): ThemeFilterValue | null {
+  if (!option || option.filters.length === 0) {
+    return null;
+  }
+
+  const firstFilter = option.filters.find((spec) => spec.control !== "none");
+  if (!firstFilter) {
+    return null;
+  }
+
+  const rangeFilter = option.filters.find(
+    (spec) =>
+      spec.control === "range_slider" &&
+      typeof spec.min_bound === "number" &&
+      typeof spec.max_bound === "number",
+  );
+
+  return {
+    selectedValues: option.filters.flatMap((spec) =>
+      spec.bins.flatMap((bin) =>
+        bin.default_selected ? [getThemeFilterBinKey(bin)] : [],
+      ),
+    ),
+    range:
+      rangeFilter &&
+      typeof rangeFilter.min_bound === "number" &&
+      typeof rangeFilter.max_bound === "number"
+        ? [rangeFilter.min_bound, rangeFilter.max_bound]
+        : null,
+    includeNoData: firstFilter.include_no_data_default,
+  };
+}
 
 export function AppShell() {
   const selectedDistricts = useAppStore((state) => state.selectedDistricts);
   const selectedCounties = useAppStore((state) => state.selectedCounties);
   const selectedHighwayTypes = useAppStore((state) => state.selectedHighwayTypes);
   const selectedVisualizationId = useAppStore((state) => state.selectedVisualizationId);
+  const themeFilters = useAppStore((state) => state.themeFilters);
   const setSelectedDistricts = useAppStore((state) => state.setSelectedDistricts);
   const setSelectedCounties = useAppStore((state) => state.setSelectedCounties);
   const setSelectedHighwayTypes = useAppStore((state) => state.setSelectedHighwayTypes);
   const setSelectedVisualizationId = useAppStore(
     (state) => state.setSelectedVisualizationId,
   );
+  const setThemeFilter = useAppStore((state) => state.setThemeFilter);
+  const resetThemeFilter = useAppStore((state) => state.resetThemeFilter);
+  const resetAllThemeFilters = useAppStore((state) => state.resetAllThemeFilters);
   const selectedRoadwayId = useAppStore((state) => state.selectedRoadwayId);
   const roadwayDetail = useAppStore((state) => state.roadwayDetail);
   const isLoadingDetail = useAppStore((state) => state.isLoadingDetail);
@@ -43,6 +94,17 @@ export function AppShell() {
   const thematicOptions = roadwayVisualizationCatalog?.thematic_options ?? [];
   const selectedVisualization =
     thematicOptions.find((option) => option.id === selectedVisualizationId) ?? thematicOptions[0];
+  const selectedThemeFilterState = useMemo(() => {
+    if (!selectedVisualization) {
+      return undefined;
+    }
+
+    return (
+      themeFilters[selectedVisualization.id] ??
+      buildDefaultThemeFilterValue(selectedVisualization) ??
+      undefined
+    );
+  }, [selectedVisualization, themeFilters]);
   const roadwayLoader = useRoadwayLoader(
     selectedDistricts,
     selectedCounties,
@@ -77,6 +139,21 @@ export function AppShell() {
     setSelectedVisualizationId,
     thematicOptions,
   ]);
+
+  useEffect(() => {
+    for (const option of thematicOptions) {
+      if (themeFilters[option.id] || option.filters.length === 0) {
+        continue;
+      }
+
+      const defaultThemeFilter = buildDefaultThemeFilterValue(option);
+      if (!defaultThemeFilter) {
+        continue;
+      }
+
+      setThemeFilter(option.id, defaultThemeFilter);
+    }
+  }, [setThemeFilter, thematicOptions, themeFilters]);
 
   // Detail fetch with caching and abort-controller for race prevention
   const detailCacheRef = useRef<Map<string, RoadwayDetail>>(new Map());
@@ -151,6 +228,7 @@ export function AppShell() {
     setSelectedDistricts([]);
     setSelectedCounties([]);
     setSelectedHighwayTypes([...DEFAULT_HIGHWAY_TYPES]);
+    resetAllThemeFilters();
   };
 
   const handleVisualizationChange = (visualizationId: string) => {
@@ -158,30 +236,42 @@ export function AppShell() {
     setSelectedVisualizationId(visualizationId);
   };
 
+  const legendPresence = useMemo(
+    () =>
+      roadwayLoader.isLoading
+        ? null
+        : computeLegendPresence(roadwayLoader.roadwayChunks, selectedVisualization),
+    [roadwayLoader.isLoading, roadwayLoader.roadwayChunks, selectedVisualization],
+  );
+
   const themeCoveragePercent = useMemo(() => {
-    if (roadwayLoader.isLoading) {
+    if (!legendPresence || legendPresence.total === 0) {
+      return null;
+    }
+    return Math.round((legendPresence.withData / legendPresence.total) * 100);
+  }, [legendPresence]);
+
+  const themeViewPercent = useMemo(() => {
+    if (roadwayLoader.isLoading || !selectedVisualization) {
       return null;
     }
 
-    const propertyName = selectedVisualization?.property_name;
-    if (!propertyName || roadwayLoader.roadwayChunks.length === 0) {
+    const filteredPresence = computeLegendPresenceFiltered(
+      roadwayLoader.roadwayChunks,
+      selectedVisualization,
+      selectedThemeFilterState,
+    );
+    if (!filteredPresence || filteredPresence.total === 0) {
       return null;
     }
 
-    let total = 0;
-    let withData = 0;
-    for (const chunk of roadwayLoader.roadwayChunks) {
-      for (const feature of chunk.features) {
-        total += 1;
-        const value = (feature.properties as Record<string, unknown>)[propertyName];
-        if (value !== null && value !== undefined && value !== "") {
-          withData += 1;
-        }
-      }
-    }
-
-    return total > 0 ? Math.round((withData / total) * 100) : null;
-  }, [roadwayLoader.isLoading, roadwayLoader.roadwayChunks, selectedVisualization?.property_name]);
+    return Math.round((filteredPresence.filterPassing / filteredPresence.total) * 100);
+  }, [
+    roadwayLoader.isLoading,
+    roadwayLoader.roadwayChunks,
+    selectedThemeFilterState,
+    selectedVisualization,
+  ]);
 
   const hasApiError =
     georgiaFiltersQuery.isError ||
@@ -259,9 +349,12 @@ export function AppShell() {
                 selectedDistricts={selectedDistricts}
                 selectedCounties={selectedCounties}
                 selectedHighwayTypes={selectedHighwayTypes}
+                themeFilters={themeFilters}
                 roadwayVisualizationCatalog={roadwayVisualizationCatalog}
                 selectedVisualizationId={selectedVisualization?.id ?? selectedVisualizationId}
                 selectedVisualization={selectedVisualization}
+                legendPresence={legendPresence}
+                themeViewPercent={themeViewPercent}
                 themeCoveragePercent={themeCoveragePercent}
                 onDistrictChange={handleDistrictChange}
                 onDistrictDelete={handleDistrictDelete}
@@ -269,6 +362,8 @@ export function AppShell() {
                 onCountyDelete={handleCountyDelete}
                 onHighwayTypeChange={setSelectedHighwayTypes}
                 onHighwayTypeDelete={handleHighwayTypeDelete}
+                setThemeFilter={setThemeFilter}
+                resetThemeFilter={resetThemeFilter}
                 onResetFilters={handleResetFilters}
                 onVisualizationChange={handleVisualizationChange}
                 onLegendItemHover={setHoveredLegendValue}
@@ -289,9 +384,11 @@ export function AppShell() {
                 progressPercent={roadwayLoader.progressPercent}
                 etaSeconds={roadwayLoader.etaSeconds}
                 selectedVisualization={selectedVisualization}
+                themeFilterState={selectedThemeFilterState}
                 selectedRoadwayId={selectedRoadwayId}
                 hoveredLegendValue={hoveredLegendValue}
                 onSegmentClick={handleSegmentClick}
+                onBackgroundClick={closeRoadwayDetail}
               />
             </Box>
 

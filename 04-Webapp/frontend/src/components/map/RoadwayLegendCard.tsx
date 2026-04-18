@@ -1,10 +1,15 @@
 import { Box, Paper, Stack, Typography } from "@mui/material";
 
 import { RoadwayVisualizationOption } from "../../types/api";
-import { getLegendItemsForDisplay } from "./roadwayVisualization";
+import {
+  LegendPresence,
+  getLegendItemPresenceKey,
+  getLegendItemsForDisplay,
+} from "./roadwayVisualization";
 
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
+  legendPresence?: LegendPresence | null;
   onLegendItemHover?: (value: string | null) => void;
 }
 
@@ -23,8 +28,19 @@ const SWATCH_GRID = {
   },
 } as const;
 
-export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayLegendCardProps) {
-  const legendItems = getLegendItemsForDisplay(visualization);
+export function RoadwayLegendCard({
+  visualization,
+  legendPresence,
+  onLegendItemHover,
+}: RoadwayLegendCardProps) {
+  const allLegendItems = getLegendItemsForDisplay(visualization);
+  const legendItems = legendPresence
+    ? allLegendItems.filter((item) => {
+        const key = getLegendItemPresenceKey(visualization, item);
+        return key === null ? true : legendPresence.presentKeys.has(key);
+      })
+    : allLegendItems;
+  const showNoDataRow = legendPresence ? legendPresence.hasNoData : true;
 
   const handleEnter = (value: string | null) => () => onLegendItemHover?.(value);
   const handleLeave = () => onLegendItemHover?.(null);
@@ -80,25 +96,26 @@ export function RoadwayLegendCard({ visualization, onLegendItemHover }: RoadwayL
             );
           })}
 
-          {/* "No data" row */}
-          <Box
-            sx={SWATCH_GRID}
-            onMouseEnter={handleEnter("__NO_DATA__")}
-            onMouseLeave={handleLeave}
-          >
+          {showNoDataRow && (
             <Box
-              sx={{
-                width: 12,
-                height: 12,
-                borderRadius: "2px",
-                bgcolor: visualization.no_data_color,
-                border: "1px solid rgba(16, 35, 47, 0.12)",
-              }}
-            />
-            <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
-              No data
-            </Typography>
-          </Box>
+              sx={SWATCH_GRID}
+              onMouseEnter={handleEnter("__NO_DATA__")}
+              onMouseLeave={handleLeave}
+            >
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: "2px",
+                  bgcolor: visualization.no_data_color,
+                  border: "1px solid rgba(16, 35, 47, 0.12)",
+                }}
+              />
+              <Typography variant="caption" sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}>
+                No data
+              </Typography>
+            </Box>
+          )}
         </Stack>
 
         {visualization.notes && (

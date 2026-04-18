@@ -7,11 +7,13 @@ import {
   RoadwayFeatureCollection,
   RoadwayVisualizationOption,
 } from "../../types/api";
+import type { ThemeFilterValue } from "../../store/useAppStore";
 import {
+  buildLegendHighlightColorExpression,
   buildLegendHighlightOpacityExpression,
-  buildRoadwayLineColorExpression,
-  buildRoadwayLineOpacityExpression,
   buildRoadwayLineSortKeyExpression,
+  buildThemeContextFilterColorExpression,
+  buildThemeContextFilterOpacityExpression,
 } from "./roadwayVisualization";
 
 const DISTRICT_SOURCE_ID = "district-boundaries";
@@ -33,9 +35,11 @@ interface MapLibreRoadwayMapProps {
   loadToken: number;
   bounds?: [number, number, number, number] | null;
   selectedVisualization?: RoadwayVisualizationOption;
+  themeFilterState?: ThemeFilterValue;
   selectedRoadwayId?: string | null;
   hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
+  onBackgroundClick?: () => void;
 }
 
 function buildEmptyCollection(): RoadwayFeatureCollection {
@@ -100,9 +104,11 @@ export function MapLibreRoadwayMap({
   loadToken,
   bounds,
   selectedVisualization,
+  themeFilterState,
   selectedRoadwayId,
   hoveredLegendValue,
   onSegmentClick,
+  onBackgroundClick,
 }: MapLibreRoadwayMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -114,10 +120,12 @@ export function MapLibreRoadwayMap({
   const selectedVisualizationRef = useRef<RoadwayVisualizationOption | undefined>(
     selectedVisualization,
   );
+  const themeFilterStateRef = useRef<ThemeFilterValue | undefined>(themeFilterState);
   const renderedLoadTokenRef = useRef(loadToken);
   const selectedRoadwayIdRef = useRef(selectedRoadwayId);
   const hoveredLegendValueRef = useRef(hoveredLegendValue);
   const onSegmentClickRef = useRef(onSegmentClick);
+  const onBackgroundClickRef = useRef(onBackgroundClick);
 
   roadwayChunksRef.current = roadwayChunks;
   countyBoundariesRef.current = countyBoundaries;
@@ -125,9 +133,11 @@ export function MapLibreRoadwayMap({
   boundsRef.current = bounds;
   loadTokenRef.current = loadToken;
   selectedVisualizationRef.current = selectedVisualization;
+  themeFilterStateRef.current = themeFilterState;
   selectedRoadwayIdRef.current = selectedRoadwayId;
   hoveredLegendValueRef.current = hoveredLegendValue;
   onSegmentClickRef.current = onSegmentClick;
+  onBackgroundClickRef.current = onBackgroundClick;
 
   const syncBounds = useEffectEvent(() => {
     const map = mapRef.current;
@@ -228,13 +238,36 @@ export function MapLibreRoadwayMap({
       });
     }
 
+    const hoverVal = hoveredLegendValueRef.current;
+    const baseColor = buildThemeContextFilterColorExpression(
+      selectedVisualizationRef.current,
+      themeFilterStateRef.current,
+    );
+    const lineColor = hoverVal
+      ? buildLegendHighlightColorExpression(
+          selectedVisualizationRef.current,
+          hoverVal,
+          baseColor,
+        )
+      : baseColor;
+    const baseOpacity = buildThemeContextFilterOpacityExpression(
+      selectedVisualizationRef.current,
+      themeFilterStateRef.current,
+    );
+    const lineOpacity = hoverVal
+      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
+      : baseOpacity;
+    const casingOpacity = hoverVal
+      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
+      : baseOpacity;
+
     if (!map.getLayer(CASING_LAYER_ID)) {
       map.addLayer({
         id: CASING_LAYER_ID,
         type: "line",
         source: SOURCE_ID,
         paint: {
-          "line-color": "#0b4050",
+          "line-color": lineColor,
           "line-width": [
             "interpolate",
             ["linear"],
@@ -250,7 +283,7 @@ export function MapLibreRoadwayMap({
             17,
             10,
           ],
-          "line-opacity": 0.9,
+          "line-opacity": casingOpacity,
           "line-opacity-transition": { duration: 150, delay: 0 },
         },
         layout: {
@@ -267,7 +300,7 @@ export function MapLibreRoadwayMap({
         type: "line",
         source: SOURCE_ID,
         paint: {
-          "line-color": buildRoadwayLineColorExpression(selectedVisualizationRef.current),
+          "line-color": lineColor,
           "line-width": [
             "interpolate",
             ["linear"],
@@ -283,7 +316,7 @@ export function MapLibreRoadwayMap({
             17,
             7.2,
           ],
-          "line-opacity": buildRoadwayLineOpacityExpression(selectedVisualizationRef.current),
+          "line-opacity": lineOpacity,
           "line-opacity-transition": { duration: 150, delay: 0 },
         },
         layout: {
@@ -294,20 +327,11 @@ export function MapLibreRoadwayMap({
       });
     }
 
-    // Compute hover-aware opacity for both line and casing layers
-    const hoverVal = hoveredLegendValueRef.current;
-    const lineOpacity = hoverVal
-      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
-      : buildRoadwayLineOpacityExpression(selectedVisualizationRef.current);
-    const casingOpacity = hoverVal
-      ? buildLegendHighlightOpacityExpression(selectedVisualizationRef.current, hoverVal)
-      : 0.9;
-
     if (map.getLayer(LINE_LAYER_ID)) {
       map.setPaintProperty(
         LINE_LAYER_ID,
         "line-color",
-        buildRoadwayLineColorExpression(selectedVisualizationRef.current),
+        lineColor,
       );
       map.setPaintProperty(LINE_LAYER_ID, "line-opacity", lineOpacity);
       map.setLayoutProperty(
@@ -322,6 +346,11 @@ export function MapLibreRoadwayMap({
         CASING_LAYER_ID,
         "line-sort-key",
         buildRoadwayLineSortKeyExpression(selectedVisualizationRef.current),
+      );
+      map.setPaintProperty(
+        CASING_LAYER_ID,
+        "line-color",
+        lineColor,
       );
       map.setPaintProperty(CASING_LAYER_ID, "line-opacity", casingOpacity);
     }
@@ -378,6 +407,18 @@ export function MapLibreRoadwayMap({
         }
 
         handleSegmentClick(uniqueId);
+      });
+
+      map.on("click", (event) => {
+        if (!map.getLayer(HIT_LAYER_ID)) {
+          return;
+        }
+        const hits = map.queryRenderedFeatures(event.point, {
+          layers: [HIT_LAYER_ID],
+        });
+        if (hits.length === 0) {
+          onBackgroundClickRef.current?.();
+        }
       });
     }
 
@@ -479,42 +520,46 @@ export function MapLibreRoadwayMap({
     ensureRoadwayLayers,
   ]);
 
-  // Lightweight effect: only update paint properties when legend hover changes.
-  // Avoids the heavy GeoJSON re-push that ensureRoadwayLayers performs.
+  // Lightweight effect: only update paint properties when theme filters or
+  // legend hover change. Avoids the heavy GeoJSON re-push that
+  // ensureRoadwayLayers performs.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) {
       return;
     }
 
-    if (hoveredLegendValue) {
-      const lineOpacity = buildLegendHighlightOpacityExpression(
-        selectedVisualization,
-        hoveredLegendValue,
-      );
-      const casingOpacity = buildLegendHighlightOpacityExpression(
-        selectedVisualization,
-        hoveredLegendValue,
-      );
-      if (map.getLayer(LINE_LAYER_ID)) {
-        map.setPaintProperty(LINE_LAYER_ID, "line-opacity", lineOpacity);
-      }
-      if (map.getLayer(CASING_LAYER_ID)) {
-        map.setPaintProperty(CASING_LAYER_ID, "line-opacity", casingOpacity);
-      }
-    } else {
-      if (map.getLayer(LINE_LAYER_ID)) {
-        map.setPaintProperty(
-          LINE_LAYER_ID,
-          "line-opacity",
-          buildRoadwayLineOpacityExpression(selectedVisualization),
-        );
-      }
-      if (map.getLayer(CASING_LAYER_ID)) {
-        map.setPaintProperty(CASING_LAYER_ID, "line-opacity", 0.9);
-      }
+    const baseColor = buildThemeContextFilterColorExpression(
+      selectedVisualization,
+      themeFilterState,
+    );
+    const lineColor = hoveredLegendValue
+      ? buildLegendHighlightColorExpression(
+          selectedVisualization,
+          hoveredLegendValue,
+          baseColor,
+        )
+      : baseColor;
+    const baseOpacity = buildThemeContextFilterOpacityExpression(
+      selectedVisualization,
+      themeFilterState,
+    );
+    const lineOpacity = hoveredLegendValue
+      ? buildLegendHighlightOpacityExpression(
+          selectedVisualization,
+          hoveredLegendValue,
+        )
+      : baseOpacity;
+
+    if (map.getLayer(LINE_LAYER_ID)) {
+      map.setPaintProperty(LINE_LAYER_ID, "line-color", lineColor);
+      map.setPaintProperty(LINE_LAYER_ID, "line-opacity", lineOpacity);
     }
-  }, [hoveredLegendValue, selectedVisualization]);
+    if (map.getLayer(CASING_LAYER_ID)) {
+      map.setPaintProperty(CASING_LAYER_ID, "line-color", lineColor);
+      map.setPaintProperty(CASING_LAYER_ID, "line-opacity", lineOpacity);
+    }
+  }, [hoveredLegendValue, selectedVisualization, themeFilterState]);
 
   useEffect(() => {
     syncBounds();

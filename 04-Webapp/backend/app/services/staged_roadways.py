@@ -73,6 +73,7 @@ HIGHWAY_TYPE_ROUTE_FAMILY_ALIASES = {
     "OTHER": "Local/Other",
 }
 _STAGED_DATA_CACHE_STAMP: tuple[int | None, int | None] | None = None
+_PROPERTY_MIN_MAX_CACHE: dict[tuple[str, str], tuple[float | None, float | None]] = {}
 
 
 def _is_missing(value: Any) -> bool:
@@ -375,6 +376,7 @@ def _clear_staged_data_caches() -> None:
     _get_segment_count.cache_clear()
     _get_class_summary_rows.cache_clear()
     _get_filtered_bounds.cache_clear()
+    _PROPERTY_MIN_MAX_CACHE.clear()
 
 
 def _ensure_staged_data_cache_fresh() -> None:
@@ -392,6 +394,49 @@ def _ensure_staged_data_cache_fresh() -> None:
 
 def _open_sqlite() -> sqlite3.Connection:
     return sqlite3.connect(STAGED_DB_PATH)
+
+
+def get_property_min_max(
+    property_sql_or_column: str,
+    state_code: str = "ga",
+) -> tuple[float | None, float | None]:
+    _ensure_staged_data_cache_fresh()
+    if state_code != SUPPORTED_STATE:
+        return (None, None)
+
+    cache_key = (property_sql_or_column, state_code)
+    cached = _PROPERTY_MIN_MAX_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    query = f"""
+        SELECT
+            MIN(value_expr) AS min_value,
+            MAX(value_expr) AS max_value
+        FROM (
+            SELECT {property_sql_or_column} AS value_expr
+            FROM segments
+        )
+        WHERE value_expr IS NOT NULL
+    """
+
+    try:
+        with _open_sqlite() as connection:
+            cursor = connection.cursor()
+            cursor.execute(query)
+            row = cursor.fetchone()
+    except Exception:
+        result = (None, None)
+        _PROPERTY_MIN_MAX_CACHE[cache_key] = result
+        return result
+
+    if not row or row[0] is None or row[1] is None:
+        result = (None, None)
+    else:
+        result = (float(row[0]), float(row[1]))
+
+    _PROPERTY_MIN_MAX_CACHE[cache_key] = result
+    return result
 
 
 @lru_cache(maxsize=256)

@@ -6,6 +6,7 @@ import {
   RoadwayFeatureCollection,
   RoadwayVisualizationOption,
 } from "../../types/api";
+import type { ThemeFilterValue } from "../../store/useAppStore";
 import { MapLibreRoadwayMap } from "./MapLibreRoadwayMap";
 
 interface MapPanelProps {
@@ -21,9 +22,11 @@ interface MapPanelProps {
   progressPercent: number;
   etaSeconds: number | null;
   selectedVisualization?: RoadwayVisualizationOption;
+  themeFilterState?: ThemeFilterValue;
   selectedRoadwayId?: string | null;
   hoveredLegendValue?: string | null;
   onSegmentClick?: (uniqueId: string) => void;
+  onBackgroundClick?: () => void;
 }
 
 function formatEta(etaSeconds: number | null): string {
@@ -52,9 +55,11 @@ export function MapPanel({
   progressPercent,
   etaSeconds,
   selectedVisualization,
+  themeFilterState,
   selectedRoadwayId,
   hoveredLegendValue,
   onSegmentClick,
+  onBackgroundClick,
 }: MapPanelProps) {
   const isShowingProgress = isManifestLoading || isLoading;
   const hasLoadedSegments = loadedSegments > 0;
@@ -80,9 +85,11 @@ export function MapPanel({
           loadToken={loadToken}
           bounds={bounds}
           selectedVisualization={selectedVisualization}
+          themeFilterState={themeFilterState}
           selectedRoadwayId={selectedRoadwayId}
           hoveredLegendValue={hoveredLegendValue}
           onSegmentClick={onSegmentClick}
+          onBackgroundClick={onBackgroundClick}
         />
       </Box>
 

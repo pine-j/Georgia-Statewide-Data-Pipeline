@@ -138,6 +138,34 @@ class RoadwayLegendItem(BaseModel):
     max_value: float | None = None
 
 
+class ThemeFilterBin(BaseModel):
+    value: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    label: str
+    default_selected: bool = True
+
+
+class ThemeFilterSpec(BaseModel):
+    control: Literal[
+        "toggle_chips",
+        "multi_select",
+        "bin_multi_select",
+        "range_slider",
+        "hwy_des_matrix",
+        "none",
+    ]
+    property_name: str
+    bins: list[ThemeFilterBin] = Field(default_factory=list)
+    min_bound: float | None = None
+    max_bound: float | None = None
+    step: float | None = None
+    include_no_data_default: bool = True
+    no_data_selectable: bool = True
+    label: str | None = None
+    description: str | None = None
+
+
 class RoadwayVisualizationOption(BaseModel):
     id: str
     texas_header: str
@@ -154,6 +182,7 @@ class RoadwayVisualizationOption(BaseModel):
     default: bool = False
     no_data_color: str = "#b9c5ca"
     legend_items: list[RoadwayLegendItem] = Field(default_factory=list)
+    filters: list[ThemeFilterSpec] = Field(default_factory=list)
 
 
 class RoadwayVisualizationCatalogResponse(BaseModel):

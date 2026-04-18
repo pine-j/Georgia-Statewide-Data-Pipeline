@@ -128,6 +128,33 @@ export interface RoadwayLegendItem {
   max_value?: number | null;
 }
 
+export interface ThemeFilterBin {
+  value?: string | null;
+  min_value?: number | null;
+  max_value?: number | null;
+  label: string;
+  default_selected: boolean;
+}
+
+export interface ThemeFilterSpec {
+  control:
+    | "toggle_chips"
+    | "multi_select"
+    | "bin_multi_select"
+    | "range_slider"
+    | "hwy_des_matrix"
+    | "none";
+  property_name: string;
+  bins: ThemeFilterBin[];
+  min_bound: number | null;
+  max_bound: number | null;
+  step: number | null;
+  include_no_data_default: boolean;
+  no_data_selectable: boolean;
+  label: string | null;
+  description: string | null;
+}
+
 export type RoadwayVisualizationKind = "numeric" | "categorical";
 export type RoadwayVisualizationMapMode = "thematic" | "details_only" | "unavailable";
 export type RoadwayVisualizationImplementationStatus =
@@ -152,6 +179,7 @@ export interface RoadwayVisualizationOption {
   default: boolean;
   no_data_color: string;
   legend_items: RoadwayLegendItem[];
+  filters: ThemeFilterSpec[];
 }
 
 export interface RoadwayVisualizationCatalog {
