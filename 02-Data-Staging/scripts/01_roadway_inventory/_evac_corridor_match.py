@@ -72,7 +72,14 @@ LOCAL_MIN_LENGTH_M = 200.0
 # with 1.1 km features crossing 3.3 km US-80 segments).
 DISCOVERY_BUFFER_M = 20.0
 DISCOVERY_MIN_RATIO = 0.70
-DISCOVERY_MIN_ABS_OVERLAP_M = 300.0
+# Absolute-overlap path requires BOTH a long overlap AND a minimum ratio
+# component — without the ratio floor, a short-concurrent bypass could
+# register 300 m of shared pavement with a main corridor and pollute that
+# corridor's valid_prefixes with the bypass HWY_NAME. 500 m + 20 % ratio
+# admits genuine concurrent designations while rejecting incidental
+# bypass/business-route clips at intersections.
+DISCOVERY_MIN_ABS_OVERLAP_M = 500.0
+DISCOVERY_MIN_ABS_RATIO = 0.20
 DISCOVERY_MIN_LENGTH_M = 300.0
 
 # Angular alignment check: a segment that briefly crosses a corridor at a
@@ -92,11 +99,38 @@ ALIGNMENT_SKIP_RATIO = 0.50
 ALIGNMENT_SKIP_ABS_OVERLAP_M = 2000.0
 ALIGNMENT_SAMPLE_BUFFER_M = 60.0
 
+# Short-segment state-system gate: segments under 400 m skip the angular
+# alignment check (unreliable azimuth), which left them vulnerable to
+# cross-street FPs at intersections — a 200 m residential stub that clips
+# a corridor crossing at 90° can still pass MIN_OVERLAP_RATIO = 0.20.
+# Require a high on-corridor ratio so short matches must be mostly-inside
+# segments, not just partial-clip cross-streets.
+SHORT_STATE_MIN_RATIO = 0.70
+
+# Unnamed-corridor orphan gate: unnamed-feature corridors lack a parsed
+# HWY_NAME filter, so a parallel road 30-40 m offset from a feature can
+# pass the loose 50 m buffer filter despite not actually following it.
+# Require the matched feature's tight-buffer (20 m) overlap to be
+# non-trivial — the segment must actually run close to the feature
+# centerline, not just skim its loose edge.
+UNNAMED_TIGHT_MIN_OVERLAP_M = 30.0
+
 # Mega-segment gate: a segment longer than MEGA_SEGMENT_LENGTH_M with a
 # moderate overlap ratio is painting a long stretch of unrelated road red.
 # Require a strong ratio or a very large absolute overlap for such segments.
 MEGA_SEGMENT_LENGTH_M = 10_000.0
 MEGA_MIN_RATIO = 0.50
+
+# Segment splitting: when a matched segment's in-corridor portion covers
+# >= CLIP_SKIP_PORTION of its length, keep the full geometry (avoids
+# emitting a slightly-shorter duplicate). Otherwise, emit only the clipped
+# geometry so the QC map renders only the portion actually following the
+# corridor — no more red tails extending past blue for partial-follow
+# overshoots. A tiny clipped tail below CLIP_MIN_LENGTH_M gets promoted
+# back to the full segment (treat as noise-level clip, not a useful
+# partial).
+CLIP_SKIP_PORTION = 0.90
+CLIP_MIN_LENGTH_M = 30.0
 
 # Families that belong to the signed state road system.
 _STATE_SYSTEM_FAMILIES = frozenset(
@@ -349,9 +383,17 @@ def per_corridor_evac_overlay(
                 overlap_len = float(seg_geom.intersection(tight_buf).length)
             except Exception:
                 continue
-            if (
-                overlap_len / seg_len < DISCOVERY_MIN_RATIO
-                and overlap_len < DISCOVERY_MIN_ABS_OVERLAP_M
+            disc_ratio = overlap_len / seg_len
+            # Primary path: high tight-buffer ratio (segment mostly inside).
+            # Secondary path: long absolute overlap AND a non-trivial ratio
+            # (both at >= 500 m and >= 20 %, prevents short bypass clips
+            # from polluting the main corridor's valid_prefixes).
+            if not (
+                disc_ratio >= DISCOVERY_MIN_RATIO
+                or (
+                    overlap_len >= DISCOVERY_MIN_ABS_OVERLAP_M
+                    and disc_ratio >= DISCOVERY_MIN_ABS_RATIO
+                )
             ):
                 continue
             hwy_clean = _clean_hwy_name(segments.iat[pos_idx, hwy_name_col]) if hwy_name_col is not None else None
@@ -374,6 +416,8 @@ def per_corridor_evac_overlay(
     attribute_rejects = 0
     alignment_rejects = 0
     mega_rejects = 0
+    short_state_rejects = 0
+    unnamed_tight_rejects = 0
 
     for pos_idx in candidate_positions:
         if _is_ramp(pos_idx):
@@ -400,11 +444,14 @@ def per_corridor_evac_overlay(
         seg_az = _line_azimuth(seg_geom) if seg_len >= ALIGNMENT_SKIP_LENGTH_M else None
 
         matched_corridors: list[str] = []
+        matched_corridor_clips: list = []
         best_overlap_m = 0.0
         best_overlap_ratio = 0.0
         any_spatial_pass_rejected_by_attr = False
         rejected_by_alignment = False
         rejected_by_mega = False
+        rejected_by_short_state = False
+        rejected_by_unnamed_tight = False
 
         for corridor_key, corridor_buf in corridor_loose.items():
             try:
@@ -418,6 +465,7 @@ def per_corridor_evac_overlay(
             co_ratio = co_overlap_len / seg_len
             if co_ratio < MIN_OVERLAP_RATIO:
                 continue
+
 
             # Local/Other gate — must run along the corridor, not cross it.
             if not is_state_system:
@@ -433,6 +481,36 @@ def per_corridor_evac_overlay(
                     continue
                 # If cvp is empty (unparseable corridor with no tight matches),
                 # fall through to pure spatial — do not filter.
+
+            # Short-segment state-system gate — short segments skip the
+            # angular alignment check (unreliable azimuth). Require a high
+            # on-corridor ratio instead, so we admit stubs sitting entirely
+            # within a corridor but reject cross-streets clipping its edge.
+            if (
+                is_state_system
+                and seg_len < ALIGNMENT_SKIP_LENGTH_M
+                and co_ratio < SHORT_STATE_MIN_RATIO
+            ):
+                rejected_by_short_state = True
+                continue
+
+            # Unnamed-corridor orphan gate — for an unnamed-feature corridor
+            # (no parsed HWY_NAME to lean on), require the segment to
+            # genuinely follow the feature centerline, not merely skim the
+            # loose 50 m buffer edge.
+            if corridor_key.startswith(_UNNAMED_CORRIDOR):
+                corridor_tight_buf = corridor_tight.get(corridor_key)
+                tight_overlap_len = 0.0
+                if corridor_tight_buf is not None:
+                    try:
+                        tight_overlap_len = float(
+                            seg_geom.intersection(corridor_tight_buf).length
+                        )
+                    except Exception:
+                        tight_overlap_len = 0.0
+                if tight_overlap_len < UNNAMED_TIGHT_MIN_OVERLAP_M:
+                    rejected_by_unnamed_tight = True
+                    continue
 
             # Mega-segment gate — a >10 km segment needs a strong ratio to
             # avoid painting unrelated road red just because a fraction of
@@ -467,6 +545,7 @@ def per_corridor_evac_overlay(
                     continue
 
             matched_corridors.append(corridor_key)
+            matched_corridor_clips.append(co_overlap)
             public_name = corridor_public_name.get(corridor_key)
             if public_name is not None:
                 per_corridor_counts[public_name] = per_corridor_counts.get(public_name, 0) + 1
@@ -480,6 +559,10 @@ def per_corridor_evac_overlay(
                 alignment_rejects += 1
             if rejected_by_mega:
                 mega_rejects += 1
+            if rejected_by_short_state:
+                short_state_rejects += 1
+            if rejected_by_unnamed_tight:
+                unnamed_tight_rejects += 1
             continue
 
         # Separate named matches from unnamed-feature matches. If any named
@@ -493,17 +576,58 @@ def per_corridor_evac_overlay(
                 output_names.append(name)
                 seen.add(name)
 
+        # Union the accepted per-corridor clips; emit the clipped portion
+        # so partial-follow overshoots render only the in-corridor piece.
+        # Skip-clip when >= CLIP_SKIP_PORTION of the segment is inside (keep
+        # the full geometry) or when the clip is noise-level short.
+        clipped_geom = seg_geom
+        match_portion = 1.0
+        if matched_corridor_clips:
+            try:
+                clip_union = unary_union(matched_corridor_clips)
+            except Exception:
+                clip_union = None
+            if clip_union is not None and not clip_union.is_empty:
+                try:
+                    clip_len = float(clip_union.length)
+                except Exception:
+                    clip_len = 0.0
+                if clip_len >= CLIP_MIN_LENGTH_M and seg_len > 0:
+                    portion = min(clip_len / seg_len, 1.0)
+                    if portion < CLIP_SKIP_PORTION:
+                        clipped_geom = clip_union
+                        match_portion = portion
+
         idx = segments.index[pos_idx]
         results[idx] = {
             "names": output_names,
             "overlap_m": best_overlap_m,
             "overlap_ratio": best_overlap_ratio,
             "match_method": "spatial",
+            "clipped_geom": clipped_geom,
+            "match_portion": match_portion,
         }
 
     # =================================================================
     # Diagnostics
     # =================================================================
+    # Match-portion distribution — how many segments got clipped vs kept whole.
+    portion_full = sum(1 for r in results.values() if r.get("match_portion", 1.0) >= 0.999)
+    portion_partial = len(results) - portion_full
+    portion_bins = {"[0.0,0.25)": 0, "[0.25,0.50)": 0, "[0.50,0.75)": 0, "[0.75,0.90)": 0, "[0.90,1.0]": 0}
+    for r in results.values():
+        p = r.get("match_portion", 1.0)
+        if p < 0.25:
+            portion_bins["[0.0,0.25)"] += 1
+        elif p < 0.50:
+            portion_bins["[0.25,0.50)"] += 1
+        elif p < 0.75:
+            portion_bins["[0.50,0.75)"] += 1
+        elif p < 0.90:
+            portion_bins["[0.75,0.90)"] += 1
+        else:
+            portion_bins["[0.90,1.0]"] += 1
+
     diagnostics = {
         "per_corridor_counts": per_corridor_counts,
         "match_method_breakdown": {"spatial": len(results)},
@@ -513,19 +637,27 @@ def per_corridor_evac_overlay(
         "attribute_rejects": attribute_rejects,
         "alignment_rejects": alignment_rejects,
         "mega_rejects": mega_rejects,
+        "short_state_rejects": short_state_rejects,
+        "unnamed_tight_rejects": unnamed_tight_rejects,
         "unnamed_features_count": unnamed_count,
         "corridors_with_zero_matches": [
             name for name, count in per_corridor_counts.items() if count == 0
         ],
         "total_matched": len(results),
+        "match_portion_full": portion_full,
+        "match_portion_partial": portion_partial,
+        "match_portion_histogram": portion_bins,
     }
 
     LOGGER.info(
-        "Evac overlay total: %d matched (rejects — attr=%d, alignment=%d, mega=%d)",
+        "Evac overlay total: %d matched (rejects — attr=%d, alignment=%d, "
+        "mega=%d, short_state=%d, unnamed_tight=%d)",
         len(results),
         attribute_rejects,
         alignment_rejects,
         mega_rejects,
+        short_state_rejects,
+        unnamed_tight_rejects,
     )
 
     return results, diagnostics

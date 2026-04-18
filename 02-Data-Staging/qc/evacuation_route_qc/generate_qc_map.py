@@ -611,6 +611,7 @@ def html_template(summary: dict[str, object]) -> str:
           const p = feature.properties;
           const ratio = p.overlap_ratio != null ? (p.overlap_ratio * 100).toFixed(1) + '%' : 'N/A';
           const overlapM = p.overlap_m != null ? Math.round(p.overlap_m) + ' m' : 'N/A';
+          const portion = p.match_portion != null ? (p.match_portion * 100).toFixed(1) + '%' : 'N/A';
           layer.bindPopup(
             makePopup(p, [
               ['HWY_NAME', 'HWY_NAME'],
@@ -620,7 +621,7 @@ def html_template(summary: dict[str, object]) -> str:
               ['COUNTY_NAME', 'COUNTY_NAME'],
               ['DISTRICT_NAME', 'DISTRICT_NAME'],
               ['Match Method', 'match_method']
-            ]) + `<div><strong>Overlap:</strong> ${{overlapM}} (${{ratio}})</div>`
+            ]) + `<div><strong>Overlap:</strong> ${{overlapM}} (${{ratio}})</div><div><strong>Match portion (clipped/seg):</strong> ${{portion}}</div>`
           );
         }}
       }});
@@ -648,14 +649,10 @@ def html_template(summary: dict[str, object]) -> str:
         'Flagged Segments (contraflow)': contraFlaggedLayer
       }};
 
-      contextLayer.addTo(map);
-      evacRoutesLayer.addTo(map);
-      contraRoutesLayer.addTo(map);
       evacFlaggedLayer.addTo(map);
-      contraFlaggedLayer.addTo(map);
 
       L.control.layers(null, overlays, {{ collapsed: false }}).addTo(map);
-      const bounds = evacRoutesLayer.getBounds();
+      const bounds = evacFlaggedLayer.getBounds();
       if (bounds.isValid()) {{
         map.fitBounds(bounds.pad(0.08));
       }} else {{
@@ -796,34 +793,26 @@ def main() -> None:
         roads, evac_routes, name_field="ROUTE_NAME",
     )
 
-    # Convert results dict to GeoDataFrame for export
+    # Convert results dict to GeoDataFrame for export. Use the clipped-to-
+    # corridor geometry so partial-follow overshoots render only the in-
+    # corridor portion — the original full-segment geometry is only used
+    # as a fallback when the matcher didn't produce a clip.
     if evac_matches:
         rows = []
         for idx, match in evac_matches.items():
             row = {col: roads.at[idx, col] for col in evac_keep_cols if col in roads.columns}
-            row["geometry"] = roads.at[idx, "geometry"]
+            row["geometry"] = match.get("clipped_geom") or roads.at[idx, "geometry"]
             row["overlap_m"] = match["overlap_m"]
             row["overlap_ratio"] = match["overlap_ratio"]
             row["match_method"] = match["match_method"]
+            row["match_portion"] = match.get("match_portion", 1.0)
             row["SEC_EVAC_ROUTE_NAME"] = "; ".join(sorted(set(match["names"]))) if match["names"] else None
             rows.append(row)
         evac_flagged = gpd.GeoDataFrame(rows, crs=roads.crs)
         evac_flagged = evac_flagged.sort_values("unique_id").reset_index(drop=True)
-
-        # Clip segment geometries to the corridor buffer — segments are flagged
-        # as evacuation routes, but only the portion within the corridor is
-        # relevant.  This trims overshoot where a road segment extends beyond
-        # the evacuation route endpoints.
-        from shapely.ops import unary_union as _unary_union
-        evac_corridor = _unary_union(evac_routes.geometry.buffer(_CORRIDOR_BUFFER_M).values)
-        clipped = evac_flagged.geometry.intersection(evac_corridor)
-        non_empty = ~clipped.is_empty
-        evac_flagged = evac_flagged.loc[non_empty].copy()
-        evac_flagged.loc[:, "geometry"] = clipped.loc[non_empty]
-        print(f"Clipped {len(evac_flagged)} segment geometries to corridor buffer")
     else:
         evac_flagged = gpd.GeoDataFrame(
-            columns=evac_keep_cols + ["overlap_m", "overlap_ratio", "match_method", "SEC_EVAC_ROUTE_NAME", "geometry"]
+            columns=evac_keep_cols + ["overlap_m", "overlap_ratio", "match_method", "match_portion", "SEC_EVAC_ROUTE_NAME", "geometry"]
         )
 
     # Print per-corridor diagnostics
