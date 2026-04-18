@@ -1,16 +1,31 @@
-"""Enrich Georgia roadway segments with FHWA HPMS 2024 data.
+"""Enrich Georgia roadway segments with GDOT's FHWA HPMS 2024 submission.
 
-HPMS uses the same GDOT ROUTE_ID + milepoint system, enabling direct
-interval-overlap matching without spatial joins.
+The HPMS 2024 dataset is GDOT's federal HPMS submission — a parallel
+GDOT-published view of the same roadway network, not a third-party fallback.
+For AADT in particular, HPMS is the canonical source for state-system
+segments that are not present in `TRAFFIC_Data_2024.gdb` (the state-system
+GDB), and a cross-validation source for segments that appear in both.
+
+Because HPMS uses the same GDOT ROUTE_ID + milepoint system as the state
+GDB, this module joins to the segmented network by interval overlap without
+any spatial join.
 
 Current enrichment:
-- AADT gap-fill for segments missing GDOT official/analytical AADT
-- Future AADT gap-fill
-- Initial signed-route classification from routesigning
-- Pavement condition: IRI, PSR, rutting, cracking_percent
-- Safety geometry: access_control, terrain_type, speed_limit
-- Roadway attribute gap-fill: through_lanes, lane_width, median, shoulder,
-  surface_type, f_system, facility_type, nhs, ownership, urban_id
+- AADT_2024_HPMS — always populated when HPMS has a value, regardless of
+  whether the state GDB also has one. This column exists so downstream code
+  can cross-check the two GDOT-published sources without losing the HPMS
+  reading on rows where the state GDB already wins the canonical AADT.
+- AADT canonical fill for segments not covered by the state GDB. The
+  existing tie-breaker order (state `official_exact` > `hpms_2024` > derived
+  fills) is preserved — this module only writes the canonical AADT field
+  when the state GDB had no value for the segment.
+- Future AADT fill where the state GDB lacked a value.
+- Initial signed-route classification from routesigning.
+- Pavement condition: IRI, PSR, rutting, cracking_percent.
+- Safety geometry: access_control, terrain_type, speed_limit.
+- Roadway attribute gap-fill (state GDB null only): through_lanes,
+  lane_width, median, shoulder, surface_type, f_system, facility_type,
+  nhs, ownership, urban_id.
 
 Downloaded data lives at:
   01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json
@@ -173,12 +188,16 @@ def _safe_cast(value: Any, cast_type: str) -> Any:
 
 
 def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Enrich roadway segments with HPMS 2024 data.
+    """Enrich roadway segments with GDOT's HPMS 2024 submission.
 
-    Fills AADT gaps, derives signed-route flags, gap-fills roadway attributes,
-    and adds pavement/safety attributes where available.
-    Never overwrites existing official or analytical AADT values.
-    Never overwrites existing GDOT attribute values (gap-fill only).
+    Captures the HPMS AADT for every matched segment into `AADT_2024_HPMS`
+    (the audit/cross-validation column) regardless of which source wins the
+    canonical `AADT_2024`. Fills the canonical AADT only for segments where
+    the state-system GDB had no value (preserving the existing tie-breaker:
+    state `official_exact` > `hpms_2024` > pipeline-derived fills). Also
+    derives signed-route flags, gap-fills roadway attributes, and adds
+    pavement/safety attributes where available.
+    Never overwrites existing GDOT state values (gap-fill only).
     """
 
     hpms = load_hpms_data()
@@ -195,6 +214,12 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 "HPMS_ROUTE_SIGNING", "HPMS_ROUTE_NUMBER", "HPMS_ROUTE_NAME"]:
         if col not in enriched.columns:
             enriched[col] = None
+
+    # AADT_2024_HPMS is the audit column for the federal HPMS submission and
+    # is populated unconditionally whenever HPMS has a value for the matched
+    # segment, even when the state GDB already won the canonical AADT.
+    if "AADT_2024_HPMS" not in enriched.columns:
+        enriched["AADT_2024_HPMS"] = pd.NA
 
     # Preserve any existing signed-route verification and backfill only missing fields.
     baseline_family = enriched.get("ROUTE_FAMILY", pd.Series(index=enriched.index, dtype="object"))
@@ -246,18 +271,28 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
         total_matched += 1
 
-        # --- AADT gap-fill: only fill if not already covered ---
-        if not bool(row.get("current_aadt_covered", False)):
-            hpms_aadt = match.get("aadt")
-            if hpms_aadt is not None and not pd.isna(hpms_aadt):
-                enriched.at[idx, "AADT_2024"] = int(hpms_aadt)
-                enriched.at[idx, "AADT"] = int(hpms_aadt)
-                enriched.at[idx, "AADT_YEAR"] = 2024
-                enriched.at[idx, "AADT_2024_SOURCE"] = "hpms_2024"
-                enriched.at[idx, "AADT_2024_CONFIDENCE"] = "medium"
-                enriched.at[idx, "AADT_2024_FILL_METHOD"] = "hpms_route_id_milepoint_match"
-                enriched.at[idx, "current_aadt_covered"] = True
-                aadt_fill_count += 1
+        # --- HPMS AADT capture + canonical fill ---
+        # Always record the HPMS AADT into AADT_2024_HPMS for cross-validation,
+        # whether or not the state GDB already set the canonical value. Then
+        # apply the existing tie-breaker: only write the canonical AADT_2024
+        # when the state GDB had no value for this segment.
+        hpms_aadt = match.get("aadt")
+        if hpms_aadt is not None and not pd.isna(hpms_aadt):
+            try:
+                hpms_aadt_int = int(hpms_aadt)
+            except (ValueError, TypeError):
+                hpms_aadt_int = None
+            if hpms_aadt_int is not None:
+                enriched.at[idx, "AADT_2024_HPMS"] = hpms_aadt_int
+                if not bool(row.get("current_aadt_covered", False)):
+                    enriched.at[idx, "AADT_2024"] = hpms_aadt_int
+                    enriched.at[idx, "AADT"] = hpms_aadt_int
+                    enriched.at[idx, "AADT_YEAR"] = 2024
+                    enriched.at[idx, "AADT_2024_SOURCE"] = "hpms_2024"
+                    enriched.at[idx, "AADT_2024_CONFIDENCE"] = "medium"
+                    enriched.at[idx, "AADT_2024_FILL_METHOD"] = "hpms_route_id_milepoint_match"
+                    enriched.at[idx, "current_aadt_covered"] = True
+                    aadt_fill_count += 1
 
         # --- Future AADT gap-fill ---
         if not bool(row.get("future_aadt_covered", False)):

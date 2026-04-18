@@ -14,7 +14,7 @@ Phase 1 builds the foundational roadway layer that RAPTOR scoring runs on top of
 |--------|-------------------|
 | **GDOT Road Inventory GDB** | The base road network — route geometry, route IDs, milepoints, and roadway attributes (lanes, surface type, functional class, median, shoulders, etc.) |
 | **GDOT Traffic GDB** | Current-year AADT, truck AADT, VMT, K-factor, D-factor |
-| **FHWA HPMS 2024** | Gap-fill for AADT where GDOT is missing; pavement condition (IRI, rutting, cracking); initial signed-route classification |
+| **FHWA HPMS 2024** | Parallel GDOT-official AADT for federally-reportable segments (HPMS is GDOT's annual federal submission, not a fallback — it's the canonical source for segments outside the state 2024 GDB scope, e.g., off-system roads); pavement condition (IRI, rutting, cracking); initial signed-route classification |
 | **GDOT GPAS SpeedZone** | Posted speed limits — on-system (state highways) matched by route ID, off-system (local roads) matched by road name + county |
 | **GDOT GPAS Reference Layers** | Authoritative verification of signed-route family (Interstate / US / State Route) |
 | **GDOT Boundaries Service** | County and district polygons for spatial assignment |
@@ -46,13 +46,16 @@ Match GDOT SpeedZone permits to segments:
 - **On-system** (state highways): match by route ID + milepoint overlap → ~15,000 segments
 - **Off-system** (local roads): match by normalized road name + county code → ~30,000 segments
 
-### 6. Gap-fill with HPMS
+### 6. Add HPMS (parallel GDOT-official source)
 
-Join FHWA HPMS 2024 data by route ID + milepoint overlap:
-- Fill AADT gaps (raises coverage from 19% to 99.9605%)
-- Fill missing roadway attributes (lanes, ownership, functional class, etc.)
-- Add pavement condition metrics (IRI, rutting, cracking)
-- Set initial signed-route flags from HPMS `routesigning` codes (91% coverage)
+Join FHWA HPMS 2024 — GDOT's annual federal submission — by route ID + milepoint overlap. HPMS is a parallel GDOT-official source, not a secondary fallback: it is the canonical AADT source for federally-reportable segments outside the state 2024 GDB scope. Together, the state 2024 GDB and HPMS cover ~96.5% of segments with GDOT-official AADT; the remaining ~3.5% gets pipeline-derived fill (mirror / interpolation / nearest neighbor).
+
+This step:
+- Adds GDOT-official AADT for federally-reportable segments not covered by the state 2024 GDB
+- Captures cross-validation between the two GDOT-official sources (`AADT_2024_HPMS`, `AADT_2024_SOURCE_AGREEMENT`); HPMS values match the state 2024 GDB on 99.7% of overlap segments, confirming HPMS is the same GDOT data repackaged for federal reporting
+- Fills missing roadway attributes (lanes, ownership, functional class, etc.) where the state 2024 GDB is null
+- Adds pavement condition metrics (IRI, rutting, cracking)
+- Sets initial signed-route flags from HPMS `routesigning` codes (91% coverage)
 
 ### 7. Verify signed-route classification
 
@@ -104,7 +107,7 @@ The RAPTOR `RoadwayData` loader reads from these outputs and keeps the fields it
 | **Roadway characteristics** | `NUM_LANES`, `SPEED_LIMIT`, `SURFACE_TYPE`, `MEDIAN_TYPE`, `FACILITY_TYPE`, `OWNERSHIP` |
 | **Pavement condition** | `HPMS_IRI`, `HPMS_PSR`, `HPMS_RUTTING`, `HPMS_CRACKING_PCT` |
 | **Network significance** | `NHS_IND`, `URBAN_CODE` |
-| **Data quality** | `AADT_2024_SOURCE`, `AADT_2024_CONFIDENCE`, `current_aadt_covered` |
+| **Data quality** | `AADT_2024_SOURCE`, `AADT_2024_CONFIDENCE` (4-tier: high/medium/low/missing), `AADT_2024_HPMS`, `AADT_2024_SOURCE_AGREEMENT`, `AADT_2024_STATS_TYPE`, `AADT_2024_SAMPLE_STATUS`, `current_aadt_covered` |
 
 ---
 

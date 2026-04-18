@@ -31,18 +31,22 @@ ROUTE_FAMILY_DETAIL,"More specific route family description that incorporates th
 ROUTE_FAMILY_CONFIDENCE,Confidence level assigned to the ROUTE_FAMILY classification.,medium
 ROUTE_FAMILY_SOURCE,Rule or source used to derive ROUTE_FAMILY.,gdot_appendix_g_us_route
 unique_id,Unique staged segment identifier built from ROUTE_ID plus beginning and ending milepoints.,1000100002900INC_0.0000_26.8308
-AADT,Canonical current AADT (2024) for the segment after official matches and gap-filling.,5500.0
-AADT_2024_OFFICIAL,"Official GDOT-matched 2024 AADT before analytical, mirrored, HPMS, or nearest-neighbor fill.",
-AADT_2024_SOURCE,"Source used to populate the current AADT, such as official GDOT, HPMS, direction mirror, or analytical fill.",hpms_2024
-AADT_2024_CONFIDENCE,Confidence level assigned to the current AADT value.,medium
-AADT_2024_FILL_METHOD,Method used to populate the current AADT when a direct official match was not available.,hpms_route_id_milepoint_match
+AADT,"Canonical current AADT (2024) for the segment, chosen by tie-breaker priority: state 2024 GDB > HPMS 2024 federal submission > pipeline-derived fill (direction mirror, analytical interpolation, nearest neighbor).",5500.0
+AADT_2024_OFFICIAL,"Audit-trail field for the state 2024 GDB match: GDOT-matched 2024 AADT before any pipeline-derived fill (mirror, interpolation, nearest neighbor). Null when the state 2024 GDB had no matching record.",
+AADT_2024_SOURCE,"Source that won the canonical AADT for this segment. official_exact = state 2024 GDB; hpms_2024 = GDOT's HPMS federal submission (a parallel GDOT-official source, not a fallback — particularly important for federally-reportable segments outside the state 2024 GDB scope); direction_mirror / analytical_gap_fill / nearest_neighbor = pipeline-derived fill.",hpms_2024
+AADT_2024_CONFIDENCE,"Confidence tier for AADT_2024 (semantics updated in the 2024 hygiene pass): high = Statistics_Type Actual OR state and HPMS sources agree; medium = Statistics_Type Estimated/Calculated OR single-source GDOT-official with no disagreement; low = pipeline-derived (direction_mirror, analytical_gap_fill, nearest_neighbor) OR sources disagree; missing = no value. Note: previously direction_mirror was tagged high and analytical_gap_fill was medium — both are now low.",medium
+AADT_2024_FILL_METHOD,Method used to populate the current AADT when a direct state 2024 GDB match was not available.,hpms_route_id_milepoint_match
+AADT_2024_HPMS,"Raw 2024 AADT value from the GDOT HPMS federal submission, captured for every HPMS-matched segment regardless of which source wins the canonical AADT. Enables cross-validation against the state 2024 GDB.",5500
+AADT_2024_SOURCE_AGREEMENT,"Cross-source agreement category between the state 2024 GDB and the HPMS federal submission: state_only, hpms_only, both_agree (within ±15% or ±200 veh/day), both_disagree, or missing when neither source has a value.",both_agree
+AADT_2024_STATS_TYPE,"GDOT Statistics_Type indicator on the matched 2024 traffic record: Actual (measured this year), Estimated (factored from older counts), or Calculated (derived).",Actual
+AADT_2024_SAMPLE_STATUS,"Free-text GDOT SampleStatus indicating the timing or nature of the most recent sample-adequacy pass.",Sample new or significantly changed in 2024 overhaul
 AADT_YEAR,Traffic year associated with the canonical AADT value.,2024.0
 TRUCK_AADT,"Estimated total truck annual average daily traffic, typically single-unit plus combination trucks.",
 TRUCK_PCT,Truck share of total AADT expressed as a proportion of total traffic.,
 PCT_SADT,Single-unit truck percentage of AADT (SINGLE_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,4.2
 PCT_CADT,Combination-unit truck percentage of AADT (COMBO_UNIT_AADT_2024 / AADT x 100). Texas RAPTOR alignment column.,8.1
 HWY_DES,"Highway design class derived from NUM_LANES + divided/undivided determination. Divided (D) when MEDIAN_TYPE != 1, Interstate, or HPMS access-control 1-3 with 4+ lanes. Texas RAPTOR alignment column.",4D
-TRK_DHV_PCT,"Truck design-hour volume percent. Primary source: HPMS pct_dh_single + pct_dh_combination. Fallback: TRUCK_PCT approximation for non-HPMS segments. Texas RAPTOR alignment column.",12.3
+TRK_DHV_PCT,"Truck design-hour volume percent. Primary source: HPMS pct_dh_single + pct_dh_combination. Secondary: TRUCK_PCT approximation when HPMS DHV is unavailable for the segment. Texas RAPTOR alignment column.",12.3
 FUTURE_AADT_2044,Projected 2044 annual average daily traffic for the segment after official matches and gap-filling.,6930.0
 FUTURE_AADT_2044_OFFICIAL,Official GDOT-matched 2044 future AADT before any modeled fill methods are applied.,
 FUTURE_AADT_2044_SOURCE,"Source used to populate FUTURE_AADT_2044: official_exact, hpms_2024, direction_mirror, projection_official_implied, or missing.",projection_official_implied

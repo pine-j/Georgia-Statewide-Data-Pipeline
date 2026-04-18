@@ -18,7 +18,7 @@ Current closeout position:
 |---|--------|-----|------------------|
 | 1 | **GDOT Road Inventory 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Base route geometry (`GA_2024_Routes`), route IDs, milepoints, and 15 attribute event layers (COUNTY_ID, F_SYSTEM, NHS, FACILITY_TYPE, THROUGH_LANES, LANE_WIDTH, MEDIAN_TYPE/WIDTH, SHOULDER_TYPE/WIDTH, OWNERSHIP, STRAHNET, SURFACE_TYPE, URBAN_ID). This is the foundation — every segment starts here. |
 | 2 | **GDOT Traffic Data 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Current AADT, future AADT, truck AADT, VMT, K-factor, D-factor, traffic class, and count station numbers. The traffic intervals define the segment boundaries — routes are sliced at traffic milepoint breaks to assign per-segment traffic values. |
-| 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Gap-fill for AADT, future AADT, and roadway attributes where GDOT values are missing. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
+| 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Parallel GDOT-official AADT, future AADT, and roadway attributes — particularly for federally-reportable segments outside the state 2024 GDB scope (e.g., off-system roads). HPMS is GDOT's annual federal submission, not a secondary fallback. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
 | 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags for state highway routes, matched by route ID and milepoint overlap. |
 | 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads (81,778 features). Most records lack geometry; matched by normalized road name + county FIPS code. |
 | 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
@@ -40,7 +40,7 @@ GDOT GPAS SpeedZone -> Enrich: posted speed limits (OnSystem by route + milepoin
 GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
          |
          v
-FHWA HPMS 2024 -> Gap-fill: AADT, attributes, pavement condition; set initial signed-route family from routesigning
+FHWA HPMS 2024 -> Add: parallel GDOT-official AADT for federally-reportable segments (state 2024 GDB and HPMS are two parallel GDOT sources) + roadway attribute fill where state 2024 GDB is null + pavement/safety attributes; set initial signed-route family from routesigning
          |
          v
 GDOT GPAS Reference -> Verify: signed-route family (Interstate / US / State); override HPMS where GPAS matches
@@ -194,7 +194,7 @@ These snapshots are cached locally and only re-downloaded when
 
 ### FHWA HPMS 2024 data
 
-The HPMS (Highway Performance Monitoring System) dataset is GDOT's annual submission to FHWA. It uses the same GDOT `ROUTE_ID` and milepoint system as our base network, enabling direct interval-overlap matching without spatial joins.
+The HPMS (Highway Performance Monitoring System) dataset is GDOT's annual federal submission to FHWA — a parallel GDOT-official source, not a secondary fallback. It uses the same GDOT `ROUTE_ID` and milepoint system as our base network, enabling direct interval-overlap matching without spatial joins. HPMS is the canonical AADT source for federally-reportable segments that fall outside the state 2024 GDB scope (e.g., off-system roads).
 
 Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
 
@@ -202,16 +202,28 @@ Downloaded snapshot:
 
 - `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
 
-Key finding: HPMS AADT values are 99.7% identical to GDOT official values where both sources have data, confirming HPMS is the same GDOT data repackaged for federal reporting. Direct official current-year coverage is `45,938` of `245,863` segments, and HPMS is the primary gap-fill source that raises final `AADT_2024` coverage to `245,766` segments.
+**Key finding: HPMS AADT values are 99.7% identical to GDOT state-system values where both sources have data.** This is direct evidence that HPMS *is* the GDOT data — packaged for federal reporting — rather than an independent estimate. The 2024 hygiene pass treats HPMS as a parallel GDOT-official source and cross-validates the two wherever they overlap. Direct state 2024 GDB current-year coverage is `45,938` of `245,863` segments; HPMS adds GDOT-official AADT for the federally-reportable segments outside that scope, raising combined GDOT-official coverage to roughly `242,033` segments (`96.5%`). The remaining `~3.5%` is filled by pipeline-derived methods (direction mirror, analytical interpolation, nearest neighbor), and `~0.04%` remains truly missing.
 
 HPMS contributes:
 
-- AADT gap-fill for segments not covered by the GDOT traffic GDB
+- Parallel GDOT-official AADT for segments outside the state 2024 GDB scope (the operational behavior is the same as before: HPMS populates segments the state 2024 GDB skipped — it just isn't a "fallback", it's the canonical source for federally-reportable off-system segments)
+- Cross-validation against the state 2024 GDB on overlap segments (captured in `AADT_2024_HPMS` and `AADT_2024_SOURCE_AGREEMENT`)
 - Pavement condition: IRI, PSR, rutting, cracking percent
 - Safety attributes: access control, terrain type
 - Initial signed-route classification via `routesigning` codes (223,672 segments, 91.0%)
 - GPAS reference layers provide the final authoritative signed-route family where they match
-- Roadway attribute gap-fill for 13 GDOT fields where GDOT values are null (never overwrites existing values)
+- Roadway attribute fill for 13 GDOT fields where the state 2024 GDB values are null (never overwrites existing values)
+
+#### AADT 2024 cross-validation columns and confidence tiers
+
+The 2024 hygiene pass added four columns that surface the two-source picture explicitly:
+
+- `AADT_2024_HPMS` — raw 2024 AADT from the GDOT HPMS submission, captured for every HPMS-matched segment regardless of which source wins the canonical AADT.
+- `AADT_2024_SOURCE_AGREEMENT` — `state_only`, `hpms_only`, `both_agree` (within ±15% or ±200 veh/day), `both_disagree`, or null when neither source has a value.
+- `AADT_2024_STATS_TYPE` — pass-through of the GDOT `Statistics_Type` field on the matched 2024 traffic record (`Actual`, `Estimated`, `Calculated`).
+- `AADT_2024_SAMPLE_STATUS` — pass-through of the GDOT `SampleStatus` free-text descriptor for the most recent sample-adequacy pass.
+
+`AADT_2024_CONFIDENCE` semantics changed in this pass and now use a four-tier scheme: `high` when `Statistics_Type = Actual` or the two GDOT sources agree; `medium` when `Statistics_Type` is `Estimated`/`Calculated` or the segment has a single GDOT-official source with no disagreement; `low` when the value is pipeline-derived (`direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`) or the two GDOT sources disagree; `missing` when no value is available. Note that `direction_mirror` was previously tagged `high` and `analytical_gap_fill` was previously `medium`; both are now `low` so that the confidence tier reflects measurement provenance rather than fill method.
 
 ### Official boundary source
 
@@ -529,9 +541,11 @@ Current enrichment fields:
 
 ### 8b. Apply HPMS 2024 enrichment
 
-After OnSystem speed zone enrichment, the ETL joins FHWA HPMS 2024 data to
-fill AADT gaps, derive signed-route flags, gap-fill GDOT roadway attributes,
-and add pavement/safety attributes.  The OffSystem speed zone pass runs
+After OnSystem speed zone enrichment, the ETL joins FHWA HPMS 2024 data — GDOT's
+parallel federal submission — to extend GDOT-official AADT coverage to
+federally-reportable segments outside the state 2024 GDB scope, derive
+signed-route flags, fill GDOT roadway attributes where the state 2024 GDB is
+null, and add pavement/safety attributes. The OffSystem speed zone pass runs
 immediately after HPMS (it requires `HPMS_ROUTE_NAME` for name matching).
 
 Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
@@ -539,15 +553,28 @@ Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/Featu
 HPMS uses the same GDOT `ROUTE_ID` and milepoint system. Matching is done by
 direct `ROUTE_ID` + milepoint interval overlap — no spatial matching needed.
 
-AADT gap-fill priority chain (each step only fills segments not yet covered):
+AADT priority chain (each step only fills segments not yet covered). Steps 1
+and 2 are two parallel GDOT-official sources; steps 3-5 are pipeline-derived
+fills for the remaining ~3.5%:
 
-1. **GDOT official exact** (45,938 segments) — direct traffic GDB match, confidence `high`
-2. **HPMS 2024** (196,095 segments) — FHWA HPMS route_id + milepoint match, confidence `medium`
-3. **Direction mirror** (3,085 segments) — INC→DEC copy for all routes, confidence `high`
-4. **Analytical gap-fill** (511 segments) — interpolation on the same route, confidence `medium`
-5. **Nearest-neighbor** (137 segments) — same-route nearest-neighbor fill, confidence `medium`
+1. **State 2024 GDB exact** (45,938 segments) — direct GDOT traffic GDB match, GDOT-official
+2. **HPMS 2024 federal submission** (196,095 segments) — GDOT's annual federal submission, matched by route_id + milepoint, GDOT-official (canonical for federally-reportable segments outside the state 2024 GDB scope)
+3. **Direction mirror** (3,085 segments) — INC→DEC copy for all routes, pipeline-derived, confidence `low`
+4. **Analytical gap-fill** (511 segments) — interpolation on the same route, pipeline-derived, confidence `low`
+5. **Nearest-neighbor** (137 segments) — same-route nearest-neighbor fill, pipeline-derived, confidence `low`
 
-Final 2024 AADT coverage: 245,766 / 245,863 segments (99.9605%).
+Combined GDOT-official coverage from steps 1+2: ~242,033 segments (~96.5%).
+Pipeline-derived fill from steps 3-5: ~3,733 segments (~1.5%; the 8,739 figure
+in the hygiene plan is the broader derived-slice count). Final 2024 AADT
+coverage: 245,766 / 245,863 segments (99.9605%); the residual ~0.04% remains
+truly missing.
+
+The new cross-validation columns `AADT_2024_HPMS` and
+`AADT_2024_SOURCE_AGREEMENT` capture the relationship between the two
+GDOT-official sources on segments where both have a value, and the new
+`AADT_2024_STATS_TYPE` / `AADT_2024_SAMPLE_STATUS` columns pass through GDOT's
+own measurement-provenance fields. `AADT_2024_CONFIDENCE` now uses the updated
+four-tier scheme described in the FHWA HPMS 2024 data section above.
 
 Future AADT 2044 fill chain:
 
@@ -726,12 +753,16 @@ with:
 
 ### AADT provenance fields
 
-- `AADT_2024` — canonical 2024 AADT (official, HPMS, or estimated)
-- `AADT_2024_OFFICIAL` — direct GDOT traffic match only, never overwritten
+- `AADT_2024` — canonical 2024 AADT chosen by tie-breaker: state 2024 GDB > HPMS 2024 federal submission > pipeline-derived (mirror / interpolation / nearest)
+- `AADT_2024_OFFICIAL` — audit trail for the state 2024 GDB match only, never overwritten by HPMS or any pipeline-derived fill
+- `AADT_2024_HPMS` — raw HPMS 2024 AADT captured for every HPMS-matched segment regardless of which source wins (cross-validation column)
+- `AADT_2024_SOURCE_AGREEMENT` — `state_only`, `hpms_only`, `both_agree` (within ±15% or ±200 veh/day), `both_disagree`, or null
+- `AADT_2024_STATS_TYPE` — pass-through of GDOT `Statistics_Type` (`Actual`, `Estimated`, `Calculated`)
+- `AADT_2024_SAMPLE_STATUS` — pass-through of GDOT `SampleStatus` free-text descriptor
 - `AADT_2024_SOURCE` — `official_exact`, `hpms_2024`, `direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`, or `missing`
-- `AADT_2024_CONFIDENCE` — `high`, `medium`, or `low`
-- `AADT_2024_FILL_METHOD` — method used for non-official values
-- `current_aadt_official_covered` — boolean: has direct GDOT match
+- `AADT_2024_CONFIDENCE` — `high`, `medium`, `low`, or `missing` (updated four-tier semantics, see HPMS section above)
+- `AADT_2024_FILL_METHOD` — method used when neither GDOT-official source had a value
+- `current_aadt_official_covered` — boolean: has direct state 2024 GDB match
 - `current_aadt_covered` — boolean: has any AADT_2024
 
 ### Derived by ETL
@@ -847,17 +878,20 @@ Current 2024 AADT coverage in the staged roadway network:
 - Current AADT covers `133,382.10` of `133,994.38` staged segment miles
 - Only `97` segments remain uncovered (unmaintained local roads with no traffic data in any source)
 
-Coverage by source (priority order):
+Coverage by source (priority order). Steps 1 and 2 are two parallel
+GDOT-official sources; steps 3-5 are pipeline-derived fill for the remaining
+~3.5%. Confidence tiers reflect the updated four-tier scheme — see the HPMS
+2024 data section for the full rules:
 
-| Source | Segments | Confidence | Method |
+| Source | Segments | Provenance | Method |
 |--------|----------|-----------|--------|
-| GDOT official exact | 45,938 | high | Direct GDOT traffic GDB match |
-| FHWA HPMS 2024 | 196,095 | medium | Route_id + milepoint match |
-| Direction mirror | 3,085 | high | INC→DEC copy for all routes |
-| Analytical gap-fill | 511 | medium | Interpolation on the same route |
-| Nearest-neighbor | 137 | medium | Same-route nearest-neighbor fill (20-mile cap) |
+| State 2024 GDB exact | 45,938 | GDOT-official | Direct GDOT traffic GDB match |
+| HPMS 2024 federal submission | 196,095 | GDOT-official (parallel) | Route_id + milepoint match (canonical for federally-reportable segments outside the state 2024 GDB scope) |
+| Direction mirror | 3,085 | pipeline-derived | INC→DEC copy for all routes |
+| Analytical gap-fill | 511 | pipeline-derived | Interpolation on the same route |
+| Nearest-neighbor | 137 | pipeline-derived | Same-route nearest-neighbor fill (20-mile cap) |
 
-Key validation: HPMS AADT values are 99.7% identical to GDOT official values where both sources overlap, confirming HPMS is the same GDOT data submitted to FHWA.
+Key validation: HPMS AADT values are 99.7% identical to state 2024 GDB values where both sources overlap. This is direct evidence that HPMS *is* the GDOT data, packaged for federal reporting — not an independent estimate.
 
 ### Future AADT 2044 coverage
 
@@ -1122,12 +1156,12 @@ Current 2024 AADT coverage is `245,766` of `245,863` segments (`99.9605%`). Only
 
 AADT source distribution:
 
-- `official_exact`: `45,938` (GDOT traffic GDB, high confidence)
-- `hpms_2024`: `196,238` (FHWA HPMS, medium confidence — same GDOT data via federal reporting)
-- `direction_mirror`: `3,091` (INC→DEC copy for all routes, high confidence)
-- `analytical_gap_fill`: `511` (interpolation + nearest-neighbor, medium confidence)
+- `official_exact`: `45,938` (state 2024 GDB direct match — GDOT-official)
+- `hpms_2024`: `196,238` (GDOT's HPMS federal submission — GDOT-official, parallel source, canonical for federally-reportable segments outside the state 2024 GDB scope; values are 99.7% identical to the state 2024 GDB on overlap)
+- `direction_mirror`: `3,091` (INC→DEC copy for all routes — pipeline-derived)
+- `analytical_gap_fill`: `511` (interpolation + nearest-neighbor — pipeline-derived)
 
-The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
+The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sources, and `AADT_2024_HPMS` / `AADT_2024_SOURCE_AGREEMENT` capture the cross-validation between the two GDOT-official sources where both are present. The former null `COUNTY_CODE` / `DISTRICT` state-system rows are handled by spatial backfill.
 
 Future AADT 2044 direct coverage (GDOT official + HPMS + direction mirror) is `46,619` of `245,863` segments (`19.0%`). Total post-imputation coverage is `245,766` of `245,863` segments (`99.96%`) after the official implied growth projection applies GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to `AADT_2024` for the remaining covered segments.
 
@@ -1188,7 +1222,7 @@ Phase 1 is complete and usable as the foundation for downstream work.
 Closed with Phase 1:
 
 - statewide staged roadway ETL with 245,863 segments and 118 columns
-- 2024 AADT coverage at 99.9605% (`245,766` segments) via five-tier fill chain
+- 2024 AADT coverage at 99.9605% (`245,766` segments): ~96.5% from two parallel GDOT-official sources (state 2024 GDB + HPMS federal submission), ~3.5% from pipeline-derived fill (direction mirror, analytical interpolation, nearest neighbor), ~0.04% truly missing. Cross-validation captured in `AADT_2024_HPMS` / `AADT_2024_SOURCE_AGREEMENT`
 - Future AADT 2044 coverage extended from `46,619` direct-forecast segments (`19.0%`) to `245,766` total post-imputation segments (`99.96%`) via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with `AADT_2024`
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
