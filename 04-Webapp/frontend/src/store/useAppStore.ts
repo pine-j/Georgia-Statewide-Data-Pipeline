@@ -152,6 +152,7 @@ export const useAppStore = create<AppState>((set) => ({
       selectedCongressionalDistricts: [],
       selectedCities: [],
       includeUnincorporated: false,
+      boundaryOverlayVisibility: { ...DEFAULT_BOUNDARY_OVERLAY_VISIBILITY },
     }),
 
   setSelectedVisualizationId: (selectedVisualizationId) => set({ selectedVisualizationId }),

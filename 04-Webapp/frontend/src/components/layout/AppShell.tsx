@@ -9,8 +9,8 @@ import { useGeorgiaFiltersQuery } from "../../hooks/useGeorgiaFiltersQuery";
 import { useRoadwayLoader } from "../../hooks/useRoadwayLoader";
 import { useRoadwayVisualizationCatalogQuery } from "../../hooks/useRoadwayVisualizationCatalogQuery";
 import { useUrlSyncedFilters } from "../../hooks/useUrlSyncedFilters";
-import { useAppStore } from "../../store/useAppStore";
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import { useAppStore, DEFAULT_BOUNDARY_OVERLAY_VISIBILITY } from "../../store/useAppStore";
+import type { BoundaryOverlayVisibility, ThemeFilterValue } from "../../store/useAppStore";
 import { getRoadwayDetail } from "../../services/api";
 import { RoadwayDetail, RoadwayVisualizationOption } from "../../types/api";
 import {
@@ -198,6 +198,76 @@ export function AppShell() {
     boundaryOverlayVisibility,
     true,
   );
+
+  // Sync overlays on filter-activity transitions only, so manual legend-card toggles stick in between.
+  const filterActivityByOverlay: Array<[keyof BoundaryOverlayVisibility, boolean]> = [
+    ["districts", selectedDistricts.length > 0],
+    ["counties", selectedCounties.length > 0],
+    ["areaOffices", selectedAreaOffices.length > 0],
+    ["mpos", selectedMpos.length > 0],
+    ["regionalCommissions", selectedRegionalCommissions.length > 0],
+    ["stateHouse", selectedStateHouseDistricts.length > 0],
+    ["stateSenate", selectedStateSenateDistricts.length > 0],
+    ["congressional", selectedCongressionalDistricts.length > 0],
+  ];
+  // Seed all-false so URL-hydrated filters trigger a first-mount activation transition.
+  const prevFilterActivityRef = useRef<Record<keyof BoundaryOverlayVisibility, boolean>>({
+    statewide: false,
+    districts: false,
+    counties: false,
+    areaOffices: false,
+    mpos: false,
+    regionalCommissions: false,
+    stateHouse: false,
+    stateSenate: false,
+    congressional: false,
+  });
+
+  useEffect(() => {
+    const currentActivity = Object.fromEntries(filterActivityByOverlay) as Record<
+      keyof BoundaryOverlayVisibility,
+      boolean
+    >;
+    const prev = prevFilterActivityRef.current;
+
+    const anyActiveNow = filterActivityByOverlay.some(([, active]) => active);
+    const anyActiveBefore = Object.values(prev).some(Boolean);
+
+    if (!anyActiveNow && anyActiveBefore) {
+      for (const key of Object.keys(DEFAULT_BOUNDARY_OVERLAY_VISIBILITY) as Array<
+        keyof BoundaryOverlayVisibility
+      >) {
+        setBoundaryOverlayVisibility(key, DEFAULT_BOUNDARY_OVERLAY_VISIBILITY[key]);
+      }
+    } else {
+      const firstActivation = !anyActiveBefore && anyActiveNow;
+      for (const [overlay, isActive] of filterActivityByOverlay) {
+        const wasActive = prev[overlay];
+        if (isActive !== wasActive) {
+          setBoundaryOverlayVisibility(overlay, isActive);
+        }
+      }
+      if (firstActivation) {
+        for (const [overlay, isActive] of filterActivityByOverlay) {
+          if (!isActive && DEFAULT_BOUNDARY_OVERLAY_VISIBILITY[overlay]) {
+            setBoundaryOverlayVisibility(overlay, false);
+          }
+        }
+      }
+    }
+
+    prevFilterActivityRef.current = currentActivity;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedDistricts,
+    selectedCounties,
+    selectedAreaOffices,
+    selectedMpos,
+    selectedRegionalCommissions,
+    selectedStateHouseDistricts,
+    selectedStateSenateDistricts,
+    selectedCongressionalDistricts,
+  ]);
 
   useEffect(() => {
     if (thematicOptions.length === 0) {
