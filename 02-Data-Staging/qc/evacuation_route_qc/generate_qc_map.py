@@ -22,10 +22,10 @@ from _evac_corridor_match import (
 )
 
 
-OUTPUT_DIR = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\qc\evacuation_route_qc")
-ROADWAY_PATH = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\spatial\base_network.gpkg")
-ROADWAY_LAYER = "roadway_segments"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+OUTPUT_DIR = Path(__file__).resolve().parent
+ROADWAY_PATH = PROJECT_ROOT / "02-Data-Staging" / "spatial" / "base_network.gpkg"
+ROADWAY_LAYER = "roadway_segments"
 RAW_GDOT_EOC_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "GDOT_EOC"
 EVAC_PATH = RAW_GDOT_EOC_DIR / "ga_evac_routes.geojson"
 CONTRAFLOW_PATH = RAW_GDOT_EOC_DIR / "ga_contraflow_routes.geojson"
