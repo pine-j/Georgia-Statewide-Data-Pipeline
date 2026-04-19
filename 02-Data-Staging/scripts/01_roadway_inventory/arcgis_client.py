@@ -23,10 +23,45 @@ def _strip_extra_dims(coords: Any) -> Any:
     return [_strip_extra_dims(child) for child in coords]
 
 
+def _esri_feature_to_geojson(feature: dict[str, Any], geometry_type: str | None) -> dict[str, Any]:
+    """Convert an ESRI JSON feature to a GeoJSON Feature dict."""
+    attrs = feature.get("attributes") or {}
+    esri_geom = feature.get("geometry")
+    geojson_geom: dict[str, Any] | None = None
+    if esri_geom and geometry_type:
+        if geometry_type == "esriGeometryPolyline":
+            paths = esri_geom.get("paths") or []
+            if len(paths) == 1:
+                geojson_geom = {"type": "LineString", "coordinates": paths[0]}
+            elif len(paths) > 1:
+                geojson_geom = {"type": "MultiLineString", "coordinates": paths}
+        elif geometry_type == "esriGeometryPolygon":
+            rings = esri_geom.get("rings") or []
+            if rings:
+                geojson_geom = {"type": "Polygon", "coordinates": rings}
+        elif geometry_type == "esriGeometryPoint":
+            x = esri_geom.get("x")
+            y = esri_geom.get("y")
+            if x is not None and y is not None:
+                geojson_geom = {"type": "Point", "coordinates": [x, y]}
+        elif geometry_type == "esriGeometryMultipoint":
+            points = esri_geom.get("points") or []
+            if points:
+                geojson_geom = {"type": "MultiPoint", "coordinates": points}
+    return {"type": "Feature", "properties": attrs, "geometry": geojson_geom}
+
+
 def _feature_collection_to_gdf(payload: dict[str, Any]) -> gpd.GeoDataFrame:
     features = payload.get("features", [])
     if not features:
         return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    # Detect ESRI JSON (has 'attributes') vs GeoJSON (has 'properties') and
+    # convert ESRI → GeoJSON shape. GDOT's LRS layers (e.g. GPAS/MapServer/5)
+    # fail server-side GeoJSON serialization for M-aware polylines, so this
+    # client fetches f=json and normalizes here.
+    if "attributes" in features[0]:
+        geometry_type = payload.get("geometryType")
+        features = [_esri_feature_to_geojson(feature, geometry_type) for feature in features]
     for feature in features:
         geometry = feature.get("geometry")
         if geometry and "coordinates" in geometry:
@@ -97,7 +132,7 @@ def fetch_arcgis_features(
         payload = _get_json(
             query_url,
             {
-                "f": "geojson",
+                "f": "json",
                 "where": "1=1",
                 "objectIds": ",".join(str(object_id) for object_id in batch),
                 "outFields": "*",
