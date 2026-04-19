@@ -202,23 +202,14 @@ def _normalize_text(value: Any) -> str | None:
 
 
 def _normalize_mpo_id(value: Any) -> str | None:
-    """Normalize an MPO_ID to a clean integer-like string.
+    """Harden MPO_ID values arriving at the request boundary.
 
-    The upstream ingestion in
-    02-Data-Staging/scripts/01_roadway_inventory/create_db.py now reads
-    MPO_ID with an explicit string dtype, so freshly-staged SQLite holds
-    MPO_ID as TEXT ('13197100') matching the GPKG roadway_segments layer.
-    This helper is kept for two reasons:
-
-    1. Defense at the request boundary: incoming user query params from
-       bookmarks or cached frontend state may still carry '13197100.0'.
-    2. Backwards compatibility with staged SQLite files generated before
-       the ingestion fix - they still hold MPO_ID as REAL and render as
-       '13197100.0'. Once the pipeline has been re-run everywhere, the
-       internal normalization call sites in get_staged_roadway_features
-       and get_staged_filter_options can be removed; the call in
-       resolve_filters_from_request should stay as input-boundary
-       defense.
+    Incoming query params from bookmarks or stale cached frontend state
+    can carry '13197100.0' even though staged MPO_ID is a clean integer
+    string like '13197100'. This helper strips the '.0' so downstream
+    equality comparisons match. Applied at request ingress only
+    (resolve_filters_from_request); internal staged reads trust the
+    column as-is.
     """
     if _is_missing(value):
         return None
@@ -928,7 +919,7 @@ def get_staged_roadway_features(
                     area_office_name=_normalize_text(
                         getattr(row, "area_office_name", None)
                     ),
-                    mpo_id=_normalize_mpo_id(getattr(row, "mpo_id", None)),
+                    mpo_id=_normalize_text(getattr(row, "mpo_id", None)),
                     mpo_name=_normalize_text(getattr(row, "mpo_name", None)),
                     rc_id=_normalize_int(getattr(row, "rc_id", None)),
                     rc_name=_normalize_text(getattr(row, "rc_name", None)),
@@ -1091,14 +1082,27 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
     with _open_sqlite() as connection:
         cursor = connection.cursor()
 
-        # County + District (existing).
+        # One row per COUNTY_CODE at the majority DISTRICT; stale-DISTRICT
+        # rows from the source GDB would otherwise inflate the dropdown.
+        # Invariant: majority-count DISTRICT == canonical GDOT_DISTRICT.
+        # Largest stale-minority ratio is ~1% (Fulton), well below the 50%
+        # flip threshold. See 02-Data-Staging/docs/county_district_stale_pairs.md
+        # section 5 for rationale (Option A).
         county_rows = _fetch_distinct_rows(
             cursor,
             """
+            WITH district_counts AS (
+                SELECT COUNTY_CODE, DISTRICT, COUNT(*) AS n
+                FROM segments
+                WHERE COUNTY_CODE IS NOT NULL AND DISTRICT IS NOT NULL
+                GROUP BY COUNTY_CODE, DISTRICT
+            )
             SELECT COUNTY_CODE, DISTRICT
-            FROM segments
-            WHERE COUNTY_CODE IS NOT NULL AND DISTRICT IS NOT NULL
-            GROUP BY COUNTY_CODE, DISTRICT
+            FROM district_counts dc
+            WHERE n = (
+                SELECT MAX(n) FROM district_counts dc2
+                WHERE dc2.COUNTY_CODE = dc.COUNTY_CODE
+            )
             ORDER BY DISTRICT, COUNTY_CODE
             """,
         )
@@ -1206,7 +1210,7 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
 
     mpos = []
     for mpo_id, mpo_name in mpo_rows:
-        normalized_id = _normalize_mpo_id(mpo_id)
+        normalized_id = _normalize_text(mpo_id)
         if not normalized_id:
             continue
         mpos.append(
