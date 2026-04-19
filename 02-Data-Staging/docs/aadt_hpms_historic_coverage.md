@@ -5,6 +5,25 @@
 **Scope:** 4-year federal HPMS AADT panel (2020, 2022, 2023, 2024). 2021 omitted — see `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2021/NO_DATA.md` for the exhausted-sources log.
 **Location note:** this report lives at `02-Data-Staging/docs/aadt_hpms_historic_coverage.md` (tracked). Plan §Step 4 calls for `02-Data-Staging/reports/...` but that path is `.gitignored` repo-wide; the `docs/` path matches the existing convention for committed staging narratives (see `county_district_stale_pairs.md`, `historic_traffic_inventory.md`).
 
+## Re-fetching raw data
+
+The four HPMS tabular JSON files are gitignored and must be re-downloaded if lost (e.g. after a worktree is removed). Use the parameterized downloader:
+
+```bash
+python 01-Raw-Data/Roadway-Inventory/scripts/download_hpms.py --year 2020 --service-name HPMS_FULL_GA_2020
+python 01-Raw-Data/Roadway-Inventory/scripts/download_hpms.py --year 2022 --service-name HPMS_FULL_GA_2022
+python 01-Raw-Data/Roadway-Inventory/scripts/download_hpms.py --year 2023 --service-name HPMS_FULL_GA3_2023
+python 01-Raw-Data/Roadway-Inventory/scripts/download_hpms.py --year 2024
+```
+
+Then re-run the enrichment:
+
+```bash
+python 02-Data-Staging/scripts/01_roadway_inventory/add_historic_hpms_columns.py --year 2020 --year 2022 --year 2023
+```
+
+Note: `--service-name` defaults to `HPMS_FULL_GA_<year>` — the 2023 service carries a `3` suffix and must be passed explicitly.
+
 ## TL;DR
 
 - **Federal-aid network (FC 1-5): 74-100% coverage** across all four years. Interstate (FC 1) has a ~75% floor in every year including the 2024 Phase 1 baseline — this is a pre-existing segmentation-granularity artefact, not a 2020-specific miss.
