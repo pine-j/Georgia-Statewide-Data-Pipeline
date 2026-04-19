@@ -425,6 +425,118 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return enriched
 
 
+def load_hpms_data_for_year(
+    year: int,
+    rename_map: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, int]:
+    """Load a historic HPMS tabular snapshot, optionally normalizing field names.
+
+    Historic years (2020, 2022, 2023) ship with older FHWA field-naming
+    vintages; the download pipeline already applied per-year rename maps at
+    fetch time, but this loader accepts an in-memory rename map too so the
+    same builder can be pointed at a raw vintage tabular if needed.
+
+    Returns `(dataframe, dropped_duplicates)`. 2020's raw submission duplicates
+    each segment 2-3× for section-type sparsity (ownership on one row,
+    maintenance_operations on another, etc.) with identical AADT. Dedupe on
+    the `(route_id, begin_point, end_point)` tuple keeps the first occurrence
+    and returns the dropped-row count so the coverage report can log the
+    scope-expansion tax per year. For years where the submission is already
+    one-row-per-segment (2022, 2023, 2024), the dedupe is a no-op.
+    """
+
+    path = (
+        PROJECT_ROOT
+        / "01-Raw-Data"
+        / "Roadway-Inventory"
+        / "FHWA_HPMS"
+        / str(year)
+        / f"hpms_ga_{year}_tabular.json"
+    )
+    if not path.exists():
+        LOGGER.warning("HPMS %d tabular not found at %s", year, path)
+        return pd.DataFrame(), 0
+
+    LOGGER.info("Loading HPMS %d data from %s", year, path)
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    df = pd.DataFrame([feat["attributes"] for feat in raw["features"]])
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    before = len(df)
+    dedupe_keys = [k for k in ("route_id", "begin_point", "end_point") if k in df.columns]
+    if len(dedupe_keys) == 3:
+        df = df.drop_duplicates(subset=dedupe_keys, keep="first").reset_index(drop=True)
+    dropped = before - len(df)
+    if dropped:
+        LOGGER.info(
+            "Deduped HPMS %d on (route_id, begin_point, end_point): %d -> %d (%d dropped)",
+            year,
+            before,
+            len(df),
+            dropped,
+        )
+    LOGGER.info("Loaded %d HPMS %d records with %d columns", len(df), year, len(df.columns))
+    return df, dropped
+
+
+def build_historic_hpms_aadt_column(
+    gdf: pd.DataFrame,
+    year: int,
+    rename_map: dict[str, str] | None = None,
+) -> tuple[pd.Series, dict]:
+    """Return an AADT series for the given historic HPMS year.
+
+    Uses the same ROUTE_ID + milepoint-overlap join that `apply_hpms_enrichment`
+    performs for 2024, but produces only the single AADT column — no canonical
+    AADT fill, no gap-fill, no signed-route derivation. Caller writes the
+    returned series as `AADT_{year}_HPMS` on the segments table.
+
+    Historic HPMS years are single-source (no cross-check to the state GDB) and
+    intentionally additive: they never modify `AADT`, `AADT_2024`, or any of
+    the 2024-vintage source/agreement/confidence columns.
+
+    Returns `(series, stats)` where `stats` carries the dedupe count so the
+    coverage report can log the scope-expansion tax per year.
+    """
+
+    hpms, deduped = load_hpms_data_for_year(year, rename_map)
+    result = pd.Series([pd.NA] * len(gdf), index=gdf.index, dtype="Int64")
+    stats = {"deduped": deduped, "matched": 0, "hpms_rows": len(hpms)}
+    if hpms.empty:
+        return result, stats
+
+    lookup = _build_hpms_lookup(hpms)
+    matched = 0
+    for idx in gdf.index:
+        row = gdf.loc[idx]
+        route_id = str(row.get("ROUTE_ID", ""))
+        if not route_id or route_id == "nan":
+            continue
+        match = _find_best_hpms_match(
+            route_id,
+            row.get("FROM_MILEPOINT"),
+            row.get("TO_MILEPOINT"),
+            lookup,
+        )
+        if match is None:
+            continue
+        hpms_aadt = match.get("aadt")
+        if hpms_aadt is None or pd.isna(hpms_aadt):
+            continue
+        try:
+            result.at[idx] = int(hpms_aadt)
+            matched += 1
+        except (ValueError, TypeError):
+            continue
+
+    stats["matched"] = matched
+    LOGGER.info("HPMS %d AADT column: %d segments matched", year, matched)
+    return result, stats
+
+
 def write_hpms_enrichment_summary(gdf: pd.DataFrame) -> None:
     """Write HPMS enrichment coverage summary."""
 
