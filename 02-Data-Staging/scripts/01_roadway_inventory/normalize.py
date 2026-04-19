@@ -3846,7 +3846,11 @@ def fetch_official_mpo_boundaries(
         local_cache_filename="mpos.fgb",
     )
     if "MPO_ID" in gdf.columns:
-        gdf["MPO_ID"] = gdf["MPO_ID"].astype(str).str.strip()
+        # Coerce through Int64 first: on a fresh fetch from the GeoJSON
+        # endpoint pyogrio can infer MPO_ID as float64, and a direct
+        # .astype(str) would then emit '13197100.0' instead of '13197100'.
+        numeric = pd.to_numeric(gdf["MPO_ID"], errors="coerce").astype("Int64")
+        gdf["MPO_ID"] = numeric.astype("string").str.strip()
     if "MPO_NAME" in gdf.columns:
         gdf["MPO_NAME"] = gdf["MPO_NAME"].astype(str).str.strip()
     return gdf

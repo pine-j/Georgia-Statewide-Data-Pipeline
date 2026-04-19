@@ -32,6 +32,13 @@ INDEX_COLUMNS = [
     "unique_id",
 ]
 
+# Columns that look numeric to pandas' CSV type inferencer but are
+# categorical ID codes. Forcing them to string at read time keeps them
+# as TEXT in SQLite instead of REAL, which would otherwise serialize
+# e.g. 13197100 as '13197100.0' and break string-equality joins against
+# the GPKG layer (which stores these as TEXT).
+STRING_ID_COLUMNS = ("MPO_ID",)
+
 
 def configure_local_sqlite_temp() -> None:
     """Force SQLite temp files into the workspace on Windows."""
@@ -139,11 +146,12 @@ def main() -> None:
 
     csv_path = find_staged_table_csv()
     logger.info("Reading normalized CSV: %s", csv_path)
+    string_id_dtypes = {col: "string" for col in STRING_ID_COLUMNS}
     try:
-        df = pd.read_csv(csv_path, low_memory=False)
+        df = pd.read_csv(csv_path, low_memory=False, dtype=string_id_dtypes)
     except Exception:
         logger.info("Retrying CSV read with default memory settings")
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, dtype=string_id_dtypes)
     logger.info("Loaded %d rows, %d columns", len(df), len(df.columns))
 
     # Create database
