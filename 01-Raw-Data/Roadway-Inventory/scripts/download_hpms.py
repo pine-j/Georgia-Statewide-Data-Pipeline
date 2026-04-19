@@ -1,19 +1,16 @@
 """Download FHWA HPMS Georgia tabular submission for a given year.
 
-Fetches the HPMS_FULL_GA_<year> FeatureServer hosted by USDOT and writes the
-attributes-only snapshot that `hpms_enrichment.py` expects:
+Fetches the specified FeatureServer hosted by USDOT and writes the
+attributes-only snapshot that the enrichment script expects:
 
     01-Raw-Data/Roadway-Inventory/FHWA_HPMS/<year>/hpms_ga_<year>_tabular.json
 
 File format is ESRI JSON:  ``{"features": [{"attributes": {...}}, ...]}``.
 Geometry is intentionally omitted — the enrichment joins by ROUTE_ID +
 milepoint interval, not spatially, so a geometry-less pull keeps the file
-manageable (~a few hundred MB instead of >1 GB).
+manageable.
 
-Historic years (2020-2023) use older FHWA field-naming vintages. Pass
-``--rename-map-json`` pointing at a JSON ``{"source_field": "target_field"}``
-map; renames are applied to every feature's attribute dict before the output
-is written, so the emitted file matches the 2024 schema.
+Default service name (when --service-name is omitted) is HPMS_FULL_GA_<year>.
 """
 
 from __future__ import annotations
@@ -35,7 +32,7 @@ MAX_RETRIES = 5
 RETRY_BASE_DELAY_SECONDS = 2.0
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
+BASE_URL = "https://geo.dot.gov/server/rest/services/Hosted/{service_name}/FeatureServer/0"
 BATCH_SIZE = 2000
 USER_AGENT = "Georgia-Statewide-Data-Pipeline HPMS downloader"
 TIMEOUT = 180
@@ -86,11 +83,11 @@ def _get_json(query_url: str, params: dict) -> dict:
     raise RuntimeError(f"All {MAX_RETRIES} retries exhausted. Last error: {last_error}")
 
 
-def fetch_object_ids(service_url: str, where: str) -> list[int]:
+def fetch_object_ids(service_url: str) -> list[int]:
     query_url = f"{service_url}/query"
     payload = _get_json(
         query_url,
-        {"f": "json", "where": where, "returnIdsOnly": "true"},
+        {"f": "json", "where": "1=1", "returnIdsOnly": "true"},
     )
     object_ids = payload.get("objectIds") or []
     return sorted(int(object_id) for object_id in object_ids)
@@ -124,47 +121,20 @@ def fetch_features(service_url: str, object_ids: list[int]) -> list[dict]:
     return features
 
 
-def apply_rename_map(features: list[dict], rename_map: dict[str, str]) -> None:
-    if not rename_map:
-        return
-    for feature in features:
-        attrs = feature.get("attributes")
-        if not attrs:
-            continue
-        for src, dst in rename_map.items():
-            if src in attrs:
-                attrs[dst] = attrs.pop(src)
-
-
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Download FHWA HPMS Georgia tabular submission for a given year.")
-    parser.add_argument("--year", type=int, required=True, help="HPMS submission year (e.g. 2024).")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Download FHWA HPMS Georgia tabular data for a given year.")
+    parser.add_argument("--year", type=int, required=True, help="HPMS year to download (e.g. 2022).")
     parser.add_argument(
         "--service-name",
         default=None,
-        help="FeatureServer service name. Defaults to HPMS_FULL_GA_<year>. Override for anomalies like HPMS_FULL_GA3_2023.",
+        help="USDOT FeatureServer service name. Defaults to HPMS_FULL_GA_<year>.",
     )
-    parser.add_argument("--layer", type=int, default=0, help="FeatureServer layer id (default 0).")
-    parser.add_argument(
-        "--where",
-        default="1=1",
-        help="Server-side where-clause passed to the object-id query. Default 1=1 (no filter).",
-    )
-    parser.add_argument(
-        "--rename-map-json",
-        default=None,
-        help="Path to a JSON file mapping source_field -> target_field. Applied to every feature's attributes before output is written.",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    args = parse_args(argv)
+    args = parser.parse_args()
 
     year = args.year
     service_name = args.service_name or f"HPMS_FULL_GA_{year}"
-    service_url = f"https://geo.dot.gov/server/rest/services/Hosted/{service_name}/FeatureServer/{args.layer}"
+    service_url = BASE_URL.format(service_name=service_name)
+
     target_path = (
         PROJECT_ROOT
         / "01-Raw-Data"
@@ -175,16 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     metadata_path = target_path.parent / "download_metadata.json"
 
-    rename_map: dict[str, str] = {}
-    if args.rename_map_json:
-        rename_map_path = Path(args.rename_map_json)
-        rename_map = json.loads(rename_map_path.read_text(encoding="utf-8"))
-        LOGGER.info("Loaded %d rename entries from %s", len(rename_map), rename_map_path)
-
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    LOGGER.info("Fetching HPMS object ids from %s (where=%s)", service_url, args.where)
-    object_ids = fetch_object_ids(service_url, args.where)
+    LOGGER.info("Fetching HPMS object ids from %s", service_url)
+    object_ids = fetch_object_ids(service_url)
     LOGGER.info("Found %d HPMS records", len(object_ids))
 
     features = fetch_features(service_url, object_ids)
@@ -195,10 +160,6 @@ def main(argv: list[str] | None = None) -> int:
             len(object_ids),
         )
 
-    if rename_map:
-        apply_rename_map(features, rename_map)
-        LOGGER.info("Applied %d field renames to %d features", len(rename_map), len(features))
-
     payload = {"features": features}
     target_path.write_text(json.dumps(payload), encoding="utf-8")
     LOGGER.info("Wrote %d features to %s", len(features), target_path)
@@ -206,20 +167,14 @@ def main(argv: list[str] | None = None) -> int:
     metadata = {
         "download_date": datetime.now(timezone.utc).isoformat(),
         "source_url": service_url,
-        "service_name": service_name,
-        "layer_id": args.layer,
-        "where_clause": args.where,
-        "rename_map_applied": rename_map or None,
         "feature_count": len(features),
         "file_bytes": target_path.stat().st_size,
         "file_path": str(target_path.relative_to(PROJECT_ROOT)),
-        "track": "rest",
-        "note": "Attributes-only (no geometry) — hpms_enrichment.py joins by ROUTE_ID + milepoint.",
+        "note": "Attributes-only (no geometry) — enrichment script joins by ROUTE_ID + milepoint.",
     }
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     LOGGER.info("Wrote download metadata to %s", metadata_path)
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main() or 0)
