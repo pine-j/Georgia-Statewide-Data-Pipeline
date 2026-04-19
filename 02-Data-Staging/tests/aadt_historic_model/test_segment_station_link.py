@@ -30,20 +30,19 @@ def test_nearest_station_per_segment_picks_closest() -> None:
             "year": [2020, 2020, 2020],
         }
     )
-    # 5 segment midpoints at y = 10, 50, 110, 190, 500.
+    # 5 segment midpoints at y = 10, 60, 110, 190, 500.
+    # 60 > half-way (50) to S_MID, so unique nearest = S_MID.
     segments = pd.DataFrame(
         {
             "unique_id": ["seg_A", "seg_B", "seg_C", "seg_D", "seg_E"],
             "mid_x_m": [0.0, 0.0, 0.0, 0.0, 0.0],
-            "mid_y_m": [10.0, 50.0, 110.0, 190.0, 500.0],
+            "mid_y_m": [10.0, 60.0, 110.0, 190.0, 500.0],
             "ROUTE_ID": ["R1"] * 5,
         }
     )
 
     out = nearest_station_per_segment(segments=segments, stations=stations)
 
-    # Expected: seg_A -> S_BOTTOM (10m), seg_B -> S_MID (50m),
-    # seg_C -> S_MID (10m), seg_D -> S_TOP (10m), seg_E -> S_TOP (300m).
     mapping = dict(zip(out["unique_id"], out["nearest_tc_number"]))
     assert mapping["seg_A"] == "S_BOTTOM"
     assert mapping["seg_B"] == "S_MID"
