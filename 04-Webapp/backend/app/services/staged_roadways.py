@@ -204,17 +204,21 @@ def _normalize_text(value: Any) -> str | None:
 def _normalize_mpo_id(value: Any) -> str | None:
     """Normalize an MPO_ID to a clean integer-like string.
 
-    MPO_ID arrives from two upstream sources with different dtype
-    conventions: the staged SQLite segments table holds it as REAL
-    (so str(13197100.0) -> '13197100.0'), while the GPKG roadway_segments
-    layer holds it as clean text ('13197100'). This helper collapses
-    both to the clean form so filter options, incoming query params,
-    and boundary/segment predicates agree.
+    The upstream ingestion in
+    02-Data-Staging/scripts/01_roadway_inventory/create_db.py now reads
+    MPO_ID with an explicit string dtype, so freshly-staged SQLite holds
+    MPO_ID as TEXT ('13197100') matching the GPKG roadway_segments layer.
+    This helper is kept for two reasons:
 
-    TODO: fix the upstream ingestion in
-    02-Data-Staging/scripts/01_roadway_inventory/normalize.py
-    (fetch_official_mpo_boundaries) to coerce MPO_ID through Int64
-    before stringifying, then remove this workaround.
+    1. Defense at the request boundary: incoming user query params from
+       bookmarks or cached frontend state may still carry '13197100.0'.
+    2. Backwards compatibility with staged SQLite files generated before
+       the ingestion fix - they still hold MPO_ID as REAL and render as
+       '13197100.0'. Once the pipeline has been re-run everywhere, the
+       internal normalization call sites in get_staged_roadway_features
+       and get_staged_filter_options can be removed; the call in
+       resolve_filters_from_request should stay as input-boundary
+       defense.
     """
     if _is_missing(value):
         return None
