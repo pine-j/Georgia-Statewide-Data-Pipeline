@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$BaseBranch = "master",
-    [string]$WorktreeRoot = ".worktrees",
+    [string]$WorktreeRoot = "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees",
     [switch]$RequireRemoteBaseMatch,
     [switch]$Apply
 )
@@ -78,7 +78,11 @@ function Get-RemoteBranchSha {
 }
 
 $repoRoot = Get-RepoRoot
-$managedRoot = Join-Path $repoRoot $WorktreeRoot
+if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
+    $managedRoot = $WorktreeRoot
+} else {
+    $managedRoot = Join-Path $repoRoot $WorktreeRoot
+}
 
 Push-Location $repoRoot
 try {

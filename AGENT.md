@@ -36,8 +36,8 @@ Standard location:
 
 - create agent worktrees under `D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\` (a sibling folder to the main repo, not inside it)
 - use a clear folder name such as `D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\<agent>-<task>`
-- preferred creation command: `.\repo-tools\new-worktree.ps1 -Agent <agent> -Task <task> -WorktreeRoot "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees"`
-- the legacy in-repo `.worktrees/` path is deprecated; do not create new worktrees there (the script still defaults to `.worktrees` so `-WorktreeRoot` must be passed until the default is updated)
+- preferred creation command: `.\repo-tools\new-worktree.ps1 -Agent <agent> -Task <task>` (the script now defaults `-WorktreeRoot` to the sibling folder)
+- the legacy in-repo `.worktrees/` path is deprecated; do not create new worktrees there
 
 Expected lifecycle:
 

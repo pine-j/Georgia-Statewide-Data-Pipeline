@@ -7,7 +7,7 @@ param(
     [string]$Task,
 
     [string]$BaseBranch = "master",
-    [string]$WorktreeRoot = ".worktrees"
+    [string]$WorktreeRoot = "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees"
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,7 +39,11 @@ $agentSlug = Convert-ToSlug $Agent
 $taskSlug = Convert-ToSlug $Task
 $worktreeName = "$agentSlug-$taskSlug"
 $branchName = "worktree/$agentSlug/$taskSlug"
-$worktreeRootPath = Join-Path $repoRoot $WorktreeRoot
+if ([System.IO.Path]::IsPathRooted($WorktreeRoot)) {
+    $worktreeRootPath = $WorktreeRoot
+} else {
+    $worktreeRootPath = Join-Path $repoRoot $WorktreeRoot
+}
 $worktreePath = Join-Path $worktreeRootPath $worktreeName
 
 Push-Location $repoRoot

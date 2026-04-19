@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$BaseBranch = "master",
-    [string]$WorktreeRoot = ".worktrees"
+    [string]$WorktreeRoot = "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees"
 )
 
 $ErrorActionPreference = "Stop"
