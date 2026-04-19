@@ -233,11 +233,149 @@ rows in `backfill_county_district_from_geometry` (relax its NULL-only
 gate to also cover "segment representative-point not inside stamped
 COUNTY_CODE polygon") would fix them, but this is a separate
 investigation and should get its own TODO entry after the dropdown
-bug is addressed.
+bug is addressed. That investigation was done on 2026-04-19; see
+Section 6 — the conclusion is that the 37 are cross-boundary
+segments whose stamped attribution is already correct by
+majority-of-length, and the NULL-only gate should not be relaxed.
 
 ---
 
-## 6. Reproduction
+## 6. Follow-up: the 37 mislocated-geometry segments
+
+Section 5c flagged a second-order question: 37 of the 382 stale rows
+have a representative point that lies outside the county stamped on
+the segment. On its face that suggests both `COUNTY_CODE` and
+`DISTRICT` were mis-attributed and should be rewritten from geometry.
+A classification pass on those 37 segments on 2026-04-19 shows the
+opposite — the stamped attribution is already the right one for every
+case, and a naive geometry-based overwrite would make the data worse.
+
+### 6a. Method
+
+For each of the 382 minority-district segments:
+
+1. Reproject to EPSG:26917 (UTM 17N) so all distances are in meters.
+2. Take the segment's `representative_point` (Shapely's guaranteed-
+   interior point for a line).
+3. Spatially join that point against `county_boundaries` to find which
+   county the point falls in (`geom_cc`).
+4. Flag as "mislocated" if `geom_cc` differs from the stamped
+   `COUNTY_CODE` — this yields the 37 segments from 5c.
+
+Then, for each of the 37, measure:
+
+- `n_counties_touched`: distinct county polygons the full line
+  intersects.
+- `frac_in_stamped_county`: fraction of the line's length that lies
+  inside the stamped county polygon.
+- `frac_in_true_county`: fraction of the line's length that lies
+  inside the rep-point's county polygon.
+- `dist_to_stamped_m`: distance from the rep-point to the stamped
+  county's boundary (in meters).
+
+### 6b. Findings
+
+**Every one of the 37 segments crosses a county boundary.**
+`n_counties_touched == 2` for all 37. There is no case (b) (segment
+fully inside a wrong county) and no case (c) (near-boundary
+geocoding noise in a genuinely wrong county). The breakdown is:
+
+| Category | Count |
+|---|---:|
+| (a) crosses boundary — attribution is a majority-by-length call | 37 |
+| (b) fully inside wrong county — clear error | 0 |
+| (c) near-boundary geocoding noise | 0 |
+| **Total** | **37** |
+
+Supporting distributions on the 37 rows:
+
+| Metric | min | median | max |
+|---|---:|---:|---:|
+| `frac_in_stamped_county` | 0.500 | 0.977 | 0.999 |
+| `frac_in_true_county` | 0.001 | 0.023 | 0.500 |
+| `dist_to_stamped_m` | 0.00 | 0.02 | 0.08 |
+| `n_counties_touched` | 2 | 2 | 2 |
+
+Two things fall out of those numbers:
+
+1. **No segment has less than 50% of its length in the stamped
+   county.** The minimum `frac_in_stamped_county` is 0.500. By any
+   reasonable "majority wins" rule, the stamped county is already the
+   best choice.
+2. **Every rep-point is within 8 cm of the stamped county's
+   boundary.** `dist_to_stamped_m` maxes out at 0.075 m. The 37 rows
+   are not geocoding errors in the true sense; they are boundary-
+   straddling segments where Shapely's `representative_point()`
+   happens to pick an interior point that falls on the minority side
+   of the boundary. A representative point is a deterministic
+   geometric construction, not evidence about attribution.
+
+The 37-segment "mislocation" finding in 5c was therefore an artifact
+of the rep-point-in-polygon check, not a data-quality defect.
+
+### 6c. Sample segments
+
+A representative spread across the 37 rows (county columns are
+FIPS codes; `frac_stamped` = fraction of line length in stamped
+county):
+
+| `unique_id` | stamped | geom rep-pt | frac_stamped | frac_true |
+|---|---|---|---:|---:|
+| `1009200008200INC_0.0000_0.0002` | 009 / D3 | 169 / D3 | 0.839 | 0.161 |
+| `1067200909500INC_0.1774_0.1808` | 067 / D6 | 057 / D6 | 0.979 | 0.021 |
+| `1085200005900INC_2.1029_2.1030` | 085 / D6 | 227 / D6 | 0.500 | 0.500 |
+| `1117200371700INC_3.8082_3.8100` | 117 / D7 | 121 / D7 | 0.977 | 0.023 |
+| `1135200395700INC_0.0006_0.0354` | 089 / D1 | 135 / D1 | 0.999 | 0.001 |
+| `1247200030100INC_0.0009_0.0010` | 247 / D3 | 151 / D3 | 0.510 | 0.490 |
+| `1261200013800INC_0.4488_0.4489` | 261 / D4 | 177 / D4 | 0.786 | 0.214 |
+
+All 22 distinct (stamped, geom) county pairs appear with the
+classification pass; the highest-frequency pairs are Fulton/Forsyth
+(7 + 5 rows in either direction), DeKalb/Gwinnett (4 + 2), and
+Paulding/Cobb (2) — matching the metro-Atlanta concentration that
+dominated the primary 382-segment bucket.
+
+### 6d. Recommendation — do NOT relax `backfill_county_district_from_geometry`
+
+The Section 5c hypothesis was that the 37 segments had a wrong
+`COUNTY_CODE` that could be safely overwritten if the geometry
+disagreed. The data does not support that hypothesis:
+
+- **No segment has a wrong `COUNTY_CODE` in the majority-by-length
+  sense.** Every stamped county is the county that contains ≥50% of
+  the segment's length. Overwriting those stamps based on the
+  rep-point's polygon would flip 37 correct attributions to the
+  minority-county side.
+- **The side-finding is already resolved for the user-visible
+  dropdown.** Task 1's Option A fix collapses the county filter to
+  one row per county at the majority DISTRICT. Because all 37 of
+  these segments sit in counties whose canonical majority is already
+  the stamped county, they are no longer surfaced as phantom dropdown
+  entries.
+
+A residual cosmetic issue remains: these 37 segments will still
+display under their minority-county filter in fine-grained UI like
+segment popups and district-boundary overlays, because `segments.
+COUNTY_CODE` is unchanged. That is a cross-boundary segment
+rendering question (which county label do we show?), not a
+staging-enrichment question, and it should be addressed — if at all
+— at the UI layer, not by rewriting 37 GDOT source attributions.
+
+The NULL-only gate on `backfill_county_district_from_geometry` is
+**correct as written**. Do not relax it.
+
+### 6e. Follow-up
+
+Cross-boundary segments are a known UI corner case. If the project
+lead wants a deterministic "which county owns this segment" rule for
+display purposes, the right place to author it is the webapp layer,
+using the same majority-by-length logic Task 1 applies to the
+dropdown. A TODO has been added to `D:/TODO.md` capturing the UI
+decision that needs a human call before any display-layer rewrite.
+
+---
+
+## 7. Reproduction
 
 From the repo root, with the staged DB and GPKG present in the main
 worktree:

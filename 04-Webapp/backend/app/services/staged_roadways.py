@@ -1091,14 +1091,24 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
     with _open_sqlite() as connection:
         cursor = connection.cursor()
 
-        # County + District (existing).
+        # One row per COUNTY_CODE at the majority DISTRICT; stale-DISTRICT
+        # rows from the source GDB would otherwise inflate the dropdown
+        # (see 02-Data-Staging/docs/county_district_stale_pairs.md).
         county_rows = _fetch_distinct_rows(
             cursor,
             """
+            WITH district_counts AS (
+                SELECT COUNTY_CODE, DISTRICT, COUNT(*) AS n
+                FROM segments
+                WHERE COUNTY_CODE IS NOT NULL AND DISTRICT IS NOT NULL
+                GROUP BY COUNTY_CODE, DISTRICT
+            )
             SELECT COUNTY_CODE, DISTRICT
-            FROM segments
-            WHERE COUNTY_CODE IS NOT NULL AND DISTRICT IS NOT NULL
-            GROUP BY COUNTY_CODE, DISTRICT
+            FROM district_counts dc
+            WHERE n = (
+                SELECT MAX(n) FROM district_counts dc2
+                WHERE dc2.COUNTY_CODE = dc.COUNTY_CODE
+            )
             ORDER BY DISTRICT, COUNTY_CODE
             """,
         )
