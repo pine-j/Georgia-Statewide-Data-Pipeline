@@ -23,6 +23,7 @@ interface MapPanelProps {
   stateSenateBoundaries?: GeoJsonFeatureCollection;
   congressionalBoundaries?: GeoJsonFeatureCollection;
   boundaryOverlayVisibility?: BoundaryOverlayVisibility;
+  roadwayNetworkVisible?: boolean;
   loadToken: number;
   bounds?: BoundsResponse["bounds"];
   isLoading: boolean;
@@ -62,6 +63,7 @@ export function MapPanel({
   stateSenateBoundaries,
   congressionalBoundaries,
   boundaryOverlayVisibility,
+  roadwayNetworkVisible,
   loadToken,
   bounds,
   isLoading,
@@ -104,6 +106,7 @@ export function MapPanel({
           stateSenateBoundaries={stateSenateBoundaries}
           congressionalBoundaries={congressionalBoundaries}
           boundaryOverlayVisibility={boundaryOverlayVisibility}
+          roadwayNetworkVisible={roadwayNetworkVisible}
           loadToken={loadToken}
           bounds={bounds}
           selectedVisualization={selectedVisualization}

@@ -89,6 +89,10 @@ export function AppShell() {
   const setBoundaryOverlayVisibility = useAppStore(
     (state) => state.setBoundaryOverlayVisibility,
   );
+  const roadwayNetworkVisible = useAppStore((state) => state.roadwayNetworkVisible);
+  const setRoadwayNetworkVisible = useAppStore(
+    (state) => state.setRoadwayNetworkVisible,
+  );
   const selectedVisualizationId = useAppStore((state) => state.selectedVisualizationId);
   const themeFilters = useAppStore((state) => state.themeFilters);
   const setSelectedDistricts = useAppStore((state) => state.setSelectedDistricts);
@@ -512,6 +516,8 @@ export function AppShell() {
                 resetThemeFilter={resetThemeFilter}
                 boundaryOverlayVisibility={boundaryOverlayVisibility}
                 onBoundaryOverlayToggle={setBoundaryOverlayVisibility}
+                roadwayNetworkVisible={roadwayNetworkVisible}
+                onRoadwayNetworkVisibleChange={setRoadwayNetworkVisible}
                 onResetFilters={handleResetFilters}
                 onVisualizationChange={handleVisualizationChange}
               />
@@ -531,6 +537,7 @@ export function AppShell() {
                 stateSenateBoundaries={boundaryLayersQuery.stateSenateQuery.data}
                 congressionalBoundaries={boundaryLayersQuery.congressionalQuery.data}
                 boundaryOverlayVisibility={boundaryOverlayVisibility}
+                roadwayNetworkVisible={roadwayNetworkVisible}
                 loadToken={roadwayLoader.loadToken}
                 bounds={roadwayLoader.bounds}
                 isLoading={roadwayLoader.isLoading}

@@ -15,6 +15,7 @@ export type ThemeFilterState = Record<string, ThemeFilterValue>;
 // Toggles for the 6 new admin-boundary map overlays. City is intentionally
 // absent - cities are filter-only, not a map overlay.
 export interface BoundaryOverlayVisibility {
+  statewide: boolean;
   districts: boolean;
   counties: boolean;
   areaOffices: boolean;
@@ -26,6 +27,7 @@ export interface BoundaryOverlayVisibility {
 }
 
 export const DEFAULT_BOUNDARY_OVERLAY_VISIBILITY: BoundaryOverlayVisibility = {
+  statewide: false,
   districts: true,
   counties: true,
   areaOffices: false,
@@ -51,6 +53,7 @@ interface AppState {
   selectedCities: number[];
   includeUnincorporated: boolean;
   boundaryOverlayVisibility: BoundaryOverlayVisibility;
+  roadwayNetworkVisible: boolean;
 
   selectedVisualizationId: string;
   themeFilters: ThemeFilterState;
@@ -75,6 +78,7 @@ interface AppState {
     overlay: keyof BoundaryOverlayVisibility,
     visible: boolean,
   ) => void;
+  setRoadwayNetworkVisible: (visible: boolean) => void;
   resetAllAdminFilters: () => void;
 
   setSelectedVisualizationId: (visualizationId: string) => void;
@@ -101,6 +105,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedCities: [],
   includeUnincorporated: false,
   boundaryOverlayVisibility: { ...DEFAULT_BOUNDARY_OVERLAY_VISIBILITY },
+  roadwayNetworkVisible: true,
 
   selectedVisualizationId: 'aadt',
   themeFilters: {},
@@ -132,6 +137,8 @@ export const useAppStore = create<AppState>((set) => ({
         [overlay]: visible,
       },
     })),
+  setRoadwayNetworkVisible: (roadwayNetworkVisible) =>
+    set({ roadwayNetworkVisible }),
   resetAllAdminFilters: () =>
     set({
       selectedDistricts: [],

@@ -175,6 +175,8 @@ interface FiltersPanelProps {
     overlay: keyof BoundaryOverlayVisibility,
     visible: boolean,
   ) => void;
+  roadwayNetworkVisible?: boolean;
+  onRoadwayNetworkVisibleChange?: (visible: boolean) => void;
   onResetFilters: () => void;
   onVisualizationChange: (visualizationId: string) => void;
 }
@@ -233,6 +235,8 @@ export function FiltersPanel({
   resetThemeFilter,
   boundaryOverlayVisibility,
   onBoundaryOverlayToggle,
+  roadwayNetworkVisible,
+  onRoadwayNetworkVisibleChange,
   onResetFilters,
   onVisualizationChange,
 }: FiltersPanelProps) {
@@ -521,22 +525,22 @@ export function FiltersPanel({
   } as const;
 
   const accordionSummarySx = {
-    minHeight: 36,
+    minHeight: 32,
     px: 1.25,
-    "&.Mui-expanded": { minHeight: 36 },
+    "&.Mui-expanded": { minHeight: 32 },
     "& .MuiAccordionSummary-content": {
-      my: 0.5,
-      "&.Mui-expanded": { my: 0.5 },
+      my: 0.25,
+      "&.Mui-expanded": { my: 0.25 },
     },
   } as const;
 
   const accordionDetailsSx = {
     px: 1,
-    pt: 1,
-    pb: 1.25,
+    pt: 0.5,
+    pb: 0.75,
     display: "flex",
     flexDirection: "column",
-    gap: 1,
+    gap: 0.75,
   } as const;
 
   const accordionTitleSx = {
@@ -560,7 +564,16 @@ export function FiltersPanel({
         overflow: "hidden",
       }}
     >
-      <Box sx={{ flex: 1, overflowY: "auto", p: 1.5, pb: 1 }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          minWidth: 0,
+          p: 1.5,
+          pb: 1,
+        }}
+      >
         <Stack spacing={1}>
           {thematicOptions.length > 0 && (
             <Stack spacing={0.5}>
@@ -743,6 +756,29 @@ export function FiltersPanel({
             )}
           />
 
+          {/*
+            Single combined "Geographies" accordion wraps the four sub-groups
+            (Engineering, Planning, Local, Legislative). Collapsed by default
+            so the panel opens compact; users expand this outer accordion to
+            access any of the inner ones.
+          */}
+          <Accordion
+            disableGutters
+            sx={{
+              ...accordionSx,
+              mt: 1,
+              "&.Mui-expanded": { margin: 0, mt: 1 },
+            }}
+          >
+            <AccordionSummary
+              expandIcon={<ExpandMoreRoundedIcon fontSize="small" />}
+              sx={accordionSummarySx}
+            >
+              <Typography sx={accordionTitleSx}>Geographies</Typography>
+            </AccordionSummary>
+            <AccordionDetails
+              sx={{ ...accordionDetailsSx, gap: 0.5, px: 0.5, pt: 0.75, pb: 0.75 }}
+            >
           {/*
             Engineering Geographies accordion.
             District kept as an inline Autocomplete to preserve the
@@ -928,6 +964,8 @@ export function FiltersPanel({
               />
             </AccordionDetails>
           </Accordion>
+            </AccordionDetails>
+          </Accordion>
         </Stack>
       </Box>
 
@@ -941,6 +979,8 @@ export function FiltersPanel({
             setThemeFilter={setThemeFilter}
             boundaryOverlayVisibility={boundaryOverlayVisibility}
             onBoundaryOverlayToggle={onBoundaryOverlayToggle}
+            roadwayNetworkVisible={roadwayNetworkVisible}
+            onRoadwayNetworkVisibleChange={onRoadwayNetworkVisibleChange}
           />
         </Box>
       )}

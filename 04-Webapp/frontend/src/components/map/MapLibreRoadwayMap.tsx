@@ -17,12 +17,18 @@ import {
   buildThemeContextFilterColorExpression,
   buildThemeContextFilterOpacityExpression,
 } from "./roadwayVisualization";
+import georgiaOutline from "../../assets/georgia-outline.json";
 
+const STATEWIDE_OUTLINE_DATA = georgiaOutline as GeoJsonFeatureCollection;
+
+const STATEWIDE_SOURCE_ID = "statewide-boundary";
+const STATEWIDE_LINE_LAYER_ID = "statewide-boundary-line";
 const DISTRICT_SOURCE_ID = "district-boundaries";
 const DISTRICT_FILL_LAYER_ID = "district-boundaries-fill";
 const DISTRICT_LINE_LAYER_ID = "district-boundaries-line";
 const COUNTY_SOURCE_ID = "county-boundaries";
 const COUNTY_LINE_LAYER_ID = "county-boundaries-line";
+const COUNTY_HIT_LAYER_ID = "county-boundaries-hit";
 
 const AREA_OFFICE_SOURCE_ID = "area-office-boundaries";
 const AREA_OFFICE_FILL_LAYER_ID = "area-office-boundaries-fill";
@@ -35,14 +41,54 @@ const REGIONAL_COMMISSION_FILL_LAYER_ID = "regional-commission-boundaries-fill";
 const REGIONAL_COMMISSION_LINE_LAYER_ID = "regional-commission-boundaries-line";
 const STATE_HOUSE_SOURCE_ID = "state-house-boundaries";
 const STATE_HOUSE_LINE_LAYER_ID = "state-house-boundaries-line";
+const STATE_HOUSE_HIT_LAYER_ID = "state-house-boundaries-hit";
 const STATE_SENATE_SOURCE_ID = "state-senate-boundaries";
 const STATE_SENATE_LINE_LAYER_ID = "state-senate-boundaries-line";
+const STATE_SENATE_HIT_LAYER_ID = "state-senate-boundaries-hit";
 const CONGRESSIONAL_SOURCE_ID = "congressional-boundaries";
 const CONGRESSIONAL_LINE_LAYER_ID = "congressional-boundaries-line";
+const CONGRESSIONAL_HIT_LAYER_ID = "congressional-boundaries-hit";
+
+// Near-transparent fill color shared by the hit-testing layers (line-only
+// overlays need a fill target for pointer events). 0.01 opacity is large
+// enough for MapLibre's queryRenderedFeatures to hit but small enough to
+// remain visually imperceptible.
+const BOUNDARY_HIT_FILL_COLOR = "#000000";
+const BOUNDARY_HIT_FILL_OPACITY = 0.01;
+
+// Per-layer recipe for the hover popup: which layer to hit-test, the group
+// label shown in the popup, and how to extract a human label from the
+// feature properties.
+interface BoundaryHoverConfig {
+  layerId: string;
+  groupLabel: string;
+  getLabel: (properties: Record<string, unknown>) => string | null;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function readString(properties: Record<string, unknown>, key: string): string | null {
+  const value = properties[key];
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
 
 // Shared palette for the 8 boundary overlays. Muted tones, distinct from the
 // roadway thematic ramps so overlays read as chrome rather than data.
 export const BOUNDARY_OVERLAY_COLORS = {
+  statewide: "#1f2a33",
   districts: "#8b5e13",
   counties: "#5f6e73",
   areaOffices: "#b4673f",
@@ -60,6 +106,63 @@ const LINE_LAYER_ID = "roadways-line";
 const HIT_LAYER_ID = "roadways-hit";
 const UNIQUE_ID_PROPERTY_CANDIDATES = ["unique_id", "UNIQUE_ID", "UniqueId"] as const;
 
+// Ordered so the popup reads top-down from coarsest to finest unit, which
+// matches how users scan nested geographies (statewide layer skipped — it
+// is just a reference outline).
+const BOUNDARY_HOVER_CONFIGS: BoundaryHoverConfig[] = [
+  {
+    layerId: DISTRICT_FILL_LAYER_ID,
+    groupLabel: "District",
+    getLabel: (properties) => {
+      const name = readString(properties, "DISTRICT_NAME");
+      if (name) return name;
+      const id = readString(properties, "GDOT_DISTRICT");
+      return id ? `District ${id}` : null;
+    },
+  },
+  {
+    layerId: AREA_OFFICE_FILL_LAYER_ID,
+    groupLabel: "Area Office",
+    getLabel: (properties) =>
+      readString(properties, "AREA_OFFICE_NAME") ??
+      readString(properties, "AREA_OFFICE_ID"),
+  },
+  {
+    layerId: COUNTY_HIT_LAYER_ID,
+    groupLabel: "County",
+    getLabel: (properties) => readString(properties, "NAME"),
+  },
+  {
+    layerId: MPO_FILL_LAYER_ID,
+    groupLabel: "MPO",
+    getLabel: (properties) =>
+      readString(properties, "MPO_NAME") ?? readString(properties, "MPO_ID"),
+  },
+  {
+    layerId: REGIONAL_COMMISSION_FILL_LAYER_ID,
+    groupLabel: "Regional Commission",
+    getLabel: (properties) => readString(properties, "RC"),
+  },
+  {
+    layerId: STATE_HOUSE_HIT_LAYER_ID,
+    groupLabel: "State House",
+    getLabel: (properties) =>
+      readString(properties, "NAMELSAD") ?? readString(properties, "SLDLST"),
+  },
+  {
+    layerId: STATE_SENATE_HIT_LAYER_ID,
+    groupLabel: "State Senate",
+    getLabel: (properties) =>
+      readString(properties, "NAMELSAD") ?? readString(properties, "SLDUST"),
+  },
+  {
+    layerId: CONGRESSIONAL_HIT_LAYER_ID,
+    groupLabel: "Congressional",
+    getLabel: (properties) =>
+      readString(properties, "NAMELSAD") ?? readString(properties, "CD119FP"),
+  },
+];
+
 interface MapLibreRoadwayMapProps {
   roadwayChunks: RoadwayFeatureCollection[];
   countyBoundaries?: GeoJsonFeatureCollection;
@@ -71,6 +174,7 @@ interface MapLibreRoadwayMapProps {
   stateSenateBoundaries?: GeoJsonFeatureCollection;
   congressionalBoundaries?: GeoJsonFeatureCollection;
   boundaryOverlayVisibility?: BoundaryOverlayVisibility;
+  roadwayNetworkVisible?: boolean;
   loadToken: number;
   bounds?: [number, number, number, number] | null;
   selectedVisualization?: RoadwayVisualizationOption;
@@ -146,6 +250,7 @@ export function MapLibreRoadwayMap({
   stateSenateBoundaries,
   congressionalBoundaries,
   boundaryOverlayVisibility,
+  roadwayNetworkVisible = true,
   loadToken,
   bounds,
   selectedVisualization,
@@ -159,6 +264,8 @@ export function MapLibreRoadwayMap({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const boundaryHoverPopupRef = useRef<maplibregl.Popup | null>(null);
+  const boundaryHoverAttachedRef = useRef<boolean>(false);
   const roadwayChunksRef = useRef<RoadwayFeatureCollection[]>(roadwayChunks);
   const countyBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(countyBoundaries);
   const districtBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(districtBoundaries);
@@ -179,6 +286,7 @@ export function MapLibreRoadwayMap({
     congressionalBoundaries,
   );
   const overlayVisibilityRef = useRef<BoundaryOverlayVisibility>(effectiveOverlayVisibility);
+  const roadwayNetworkVisibleRef = useRef<boolean>(roadwayNetworkVisible);
   const boundsRef = useRef(bounds);
   const loadTokenRef = useRef(loadToken);
   const selectedVisualizationRef = useRef<RoadwayVisualizationOption | undefined>(
@@ -200,6 +308,7 @@ export function MapLibreRoadwayMap({
   stateSenateBoundariesRef.current = stateSenateBoundaries;
   congressionalBoundariesRef.current = congressionalBoundaries;
   overlayVisibilityRef.current = effectiveOverlayVisibility;
+  roadwayNetworkVisibleRef.current = roadwayNetworkVisible;
   boundsRef.current = bounds;
   loadTokenRef.current = loadToken;
   selectedVisualizationRef.current = selectedVisualization;
@@ -278,6 +387,18 @@ export function MapLibreRoadwayMap({
       map.addSource(COUNTY_SOURCE_ID, {
         type: "geojson",
         data: countyData,
+      });
+    }
+
+    if (!map.getLayer(COUNTY_HIT_LAYER_ID)) {
+      map.addLayer({
+        id: COUNTY_HIT_LAYER_ID,
+        type: "fill",
+        source: COUNTY_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_HIT_FILL_COLOR,
+          "fill-opacity": BOUNDARY_HIT_FILL_OPACITY,
+        },
       });
     }
 
@@ -418,6 +539,18 @@ export function MapLibreRoadwayMap({
       });
     }
 
+    if (!map.getLayer(STATE_HOUSE_HIT_LAYER_ID)) {
+      map.addLayer({
+        id: STATE_HOUSE_HIT_LAYER_ID,
+        type: "fill",
+        source: STATE_HOUSE_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_HIT_FILL_COLOR,
+          "fill-opacity": BOUNDARY_HIT_FILL_OPACITY,
+        },
+      });
+    }
+
     if (!map.getLayer(STATE_HOUSE_LINE_LAYER_ID)) {
       map.addLayer({
         id: STATE_HOUSE_LINE_LAYER_ID,
@@ -440,6 +573,18 @@ export function MapLibreRoadwayMap({
       map.addSource(STATE_SENATE_SOURCE_ID, {
         type: "geojson",
         data: stateSenateData,
+      });
+    }
+
+    if (!map.getLayer(STATE_SENATE_HIT_LAYER_ID)) {
+      map.addLayer({
+        id: STATE_SENATE_HIT_LAYER_ID,
+        type: "fill",
+        source: STATE_SENATE_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_HIT_FILL_COLOR,
+          "fill-opacity": BOUNDARY_HIT_FILL_OPACITY,
+        },
       });
     }
 
@@ -468,6 +613,18 @@ export function MapLibreRoadwayMap({
       });
     }
 
+    if (!map.getLayer(CONGRESSIONAL_HIT_LAYER_ID)) {
+      map.addLayer({
+        id: CONGRESSIONAL_HIT_LAYER_ID,
+        type: "fill",
+        source: CONGRESSIONAL_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_HIT_FILL_COLOR,
+          "fill-opacity": BOUNDARY_HIT_FILL_OPACITY,
+        },
+      });
+    }
+
     if (!map.getLayer(CONGRESSIONAL_LINE_LAYER_ID)) {
       map.addLayer({
         id: CONGRESSIONAL_LINE_LAYER_ID,
@@ -477,6 +634,28 @@ export function MapLibreRoadwayMap({
           "line-color": BOUNDARY_OVERLAY_COLORS.congressional,
           "line-width": 1.4,
           "line-opacity": 0.8,
+        },
+      });
+    }
+
+    // Statewide boundary - static bundled outline, line only. Drawn last so
+    // it sits above other admin overlays as a reference frame.
+    if (!map.getSource(STATEWIDE_SOURCE_ID)) {
+      map.addSource(STATEWIDE_SOURCE_ID, {
+        type: "geojson",
+        data: STATEWIDE_OUTLINE_DATA,
+      });
+    }
+
+    if (!map.getLayer(STATEWIDE_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: STATEWIDE_LINE_LAYER_ID,
+        type: "line",
+        source: STATEWIDE_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.statewide,
+          "line-width": 2.4,
+          "line-opacity": 0.9,
         },
       });
     }
@@ -493,7 +672,10 @@ export function MapLibreRoadwayMap({
         visible: visibility.districts,
         layerIds: [DISTRICT_FILL_LAYER_ID, DISTRICT_LINE_LAYER_ID],
       },
-      { visible: visibility.counties, layerIds: [COUNTY_LINE_LAYER_ID] },
+      {
+        visible: visibility.counties,
+        layerIds: [COUNTY_HIT_LAYER_ID, COUNTY_LINE_LAYER_ID],
+      },
       {
         visible: visibility.areaOffices,
         layerIds: [AREA_OFFICE_FILL_LAYER_ID, AREA_OFFICE_LINE_LAYER_ID],
@@ -503,9 +685,19 @@ export function MapLibreRoadwayMap({
         visible: visibility.regionalCommissions,
         layerIds: [REGIONAL_COMMISSION_FILL_LAYER_ID, REGIONAL_COMMISSION_LINE_LAYER_ID],
       },
-      { visible: visibility.stateHouse, layerIds: [STATE_HOUSE_LINE_LAYER_ID] },
-      { visible: visibility.stateSenate, layerIds: [STATE_SENATE_LINE_LAYER_ID] },
-      { visible: visibility.congressional, layerIds: [CONGRESSIONAL_LINE_LAYER_ID] },
+      {
+        visible: visibility.stateHouse,
+        layerIds: [STATE_HOUSE_HIT_LAYER_ID, STATE_HOUSE_LINE_LAYER_ID],
+      },
+      {
+        visible: visibility.stateSenate,
+        layerIds: [STATE_SENATE_HIT_LAYER_ID, STATE_SENATE_LINE_LAYER_ID],
+      },
+      {
+        visible: visibility.congressional,
+        layerIds: [CONGRESSIONAL_HIT_LAYER_ID, CONGRESSIONAL_LINE_LAYER_ID],
+      },
+      { visible: visibility.statewide, layerIds: [STATEWIDE_LINE_LAYER_ID] },
     ];
 
     for (const group of overlayLayerGroups) {
@@ -515,6 +707,90 @@ export function MapLibreRoadwayMap({
           map.setLayoutProperty(layerId, "visibility", layoutValue);
         }
       }
+    }
+
+    // Hide the roadway line layers when the user has toggled the network
+    // off. Source stays populated so turning it back on is instant.
+    const roadwayVisibilityValue = roadwayNetworkVisibleRef.current
+      ? "visible"
+      : "none";
+    for (const layerId of [
+      CASING_LAYER_ID,
+      LINE_LAYER_ID,
+      HIT_LAYER_ID,
+      HIGHLIGHT_LAYER_ID,
+    ]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", roadwayVisibilityValue);
+      }
+    }
+
+    // Hover popup over boundary overlays: one mousemove listener queries all
+    // visible boundary fill/hit layers and renders a consolidated popup
+    // listing every geography under the cursor (e.g. "District 2 · Fulton
+    // County"). Attached once; the query list is rebuilt each move from
+    // currently-installed layers.
+    if (!boundaryHoverAttachedRef.current) {
+      const handleBoundaryMove = (event: maplibregl.MapMouseEvent) => {
+        const m = mapRef.current;
+        if (!m) return;
+        const candidateLayerIds = BOUNDARY_HOVER_CONFIGS.map((c) => c.layerId).filter(
+          (id) => m.getLayer(id),
+        );
+        if (candidateLayerIds.length === 0) {
+          boundaryHoverPopupRef.current?.remove();
+          return;
+        }
+        const hits = m.queryRenderedFeatures(event.point, {
+          layers: candidateLayerIds,
+        });
+        if (hits.length === 0) {
+          boundaryHoverPopupRef.current?.remove();
+          return;
+        }
+        const seenLayers = new Set<string>();
+        const rows: string[] = [];
+        for (const feature of hits) {
+          if (!feature.layer || seenLayers.has(feature.layer.id)) continue;
+          seenLayers.add(feature.layer.id);
+          const config = BOUNDARY_HOVER_CONFIGS.find(
+            (c) => c.layerId === feature.layer.id,
+          );
+          if (!config) continue;
+          const label = config.getLabel(
+            (feature.properties ?? {}) as Record<string, unknown>,
+          );
+          if (!label) continue;
+          rows.push(
+            `<div style="font-size:11px;line-height:1.35;">` +
+              `<span style="color:#6b7a82;text-transform:uppercase;letter-spacing:0.3px;font-size:9px;margin-right:6px;">${config.groupLabel}</span>` +
+              `<span style="color:#10232f;font-weight:500;">${escapeHtml(label)}</span>` +
+              `</div>`,
+          );
+        }
+        if (rows.length === 0) {
+          boundaryHoverPopupRef.current?.remove();
+          return;
+        }
+        const html = `<div style="padding:2px 0;">${rows.join("")}</div>`;
+        let popup = boundaryHoverPopupRef.current;
+        if (!popup) {
+          popup = new maplibregl.Popup({
+            closeButton: false,
+            closeOnClick: false,
+            offset: 10,
+            className: "boundary-hover-popup",
+          });
+          boundaryHoverPopupRef.current = popup;
+        }
+        popup.setLngLat(event.lngLat).setHTML(html).addTo(m);
+      };
+      const handleBoundaryLeave = () => {
+        boundaryHoverPopupRef.current?.remove();
+      };
+      map.on("mousemove", handleBoundaryMove);
+      map.getCanvas().addEventListener("mouseleave", handleBoundaryLeave);
+      boundaryHoverAttachedRef.current = true;
     }
 
     const nextData = combineRoadwayChunks(roadwayChunksRef.current);
@@ -782,6 +1058,9 @@ export function MapLibreRoadwayMap({
     mapRef.current = map;
 
     return () => {
+      boundaryHoverPopupRef.current?.remove();
+      boundaryHoverPopupRef.current = null;
+      boundaryHoverAttachedRef.current = false;
       map.remove();
       mapRef.current = null;
     };
@@ -799,6 +1078,7 @@ export function MapLibreRoadwayMap({
     stateSenateBoundaries,
     congressionalBoundaries,
     boundaryOverlayVisibility,
+    roadwayNetworkVisible,
     loadToken,
     roadwayChunks,
     selectedVisualization,

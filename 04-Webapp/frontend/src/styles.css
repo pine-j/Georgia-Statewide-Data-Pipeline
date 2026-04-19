@@ -18,3 +18,13 @@ body,
   overflow: hidden;
 }
 
+.maplibregl-popup.boundary-hover-popup .maplibregl-popup-content {
+  padding: 6px 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(16, 35, 47, 0.18);
+}
+
+.maplibregl-popup.boundary-hover-popup .maplibregl-popup-tip {
+  display: none;
+}
+
