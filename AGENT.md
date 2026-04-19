@@ -34,14 +34,15 @@ Purpose:
 
 Standard location:
 
-- create agent worktrees under `.worktrees/`
-- use a clear folder name such as `.worktrees/<agent>-<task>`
-- preferred creation command: `.\repo-tools\new-worktree.ps1 -Agent <agent> -Task <task>`
+- create agent worktrees under `D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\` (a sibling folder to the main repo, not inside it)
+- use a clear folder name such as `D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\<agent>-<task>`
+- preferred creation command: `.\repo-tools\new-worktree.ps1 -Agent <agent> -Task <task> -WorktreeRoot "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees"`
+- the legacy in-repo `.worktrees/` path is deprecated; do not create new worktrees there (the script still defaults to `.worktrees` so `-WorktreeRoot` must be passed until the default is updated)
 
 Expected lifecycle:
 
 1. Create a dedicated worktree for the task, preferably with:
-   `git worktree add .worktrees/<agent>-<task> -b <branch-name> master`
+   `git worktree add D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\<agent>-<task> -b <branch-name> master`
 2. Create or switch to the task branch inside that worktree
 3. Complete the task there and verify the changes
 4. Commit the changes from that worktree
@@ -63,7 +64,7 @@ Cleanup command:
 
 ## Worktree Data Access
 
-Raw inputs and staged outputs are gitignored and exist only in the main repo working tree. They are not copied into `.worktrees/*` checkouts when `git worktree add` runs.
+Raw inputs and staged outputs are gitignored and exist only in the main repo working tree. They are not copied into sibling worktree checkouts (`D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\*`) when `git worktree add` runs.
 
 - Read gitignored data from the main repo via absolute path. Examples: `D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data\...`, `...\02-Data-Staging\staged\...`. Do not copy these files into the worktree.
 - Never write into the main repo's gitignored data dirs from a worktree. Other worktrees may be reading the same files concurrently; overwriting them corrupts other agents' reads. Regenerate into a worktree-local scratch dir (for example `_scratch/staged/`) and point the code at that override via an explicit argument or config. Exclude the scratch dir via `.git/info/exclude` so it does not land on the feature branch.
@@ -72,7 +73,7 @@ Raw inputs and staged outputs are gitignored and exist only in the main repo wor
 Optional convenience for pipeline-heavy tasks: junction the read-only input dirs into the worktree so scripts that use relative paths work unchanged:
 
 ```
-mklink /J ".worktrees\<agent>-<task>\01-Raw-Data" "D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data"
+mklink /J "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\<agent>-<task>\01-Raw-Data" "D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data"
 ```
 
 Do not junction `02-Data-Staging/staged/` or any other writable data dir — keep writes worktree-local.
