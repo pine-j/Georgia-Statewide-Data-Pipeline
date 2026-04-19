@@ -61,6 +61,22 @@ Cleanup command:
 - apply cleanup: `.\repo-tools\cleanup-worktrees.ps1 -Apply`
 - standard end-of-merge command: `.\repo-tools\push-master-and-cleanup.ps1`
 
+## Worktree Data Access
+
+Raw inputs and staged outputs are gitignored and exist only in the main repo working tree. They are not copied into `.worktrees/*` checkouts when `git worktree add` runs.
+
+- Read gitignored data from the main repo via absolute path. Examples: `D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data\...`, `...\02-Data-Staging\staged\...`. Do not copy these files into the worktree.
+- Never write into the main repo's gitignored data dirs from a worktree. Other worktrees may be reading the same files concurrently; overwriting them corrupts other agents' reads. Regenerate into a worktree-local scratch dir (for example `_scratch/staged/`) and point the code at that override via an explicit argument or config. Exclude the scratch dir via `.git/info/exclude` so it does not land on the feature branch.
+- Do not run the full staging pipeline from a worktree. Full pipeline runs happen only from the main repo working tree, and only when no other agent is actively reading staged data. Single-step reruns with an output override pointed at `_scratch/` are fine.
+
+Optional convenience for pipeline-heavy tasks: junction the read-only input dirs into the worktree so scripts that use relative paths work unchanged:
+
+```
+mklink /J ".worktrees\<agent>-<task>\01-Raw-Data" "D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data"
+```
+
+Do not junction `02-Data-Staging/staged/` or any other writable data dir — keep writes worktree-local.
+
 ## Context Exclusions
 
 Ignore the `.tmp/` and `.playwright-mcp/` folders for project decisions and
@@ -78,7 +94,7 @@ summaries. Treat them as scratch/reference space, not project source-of-truth.
 - `00-Project-Management/Project_Plan/phase-6-mobility.md`
 - `00-Project-Management/Project_Plan/phase-7-sharepoint.md`
 - `00-Project-Management/Project_Plan/phase-8-raptor-integration.md`
-- `00-Project-Management/Assessment_and_Options/`: assessment notes, validation docs, and option-screening reports
+- `00-Project-Management/Pipeline-Documentation/`: pipeline phase docs, data dictionary, and supplementary notes
 - `01-Raw-Data/`: raw downloads and the living Georgia data inventory
 - `02-Data-Staging/`: ETL scripts, config, staging databases, and GeoPackage generation
 - `03-Processed-Data/`: processed outputs
@@ -91,7 +107,7 @@ For repo-internal documentation links, use relative Markdown paths so they open 
 
 When file names or documentation folders change, update the affected indexes and cross-links in the same change.
 
-Assessment documents under `00-Project-Management/Assessment_and_Options/` are documentation-first records. Preserve their findings and provenance even when no implementation decision has been made yet.
+Pipeline documentation under `00-Project-Management/Pipeline-Documentation/` is a documentation-first record. Preserve findings and provenance even when no implementation decision has been made yet.
 
 ## Data Inventory
 
