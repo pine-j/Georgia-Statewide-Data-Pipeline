@@ -1,0 +1,27 @@
+{
+  "_source": "FHWA/BTS Metropolitan Planning Organizations FeatureServer Layer 30",
+  "_source_url": "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/Metropolitan_Planning_Organizations/FeatureServer/30",
+  "_notes": "id -> MPO display name. Regenerated on every normalize.py run via write_admin_code_snapshots(); manual edits will be overwritten.",
+  "codes": {
+    "12197706": "Capital Region Transportation Planning Agency",
+    "12197802": "North Florida Transportation Planning Organization",
+    "13196401": "Columbus-Phenix City Metropolitan Planning Organization",
+    "13196402": "Macon Area Transportation Study",
+    "13196500": "Dougherty Area Regional Transportation Study",
+    "13196900": "Madison Athens-Clarke Oconee Regional Transportation Study",
+    "13197000": "Augusta Regional Transportation Study",
+    "13197100": "Atlanta Regional Commission",
+    "13198200": "Warner Robins Area Transportation Study",
+    "13198301": "Savannah Coastal Region MPO",
+    "13198302": "Rome-Floyd County Metropolitan Planning Organization",
+    "13199100": "Brunswick Area Transportation Study",
+    "13200301": "Gainesville-Hall MPO",
+    "13200302": "Greater Dalton MPO",
+    "13200303": "Valdosta-Lowndes MPO",
+    "13200304": "Hinesville Area MPO",
+    "13201300": "Cartersville-Bartow Metropolitan Planning Organization",
+    "45199300": "Anderson Area Transportation Study",
+    "45201300": "Lowcountry Area Transportation Study",
+    "47197703": "Chattanooga-Hamilton County/North Georgia Transportation Planning Organization"
+  }
+}

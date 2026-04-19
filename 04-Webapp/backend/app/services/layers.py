@@ -10,6 +10,7 @@ from app.schemas import (
     RoadwayFeature,
     RoadwayFeatureCollection,
     RoadwayFeatureProperties,
+    RoadwayFilters,
     RoadwayVisualizationCatalogResponse,
 )
 from app.services.roadway_visualizations import get_roadway_visualization_catalog
@@ -27,29 +28,20 @@ def get_roadway_features(
     state_code: str,
     limit: int,
     offset: int = 0,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> RoadwayFeatureCollection:
+    filters = filters or RoadwayFilters()
     data_mode = get_settings().data_mode
 
     if data_mode == "seed":
-        return get_seed_roadways(
-            state_code,
-            limit,
-            district=district,
-            counties=counties,
-            highway_types=highway_types,
-        )
+        return get_seed_roadways(state_code, limit, filters=filters)
 
     if data_mode == "staged":
         return get_staged_roadway_features(
             state_code,
             limit,
             offset=offset,
-            district=district,
-            counties=counties,
-            highway_types=highway_types,
+            filters=filters,
         )
 
     if db is None:
@@ -62,17 +54,17 @@ def get_roadway_features(
         "offset": offset,
     }
 
-    if district:
+    if filters.district:
         district_placeholders = []
-        for index, district_id in enumerate(district):
+        for index, district_id in enumerate(filters.district):
             param_name = f"district_{index}"
             district_placeholders.append(f":{param_name}")
             params[param_name] = district_id
         where_clauses.append(f"district_id IN ({', '.join(district_placeholders)})")
 
-    if counties:
+    if filters.counties:
         where_clauses.append("county_name = ANY(:counties)")
-        params["counties"] = counties
+        params["counties"] = list(filters.counties)
 
     query = text(
         f"""
@@ -134,17 +126,16 @@ def get_roadway_detail(
 def get_boundary_features(
     state_code: str,
     boundary_type: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> GeoJsonFeatureCollection:
+    filters = filters or RoadwayFilters()
     data_mode = get_settings().data_mode
 
     if data_mode == "staged":
         return get_staged_boundary_features(
             state_code,
             boundary_type,
-            district=district,
-            counties=counties,
+            filters=filters,
         )
 
     return GeoJsonFeatureCollection(type="FeatureCollection", features=[])

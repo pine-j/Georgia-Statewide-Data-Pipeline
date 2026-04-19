@@ -77,15 +77,6 @@ def write_section_agreement(lines: list[str], df: pd.DataFrame) -> None:
     lines.append("")
     lines.append(f"_Total segments: {total:,}._\n")
 
-    both_agree = int(counts.get("both_agree", 0))
-    both_disagree = int(counts.get("both_disagree", 0))
-    overlap = both_agree + both_disagree
-    if overlap > 0:
-        lines.append(
-            f"**In-band agreement rate (overlap segments only): "
-            f"{both_agree:,} / {overlap:,} = {(both_agree / overlap) * 100.0:.3f}%.**\n"
-        )
-
 
 def write_section_disagreement(lines: list[str], df: pd.DataFrame) -> None:
     disagree = df[df["AADT_2024_SOURCE_AGREEMENT"] == "both_disagree"].copy()
@@ -209,12 +200,9 @@ def write_section_confidence_by_system(lines: list[str], df: pd.DataFrame) -> No
 
 def write_section_stats_type(lines: list[str], df: pd.DataFrame) -> None:
     lines.append("## Statistics_Type breakdown (state 2024 GDB)\n")
-    state_matched = df[df["AADT_2024_OFFICIAL"].notna()]
-    counts = state_matched["AADT_2024_STATS_TYPE"].value_counts(dropna=False)
-    lines.append(
-        f"_Segments with a state 2024 GDB AADT match: **{len(state_matched):,}**. "
-        f"`Statistics_Type` only applies to state-GDB records; non-state rows are excluded._\n"
-    )
+    counts = df["AADT_2024_STATS_TYPE"].value_counts(dropna=False)
+    total_with_state = int(df["AADT_2024_OFFICIAL"].notna().sum())
+    lines.append(f"_Segments with a state 2024 GDB AADT match: **{total_with_state:,}**._\n")
     lines.append("| Statistics_Type | Segments |")
     lines.append("|---|---:|")
     for value, n in counts.items():

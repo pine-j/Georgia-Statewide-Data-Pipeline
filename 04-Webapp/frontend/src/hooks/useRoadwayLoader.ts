@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 
-import { getRoadwayManifest, getRoadways } from "../services/api";
+import { QueryFilters, getRoadwayManifest, getRoadways } from "../services/api";
 import { RoadwayFeatureCollection, RoadwayManifest } from "../types/api";
 
 const DEFAULT_CHUNK_SIZE = 10000;
@@ -41,16 +41,27 @@ function isAbortError(error: unknown): boolean {
 }
 
 export function useRoadwayLoader(
-  districts: number[],
-  counties: string[],
-  highwayTypes: string[],
+  filters: QueryFilters,
   enabled: boolean,
 ): RoadwayLoaderState {
   const [state, setState] = useState<RoadwayLoaderState>(() => createEmptyState(0));
   const loadTokenRef = useRef(0);
-  const districtsKey = districts.join("|");
-  const countiesKey = counties.join("|");
-  const highwayTypesKey = highwayTypes.join("|");
+  // Serialise every filter dim into a stable key so the loader re-runs
+  // whenever ANY of the 9 admin-geography selections (or the
+  // include_unincorporated toggle) change, not just district/county/highway.
+  const filterKey = [
+    (filters.districts ?? []).join(","),
+    (filters.counties ?? []).join(","),
+    (filters.highwayTypes ?? []).join(","),
+    (filters.areaOffices ?? []).join(","),
+    (filters.mpos ?? []).join(","),
+    (filters.regionalCommissions ?? []).join(","),
+    (filters.stateHouseDistricts ?? []).join(","),
+    (filters.stateSenateDistricts ?? []).join(","),
+    (filters.congressionalDistricts ?? []).join(","),
+    (filters.cities ?? []).join(","),
+    filters.includeUnincorporated ? "1" : "0",
+  ].join("|");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,7 +89,7 @@ export function useRoadwayLoader(
     void (async () => {
       try {
         const manifest = await getRoadwayManifest(
-          { districts, counties, highwayTypes },
+          filters,
           DEFAULT_CHUNK_SIZE,
           controller.signal,
         );
@@ -125,7 +136,7 @@ export function useRoadwayLoader(
             nextChunkIndex += 1;
             const offset = chunkOffsets[currentIndex];
             const chunk = await getRoadways(
-              { districts, counties, highwayTypes },
+              filters,
               manifest.chunk_size,
               offset,
               controller.signal,
@@ -178,7 +189,8 @@ export function useRoadwayLoader(
     return () => {
       controller.abort();
     };
-  }, [districtsKey, countiesKey, enabled, highwayTypesKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey, enabled]);
 
   return state;
 }

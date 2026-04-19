@@ -1,9 +1,24 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
-import { Box, Checkbox, Link, Paper, Stack, Typography } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import {
+  Box,
+  Checkbox,
+  Collapse,
+  Divider,
+  IconButton,
+  Link,
+  Paper,
+  Stack,
+  Typography,
+} from "@mui/material";
 
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import type {
+  BoundaryOverlayVisibility,
+  ThemeFilterValue,
+} from "../../store/useAppStore";
 import {
   RoadwayLegendItem,
   RoadwayVisualizationOption,
@@ -14,6 +29,87 @@ import {
   getLegendItemPresenceKey,
   getLegendItemsForDisplay,
 } from "./roadwayVisualization";
+import { BOUNDARY_OVERLAY_COLORS } from "./MapLibreRoadwayMap";
+
+interface BoundaryOverlayLegendRow {
+  key: keyof BoundaryOverlayVisibility;
+  label: string;
+  color: string;
+}
+
+interface BoundaryOverlayLegendGroup {
+  groupLabel: string;
+  rows: BoundaryOverlayLegendRow[];
+}
+
+const BOUNDARY_OVERLAY_GROUPS: BoundaryOverlayLegendGroup[] = [
+  {
+    groupLabel: "Reference",
+    rows: [
+      {
+        key: "statewide",
+        label: "Statewide",
+        color: BOUNDARY_OVERLAY_COLORS.statewide,
+      },
+    ],
+  },
+  {
+    groupLabel: "Engineering",
+    rows: [
+      { key: "districts", label: "District", color: BOUNDARY_OVERLAY_COLORS.districts },
+      {
+        key: "areaOffices",
+        label: "Area Office",
+        color: BOUNDARY_OVERLAY_COLORS.areaOffices,
+      },
+    ],
+  },
+  {
+    groupLabel: "Planning",
+    rows: [
+      { key: "counties", label: "County", color: BOUNDARY_OVERLAY_COLORS.counties },
+      { key: "mpos", label: "MPO", color: BOUNDARY_OVERLAY_COLORS.mpos },
+      {
+        key: "regionalCommissions",
+        label: "Reg. Commission",
+        color: BOUNDARY_OVERLAY_COLORS.regionalCommissions,
+      },
+    ],
+  },
+  {
+    groupLabel: "Legislative",
+    rows: [
+      {
+        key: "stateHouse",
+        label: "State House",
+        color: BOUNDARY_OVERLAY_COLORS.stateHouse,
+      },
+      {
+        key: "stateSenate",
+        label: "State Senate",
+        color: BOUNDARY_OVERLAY_COLORS.stateSenate,
+      },
+      {
+        key: "congressional",
+        label: "Congressional",
+        color: BOUNDARY_OVERLAY_COLORS.congressional,
+      },
+    ],
+  },
+];
+
+// Hand-assigned to keep the two legend columns near-equal height. Packing
+// greedily would leave visible dead space under the shorter column.
+const BOUNDARY_COLUMN_ASSIGNMENTS: BoundaryOverlayLegendGroup[][] = [
+  [
+    BOUNDARY_OVERLAY_GROUPS.find((g) => g.groupLabel === "Engineering")!,
+    BOUNDARY_OVERLAY_GROUPS.find((g) => g.groupLabel === "Planning")!,
+  ],
+  [
+    BOUNDARY_OVERLAY_GROUPS.find((g) => g.groupLabel === "Reference")!,
+    BOUNDARY_OVERLAY_GROUPS.find((g) => g.groupLabel === "Legislative")!,
+  ],
+];
 
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
@@ -24,6 +120,13 @@ interface RoadwayLegendCardProps {
     visualizationId: string,
     patch: Partial<ThemeFilterValue>,
   ) => void;
+  boundaryOverlayVisibility?: BoundaryOverlayVisibility;
+  onBoundaryOverlayToggle?: (
+    overlay: keyof BoundaryOverlayVisibility,
+    visible: boolean,
+  ) => void;
+  roadwayNetworkVisible?: boolean;
+  onRoadwayNetworkVisibleChange?: (visible: boolean) => void;
 }
 
 const SWATCH_GRID = {
@@ -50,6 +153,46 @@ const FILTER_ROW_GRID = {
     bgcolor: "rgba(17, 61, 73, 0.07)",
   },
 } as const;
+
+function renderBoundaryOverlayRow(
+  row: BoundaryOverlayLegendRow,
+  checked: boolean,
+  onToggle: (overlay: keyof BoundaryOverlayVisibility, visible: boolean) => void,
+): ReactNode {
+  return (
+    <Box
+      key={row.key}
+      role="button"
+      onClick={() => onToggle(row.key, !checked)}
+      sx={FILTER_ROW_GRID}
+    >
+      <Checkbox
+        icon={<CheckBoxOutlineBlankIcon fontSize="inherit" />}
+        checkedIcon={<CheckBoxIcon fontSize="inherit" />}
+        checked={checked}
+        onChange={(event) => onToggle(row.key, event.target.checked)}
+        onClick={(event) => event.stopPropagation()}
+        size="small"
+        sx={{ p: 0, fontSize: "0.95rem" }}
+      />
+      <Box
+        sx={{
+          width: 12,
+          height: 12,
+          borderRadius: "2px",
+          bgcolor: row.color,
+          border: "1px solid rgba(16, 35, 47, 0.12)",
+        }}
+      />
+      <Typography
+        variant="caption"
+        sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}
+      >
+        {row.label}
+      </Typography>
+    </Box>
+  );
+}
 
 function getToggleableFilterSpec(
   visualization: RoadwayVisualizationOption,
@@ -94,7 +237,16 @@ export function RoadwayLegendCard({
   themeFilterValue,
   defaultThemeFilterValue,
   setThemeFilter,
+  boundaryOverlayVisibility,
+  onBoundaryOverlayToggle,
+  roadwayNetworkVisible,
+  onRoadwayNetworkVisibleChange,
 }: RoadwayLegendCardProps) {
+  const showBoundaryOverlays = Boolean(
+    boundaryOverlayVisibility && onBoundaryOverlayToggle,
+  );
+  const [boundaryOverlaysExpanded, setBoundaryOverlaysExpanded] = useState(true);
+  const [legendExpanded, setLegendExpanded] = useState(true);
   const filterSpec = getToggleableFilterSpec(visualization);
   const isFilterable = Boolean(
     filterSpec &&
@@ -370,20 +522,179 @@ export function RoadwayLegendCard({
       }}
     >
       <Stack spacing={0.6}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: "0.75rem" }}>
-          {visualization.label}
-        </Typography>
-
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.68rem", lineHeight: 1.3 }}>
-          {visualization.description}
-        </Typography>
-
-        {content}
-
-        {visualization.notes && (
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, fontSize: "0.68rem" }}>
-            {visualization.notes}
+        <Box
+          role="button"
+          onClick={() => setLegendExpanded((prev) => !prev)}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+            borderRadius: "4px",
+            px: 0.5,
+            mx: -0.5,
+            "&:hover": { bgcolor: "rgba(17, 61, 73, 0.07)" },
+          }}
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: "0.75rem" }}>
+            {visualization.label} Legend
           </Typography>
+          <IconButton
+            size="small"
+            aria-label={legendExpanded ? "Collapse legend" : "Expand legend"}
+            sx={{ p: 0, color: "text.secondary" }}
+            onClick={(event) => {
+              event.stopPropagation();
+              setLegendExpanded((prev) => !prev);
+            }}
+          >
+            {legendExpanded ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            )}
+          </IconButton>
+        </Box>
+
+        <Collapse in={legendExpanded} timeout="auto" unmountOnExit>
+          <Stack spacing={0.6}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.68rem", lineHeight: 1.3 }}>
+              {visualization.description}
+            </Typography>
+
+            {content}
+
+            {visualization.notes && (
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, fontSize: "0.68rem" }}>
+                {visualization.notes}
+              </Typography>
+            )}
+          </Stack>
+        </Collapse>
+
+        {showBoundaryOverlays && boundaryOverlayVisibility && onBoundaryOverlayToggle && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <Stack spacing={0.6}>
+              <Box
+                role="button"
+                onClick={() => setBoundaryOverlaysExpanded((prev) => !prev)}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  borderRadius: "4px",
+                  px: 0.5,
+                  mx: -0.5,
+                  "&:hover": { bgcolor: "rgba(17, 61, 73, 0.07)" },
+                }}
+              >
+                <Typography
+                  variant="subtitle2"
+                  sx={{ fontWeight: 700, fontSize: "0.72rem" }}
+                >
+                  Boundary Overlays
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label={
+                    boundaryOverlaysExpanded
+                      ? "Collapse boundary overlays"
+                      : "Expand boundary overlays"
+                  }
+                  sx={{ p: 0, color: "text.secondary" }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setBoundaryOverlaysExpanded((prev) => !prev);
+                  }}
+                >
+                  {boundaryOverlaysExpanded ? (
+                    <ExpandLessIcon fontSize="small" />
+                  ) : (
+                    <ExpandMoreIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Box>
+
+              <Collapse in={boundaryOverlaysExpanded} timeout="auto" unmountOnExit>
+                {onRoadwayNetworkVisibleChange !== undefined && (
+                  <Box
+                    role="button"
+                    onClick={() =>
+                      onRoadwayNetworkVisibleChange(!roadwayNetworkVisible)
+                    }
+                    sx={{
+                      ...FILTER_ROW_GRID,
+                      gridTemplateColumns: "18px minmax(0, 1fr)",
+                      mb: 0.75,
+                    }}
+                  >
+                    <Checkbox
+                      icon={<CheckBoxOutlineBlankIcon fontSize="inherit" />}
+                      checkedIcon={<CheckBoxIcon fontSize="inherit" />}
+                      checked={Boolean(roadwayNetworkVisible)}
+                      onChange={(event) =>
+                        onRoadwayNetworkVisibleChange(event.target.checked)
+                      }
+                      onClick={(event) => event.stopPropagation()}
+                      size="small"
+                      sx={{ p: 0, fontSize: "0.95rem" }}
+                    />
+                    <Typography
+                      variant="caption"
+                      sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}
+                    >
+                      Show road network
+                    </Typography>
+                  </Box>
+                )}
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    columnGap: 1.25,
+                    rowGap: 0.75,
+                    alignItems: "start",
+                  }}
+                >
+                  {BOUNDARY_COLUMN_ASSIGNMENTS.map((columnGroups, columnIndex) => (
+                    <Stack key={columnIndex} spacing={0.75}>
+                      {columnGroups.map((group) => (
+                        <Box key={group.groupLabel}>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              display: "block",
+                              fontSize: "0.62rem",
+                              letterSpacing: 0.4,
+                              textTransform: "uppercase",
+                              lineHeight: 1.2,
+                              mb: 0.25,
+                            }}
+                          >
+                            {group.groupLabel}
+                          </Typography>
+
+                          <Stack spacing={0.25}>
+                            {group.rows.map((row) =>
+                              renderBoundaryOverlayRow(
+                                row,
+                                boundaryOverlayVisibility[row.key],
+                                onBoundaryOverlayToggle,
+                              ),
+                            )}
+                          </Stack>
+                        </Box>
+                      ))}
+                    </Stack>
+                  ))}
+                </Box>
+              </Collapse>
+            </Stack>
+          </>
         )}
       </Stack>
     </Paper>

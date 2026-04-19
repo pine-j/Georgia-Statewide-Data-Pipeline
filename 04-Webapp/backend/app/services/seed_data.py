@@ -4,6 +4,7 @@ from app.schemas import (
     RoadwayFeature,
     RoadwayFeatureCollection,
     RoadwayFeatureProperties,
+    RoadwayFilters,
     StateOption,
 )
 
@@ -171,48 +172,35 @@ def list_seed_states() -> list[StateOption]:
 
 def filter_seed_roadways(
     state_code: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> list[dict]:
+    filters = filters or RoadwayFilters()
     roadways = [item for item in SEED_ROADWAYS if item["state_code"] == state_code]
 
-    if district:
-        district_set = set(district)
+    if filters.district:
+        district_set = set(filters.district)
         roadways = [item for item in roadways if item["district"] in district_set]
 
-    if counties:
-        county_set = {county.lower() for county in counties}
+    if filters.counties:
+        county_set = {county.lower() for county in filters.counties}
         roadways = [item for item in roadways if item["county"].lower() in county_set]
 
-    if highway_types:
-        selected_route_families = {
-            SEED_ROUTE_FAMILY_BY_HIGHWAY_TYPE[highway_type]
-            for highway_type in highway_types
-            if highway_type in SEED_ROUTE_FAMILY_BY_HIGHWAY_TYPE
-        }
-        if selected_route_families:
-            roadways = [
-                item
-                for item in roadways
-                if item.get("route_family") in selected_route_families
-            ]
+    if filters.highway_route_families:
+        route_family_set = set(filters.highway_route_families)
+        roadways = [
+            item
+            for item in roadways
+            if item.get("route_family") in route_family_set
+        ]
 
     return roadways
 
 
 def get_seed_summary(
     state_code: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> AnalyticsSummaryResponse:
-    roadways = filter_seed_roadways(
-        state_code,
-        district=district,
-        counties=counties,
-        highway_types=highway_types,
-    )
+    roadways = filter_seed_roadways(state_code, filters=filters)
     grouped: dict[str, list[dict]] = {}
 
     for roadway in roadways:
@@ -238,16 +226,9 @@ def get_seed_summary(
 def get_seed_roadways(
     state_code: str,
     limit: int,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> RoadwayFeatureCollection:
-    roadways = filter_seed_roadways(
-        state_code,
-        district=district,
-        counties=counties,
-        highway_types=highway_types,
-    )[:limit]
+    roadways = filter_seed_roadways(state_code, filters=filters)[:limit]
 
     return RoadwayFeatureCollection(
         type="FeatureCollection",
@@ -274,16 +255,9 @@ def get_seed_roadways(
 
 def get_seed_bounds(
     state_code: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> list[float] | None:
-    roadways = filter_seed_roadways(
-        state_code,
-        district=district,
-        counties=counties,
-        highway_types=highway_types,
-    )
+    roadways = filter_seed_roadways(state_code, filters=filters)
     if not roadways:
         return None
 

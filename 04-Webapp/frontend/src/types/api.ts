@@ -20,10 +20,55 @@ export interface HighwayTypeOption {
   route_family: string;
 }
 
+export interface AreaOfficeOption {
+  id: number;
+  label: string;
+  parent_district: number;
+}
+
+export interface MpoOption {
+  id: string;
+  label: string;
+}
+
+export interface RegionalCommissionOption {
+  id: number;
+  label: string;
+}
+
+export interface StateHouseOption {
+  id: number;
+  label: string;
+}
+
+export interface StateSenateOption {
+  id: number;
+  label: string;
+}
+
+export interface CongressionalOption {
+  id: number;
+  label: string;
+}
+
+export interface CityOption {
+  id: number;
+  label: string;
+  county: string | null;
+  district: number | null;
+}
+
 export interface GeorgiaFilterOptions {
   districts: DistrictOption[];
   counties: CountyOption[];
   highway_types: HighwayTypeOption[];
+  area_offices: AreaOfficeOption[];
+  mpos: MpoOption[];
+  regional_commissions: RegionalCommissionOption[];
+  state_house_districts: StateHouseOption[];
+  state_senate_districts: StateSenateOption[];
+  congressional_districts: CongressionalOption[];
+  cities: CityOption[];
 }
 
 export interface AppConfig {
@@ -75,6 +120,19 @@ export interface RoadwayFeatureProperties {
   ownership_label?: string | null;
   facility_type_label?: string | null;
   sec_evac?: string | null;
+  // Step 2 geometry-authoritative admin geographies.
+  area_office_id?: number | null;
+  area_office_name?: string | null;
+  mpo_id?: string | null;
+  mpo_name?: string | null;
+  rc_id?: number | null;
+  rc_name?: string | null;
+  // Step 4 overlay flags. city_id is the 48-bit name hash; null = unincorporated.
+  state_house_district?: number | null;
+  state_senate_district?: number | null;
+  congressional_district?: number | null;
+  city_id?: number | null;
+  city_name?: string | null;
 }
 
 export interface RoadwayFeature {

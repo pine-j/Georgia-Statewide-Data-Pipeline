@@ -83,6 +83,20 @@ const ATTRIBUTE_LABELS: Record<string, AttributeMeta> = {
   ROUTE_TYPE_GDOT_LABEL: { label: "GDOT Route Type", description: "GDOT route type classification (mainline, ramp, connector, etc.)" },
   COUNTY_NAME: { label: "County Name", description: "County where the segment is located" },
   DISTRICT_NAME: { label: "District Name", description: "GDOT district name" },
+  // Admin geographies attached by the Step 2 / Step 4 re-segmentation pipeline.
+  // SQLite column names are upper-snake, matching how they arrive in the
+  // detail payload (SELECT * FROM segments).
+  AREA_OFFICE_ID: { label: "Area Office ID", description: "GDOT area office numeric identifier" },
+  AREA_OFFICE_NAME: { label: "Area Office", description: "GDOT area office name" },
+  MPO_ID: { label: "MPO ID", description: "Metropolitan Planning Organization identifier" },
+  MPO_NAME: { label: "MPO", description: "Metropolitan Planning Organization name" },
+  RC_ID: { label: "Regional Commission ID", description: "Georgia Regional Commission numeric identifier" },
+  RC_NAME: { label: "Regional Commission", description: "Georgia Regional Commission name" },
+  STATE_HOUSE_DISTRICT: { label: "State House District", description: "Georgia State House legislative district number" },
+  STATE_SENATE_DISTRICT: { label: "State Senate District", description: "Georgia State Senate legislative district number" },
+  CONGRESSIONAL_DISTRICT: { label: "Congressional District", description: "U.S. Congressional district number" },
+  CITY_ID: { label: "City ID", description: "Incorporated city identifier (48-bit name hash); null for unincorporated areas" },
+  CITY_NAME: { label: "City", description: "Incorporated city name; blank for unincorporated segments" },
   unique_id: { label: "Unique ID", description: "Internal unique segment identifier" },
 };
 
@@ -199,6 +213,17 @@ const DISPLAY_ORDER: string[] = [
   "SEC_EVAC",
   "SEC_EVAC_CONTRAFLOW",
   "SEC_EVAC_ROUTE_NAME",
+  "AREA_OFFICE_NAME",
+  "AREA_OFFICE_ID",
+  "MPO_NAME",
+  "MPO_ID",
+  "RC_NAME",
+  "RC_ID",
+  "STATE_HOUSE_DISTRICT",
+  "STATE_SENATE_DISTRICT",
+  "CONGRESSIONAL_DISTRICT",
+  "CITY_NAME",
+  "CITY_ID",
   "LENGTH_MILES",
   "FROM_MILEPOINT",
   "TO_MILEPOINT",
@@ -309,6 +334,22 @@ const SECTIONS: AttributeSection[] = [
   {
     title: "Administration",
     keys: new Set(["OWNERSHIP_LABEL", "SYSTEM_CODE_LABEL", "ROUTE_TYPE_GDOT_LABEL", "DIRECTION_LABEL", "URBAN_CODE_LABEL"]),
+  },
+  {
+    title: "Geographies",
+    keys: new Set([
+      "AREA_OFFICE_ID",
+      "AREA_OFFICE_NAME",
+      "MPO_ID",
+      "MPO_NAME",
+      "RC_ID",
+      "RC_NAME",
+      "STATE_HOUSE_DISTRICT",
+      "STATE_SENATE_DISTRICT",
+      "CONGRESSIONAL_DISTRICT",
+      "CITY_ID",
+      "CITY_NAME",
+    ]),
   },
   {
     title: "Segment Geometry",

@@ -16,7 +16,10 @@ from app.services.layers import (
     get_roadway_features,
     get_roadway_visualizations,
 )
-from app.services.staged_roadways import get_staged_roadway_manifest
+from app.services.staged_roadways import (
+    get_staged_roadway_manifest,
+    resolve_filters_from_request,
+)
 
 
 router = APIRouter(prefix="/layers", tags=["layers"])
@@ -28,19 +31,34 @@ def get_roadway_manifest(
     district: list[int] | None = Query(default=None),
     county: list[str] | None = Query(default=None),
     highway_type: list[str] | None = Query(default=None),
+    area_office: list[int] | None = Query(default=None),
+    mpo: list[str] | None = Query(default=None),
+    regional_commission: list[int] | None = Query(default=None),
+    state_house: list[int] | None = Query(default=None),
+    state_senate: list[int] | None = Query(default=None),
+    congressional: list[int] | None = Query(default=None),
+    city: list[int] | None = Query(default=None),
+    include_unincorporated: bool = Query(default=False),
     chunk_size: int = Query(
         default=get_settings().staged_chunk_size,
         ge=1000,
         le=20000,
     ),
 ) -> RoadwayManifestResponse:
-    return get_staged_roadway_manifest(
-        state.lower(),
-        chunk_size,
+    filters = resolve_filters_from_request(
         district=district,
         counties=county,
         highway_types=highway_type,
+        area_offices=area_office,
+        mpos=mpo,
+        regional_commissions=regional_commission,
+        state_house_districts=state_house,
+        state_senate_districts=state_senate,
+        congressional_districts=congressional,
+        cities=city,
+        include_unincorporated=include_unincorporated,
     )
+    return get_staged_roadway_manifest(state.lower(), chunk_size, filters=filters)
 
 
 @router.get("/roadways", response_model=RoadwayFeatureCollection)
@@ -49,18 +67,37 @@ def get_roadways(
     district: list[int] | None = Query(default=None),
     county: list[str] | None = Query(default=None),
     highway_type: list[str] | None = Query(default=None),
+    area_office: list[int] | None = Query(default=None),
+    mpo: list[str] | None = Query(default=None),
+    regional_commission: list[int] | None = Query(default=None),
+    state_house: list[int] | None = Query(default=None),
+    state_senate: list[int] | None = Query(default=None),
+    congressional: list[int] | None = Query(default=None),
+    city: list[int] | None = Query(default=None),
+    include_unincorporated: bool = Query(default=False),
     limit: int = Query(default=250, ge=1, le=20000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> RoadwayFeatureCollection:
+    filters = resolve_filters_from_request(
+        district=district,
+        counties=county,
+        highway_types=highway_type,
+        area_offices=area_office,
+        mpos=mpo,
+        regional_commissions=regional_commission,
+        state_house_districts=state_house,
+        state_senate_districts=state_senate,
+        congressional_districts=congressional,
+        cities=city,
+        include_unincorporated=include_unincorporated,
+    )
     return get_roadway_features(
         db,
         state.lower(),
         limit,
         offset=offset,
-        district=district,
-        counties=county,
-        highway_types=highway_type,
+        filters=filters,
     )
 
 
@@ -87,10 +124,21 @@ def get_boundaries(
     state: str = Query(default="ga", min_length=2, max_length=8),
     district: list[int] | None = Query(default=None),
     county: list[str] | None = Query(default=None),
+    area_office: list[int] | None = Query(default=None),
+    mpo: list[str] | None = Query(default=None),
+    regional_commission: list[int] | None = Query(default=None),
+    state_house: list[int] | None = Query(default=None),
+    state_senate: list[int] | None = Query(default=None),
+    congressional: list[int] | None = Query(default=None),
 ) -> GeoJsonFeatureCollection:
-    return get_boundary_features(
-        state.lower(),
-        boundary_type,
+    filters = resolve_filters_from_request(
         district=district,
         counties=county,
+        area_offices=area_office,
+        mpos=mpo,
+        regional_commissions=regional_commission,
+        state_house_districts=state_house,
+        state_senate_districts=state_senate,
+        congressional_districts=congressional,
     )
+    return get_boundary_features(state.lower(), boundary_type, filters=filters)

@@ -1,6 +1,8 @@
 """Enrich Georgia roadway segments with hurricane evacuation route flags.
 
-Downloads are cached under 01-Raw-Data/Roadway-Inventory/GDOT_EOC/.
+Raw layers live under 01-Raw-Data/Roadway-Inventory/GDOT_EOC/. Fetch them
+with 01-Raw-Data/Roadway-Inventory/scripts/download_evacuation_routes.py
+before running the pipeline.
 
 Source layers (GDOT EOC Response):
 - Layer 7: GDOT Hurricane Evacuation Routes (268 polylines)
@@ -36,12 +38,6 @@ RAW_GDOT_EOC_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "GDOT_EO
 
 EVAC_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_evac_routes.geojson"
 CONTRAFLOW_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_contraflow_routes.geojson"
-
-EOC_SERVICE_URL = (
-    "https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer"
-)
-EVAC_LAYER_URL = f"{EOC_SERVICE_URL}/7"
-CONTRAFLOW_LAYER_URL = f"{EOC_SERVICE_URL}/8"
 
 ENRICHMENT_COLUMNS = [
     "SEC_EVAC",
@@ -119,45 +115,24 @@ def _alignment_angle_deg(az1, az2):
     return math.degrees(min(diff, math.pi - diff))
 
 
-def _download_geojson(url: str, dest: Path) -> None:
-    """Download a full layer as GeoJSON from an ArcGIS MapServer."""
-    from urllib.request import Request, urlopen
-
-    query_url = (
-        f"{url}/query?where=1%3D1&outFields=*"
-        f"&f=geojson&returnGeometry=true"
-    )
-    LOGGER.info("Downloading evacuation layer: %s", query_url)
-    req = Request(query_url, headers={"User-Agent": "Georgia-Pipeline-ETL"})
-    with urlopen(req, timeout=120) as resp:
-        data = resp.read()
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-    fc = json.loads(data)
-    LOGGER.info("Downloaded %d features to %s", len(fc.get("features", [])), dest)
+def _load_local_geojson(path: Path, label: str) -> gpd.GeoDataFrame:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{label} not found at {path}. "
+            "Run 01-Raw-Data/Roadway-Inventory/scripts/download_evacuation_routes.py first."
+        )
+    gdf = gpd.read_file(path, engine="pyogrio")
+    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].reset_index(drop=True)
+    LOGGER.info("Loaded %d %s features", len(gdf), label)
+    return gdf
 
 
 def _load_evac_routes(refresh: bool = False) -> gpd.GeoDataFrame:
-    """Load hurricane evacuation routes from local cache or live service."""
-    if not EVAC_ROUTES_GEOJSON.exists() or refresh:
-        _download_geojson(EVAC_LAYER_URL, EVAC_ROUTES_GEOJSON)
-
-    gdf = gpd.read_file(EVAC_ROUTES_GEOJSON, engine="pyogrio")
-    # Drop records with null/empty geometry
-    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].reset_index(drop=True)
-    LOGGER.info("Loaded %d evacuation route features", len(gdf))
-    return gdf
+    return _load_local_geojson(EVAC_ROUTES_GEOJSON, "evacuation route")
 
 
 def _load_contraflow_routes(refresh: bool = False) -> gpd.GeoDataFrame:
-    """Load contraflow routes from local cache or live service."""
-    if not CONTRAFLOW_ROUTES_GEOJSON.exists() or refresh:
-        _download_geojson(CONTRAFLOW_LAYER_URL, CONTRAFLOW_ROUTES_GEOJSON)
-
-    gdf = gpd.read_file(CONTRAFLOW_ROUTES_GEOJSON, engine="pyogrio")
-    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].reset_index(drop=True)
-    LOGGER.info("Loaded %d contraflow route features", len(gdf))
-    return gdf
+    return _load_local_geojson(CONTRAFLOW_ROUTES_GEOJSON, "contraflow route")
 
 
 def _parse_expected_family(route_name: str) -> str | None:

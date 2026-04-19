@@ -94,7 +94,10 @@ def fetch_reference_layer(reference_key: str, refresh: bool = False) -> gpd.GeoD
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     object_ids = fetch_arcgis_object_ids(reference_spec["service_url"])
-    gdf = fetch_arcgis_features(reference_spec["service_url"], object_ids)
+    fetch_kwargs = {}
+    if "batch_size" in reference_spec:
+        fetch_kwargs["batch_size"] = int(reference_spec["batch_size"])
+    gdf = fetch_arcgis_features(reference_spec["service_url"], object_ids, **fetch_kwargs)
     if gdf.empty:
         LOGGER.warning("Reference layer %s returned no features", reference_key)
         return gdf

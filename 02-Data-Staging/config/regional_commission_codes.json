@@ -1,0 +1,19 @@
+{
+  "_source": "Georgia DCA Regional Commissions FeatureServer",
+  "_source_url": "https://services2.arcgis.com/Gqyymy5JISeLzyNM/arcgis/rest/services/RegionalCommissions/FeatureServer/0",
+  "_notes": "id -> Regional Commission display name. Regenerated on every normalize.py run via write_admin_code_snapshots(); manual edits will be overwritten.",
+  "codes": {
+    "1": "Northwest Georgia",
+    "10": "Southwest Georgia",
+    "11": "Southern Georgia",
+    "12": "Coastal",
+    "2": "Georgia Mountains",
+    "3": "Atlanta Regional Commission",
+    "4": "Three Rivers",
+    "5": "Northeast Georgia",
+    "6": "Middle Georgia",
+    "7": "Central Savannah River Area",
+    "8": "River Valley",
+    "9": "Heart of Georgia Altamaha"
+  }
+}

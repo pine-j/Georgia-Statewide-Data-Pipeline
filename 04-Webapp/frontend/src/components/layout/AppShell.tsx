@@ -8,11 +8,9 @@ import { useBoundaryLayersQuery } from "../../hooks/useBoundaryLayersQuery";
 import { useGeorgiaFiltersQuery } from "../../hooks/useGeorgiaFiltersQuery";
 import { useRoadwayLoader } from "../../hooks/useRoadwayLoader";
 import { useRoadwayVisualizationCatalogQuery } from "../../hooks/useRoadwayVisualizationCatalogQuery";
-import {
-  DEFAULT_HIGHWAY_TYPES,
-  useAppStore,
-} from "../../store/useAppStore";
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import { useUrlSyncedFilters } from "../../hooks/useUrlSyncedFilters";
+import { useAppStore, DEFAULT_BOUNDARY_OVERLAY_VISIBILITY } from "../../store/useAppStore";
+import type { BoundaryOverlayVisibility, ThemeFilterValue } from "../../store/useAppStore";
 import { getRoadwayDetail } from "../../services/api";
 import { RoadwayDetail, RoadwayVisualizationOption } from "../../types/api";
 import {
@@ -60,14 +58,65 @@ function buildDefaultThemeFilterValue(
 }
 
 export function AppShell() {
+  // Bidirectional URL<->store sync for the 9 admin-geography selections
+  // plus include_unincorporated. Writes to URL on every selection change
+  // via history.replaceState; reads the URL once on mount to seed state
+  // so shared/bookmarked links reproduce filter combinations.
+  useUrlSyncedFilters();
+
   const selectedDistricts = useAppStore((state) => state.selectedDistricts);
   const selectedCounties = useAppStore((state) => state.selectedCounties);
   const selectedHighwayTypes = useAppStore((state) => state.selectedHighwayTypes);
+  const selectedAreaOffices = useAppStore((state) => state.selectedAreaOffices);
+  const selectedMpos = useAppStore((state) => state.selectedMpos);
+  const selectedRegionalCommissions = useAppStore(
+    (state) => state.selectedRegionalCommissions,
+  );
+  const selectedStateHouseDistricts = useAppStore(
+    (state) => state.selectedStateHouseDistricts,
+  );
+  const selectedStateSenateDistricts = useAppStore(
+    (state) => state.selectedStateSenateDistricts,
+  );
+  const selectedCongressionalDistricts = useAppStore(
+    (state) => state.selectedCongressionalDistricts,
+  );
+  const selectedCities = useAppStore((state) => state.selectedCities);
+  const includeUnincorporated = useAppStore((state) => state.includeUnincorporated);
+  const boundaryOverlayVisibility = useAppStore(
+    (state) => state.boundaryOverlayVisibility,
+  );
+  const setBoundaryOverlayVisibility = useAppStore(
+    (state) => state.setBoundaryOverlayVisibility,
+  );
+  const roadwayNetworkVisible = useAppStore((state) => state.roadwayNetworkVisible);
+  const setRoadwayNetworkVisible = useAppStore(
+    (state) => state.setRoadwayNetworkVisible,
+  );
   const selectedVisualizationId = useAppStore((state) => state.selectedVisualizationId);
   const themeFilters = useAppStore((state) => state.themeFilters);
   const setSelectedDistricts = useAppStore((state) => state.setSelectedDistricts);
   const setSelectedCounties = useAppStore((state) => state.setSelectedCounties);
   const setSelectedHighwayTypes = useAppStore((state) => state.setSelectedHighwayTypes);
+  const setSelectedAreaOffices = useAppStore((state) => state.setSelectedAreaOffices);
+  const setSelectedMpos = useAppStore((state) => state.setSelectedMpos);
+  const setSelectedRegionalCommissions = useAppStore(
+    (state) => state.setSelectedRegionalCommissions,
+  );
+  const setSelectedStateHouseDistricts = useAppStore(
+    (state) => state.setSelectedStateHouseDistricts,
+  );
+  const setSelectedStateSenateDistricts = useAppStore(
+    (state) => state.setSelectedStateSenateDistricts,
+  );
+  const setSelectedCongressionalDistricts = useAppStore(
+    (state) => state.setSelectedCongressionalDistricts,
+  );
+  const setSelectedCities = useAppStore((state) => state.setSelectedCities);
+  const setIncludeUnincorporated = useAppStore(
+    (state) => state.setIncludeUnincorporated,
+  );
+  const resetAllAdminFilters = useAppStore((state) => state.resetAllAdminFilters);
   const setSelectedVisualizationId = useAppStore(
     (state) => state.setSelectedVisualizationId,
   );
@@ -88,6 +137,14 @@ export function AppShell() {
   const districts = georgiaFiltersQuery.data?.districts ?? [];
   const counties = georgiaFiltersQuery.data?.counties ?? [];
   const highwayTypes = georgiaFiltersQuery.data?.highway_types ?? [];
+  const areaOffices = georgiaFiltersQuery.data?.area_offices ?? [];
+  const mpos = georgiaFiltersQuery.data?.mpos ?? [];
+  const regionalCommissions = georgiaFiltersQuery.data?.regional_commissions ?? [];
+  const stateHouseDistricts = georgiaFiltersQuery.data?.state_house_districts ?? [];
+  const stateSenateDistricts = georgiaFiltersQuery.data?.state_senate_districts ?? [];
+  const congressionalDistricts =
+    georgiaFiltersQuery.data?.congressional_districts ?? [];
+  const cities = georgiaFiltersQuery.data?.cities ?? [];
   const roadwayVisualizationCatalog = roadwayVisualizationsQuery.data;
   const thematicOptions = roadwayVisualizationCatalog?.thematic_options ?? [];
   const selectedVisualization =
@@ -103,18 +160,114 @@ export function AppShell() {
       undefined
     );
   }, [selectedVisualization, themeFilters]);
-  const roadwayLoader = useRoadwayLoader(
-    selectedDistricts,
-    selectedCounties,
-    selectedHighwayTypes,
-    true,
+  // Build a single QueryFilters object that threads all 9 admin-geography
+  // dims + include_unincorporated into every data-fetching hook. Memoised
+  // so the object identity only changes when the underlying selections
+  // change, keeping useRoadwayLoader's filterKey stable across renders.
+  const queryFilters = useMemo(
+    () => ({
+      districts: selectedDistricts,
+      counties: selectedCounties,
+      highwayTypes: selectedHighwayTypes,
+      areaOffices: selectedAreaOffices,
+      mpos: selectedMpos,
+      regionalCommissions: selectedRegionalCommissions,
+      stateHouseDistricts: selectedStateHouseDistricts,
+      stateSenateDistricts: selectedStateSenateDistricts,
+      congressionalDistricts: selectedCongressionalDistricts,
+      cities: selectedCities,
+      includeUnincorporated,
+    }),
+    [
+      selectedDistricts,
+      selectedCounties,
+      selectedHighwayTypes,
+      selectedAreaOffices,
+      selectedMpos,
+      selectedRegionalCommissions,
+      selectedStateHouseDistricts,
+      selectedStateSenateDistricts,
+      selectedCongressionalDistricts,
+      selectedCities,
+      includeUnincorporated,
+    ],
   );
+  const roadwayLoader = useRoadwayLoader(queryFilters, true);
   const boundaryLayersQuery = useBoundaryLayersQuery(
-    selectedDistricts,
-    selectedCounties,
-    selectedHighwayTypes,
+    queryFilters,
+    boundaryOverlayVisibility,
     true,
   );
+
+  // Sync overlays on filter-activity transitions only, so manual legend-card toggles stick in between.
+  const filterActivityByOverlay: Array<[keyof BoundaryOverlayVisibility, boolean]> = [
+    ["districts", selectedDistricts.length > 0],
+    ["counties", selectedCounties.length > 0],
+    ["areaOffices", selectedAreaOffices.length > 0],
+    ["mpos", selectedMpos.length > 0],
+    ["regionalCommissions", selectedRegionalCommissions.length > 0],
+    ["stateHouse", selectedStateHouseDistricts.length > 0],
+    ["stateSenate", selectedStateSenateDistricts.length > 0],
+    ["congressional", selectedCongressionalDistricts.length > 0],
+  ];
+  // Seed all-false so URL-hydrated filters trigger a first-mount activation transition.
+  const prevFilterActivityRef = useRef<Record<keyof BoundaryOverlayVisibility, boolean>>({
+    statewide: false,
+    districts: false,
+    counties: false,
+    areaOffices: false,
+    mpos: false,
+    regionalCommissions: false,
+    stateHouse: false,
+    stateSenate: false,
+    congressional: false,
+  });
+
+  useEffect(() => {
+    const currentActivity = Object.fromEntries(filterActivityByOverlay) as Record<
+      keyof BoundaryOverlayVisibility,
+      boolean
+    >;
+    const prev = prevFilterActivityRef.current;
+
+    const anyActiveNow = filterActivityByOverlay.some(([, active]) => active);
+    const anyActiveBefore = Object.values(prev).some(Boolean);
+
+    if (!anyActiveNow && anyActiveBefore) {
+      for (const key of Object.keys(DEFAULT_BOUNDARY_OVERLAY_VISIBILITY) as Array<
+        keyof BoundaryOverlayVisibility
+      >) {
+        setBoundaryOverlayVisibility(key, DEFAULT_BOUNDARY_OVERLAY_VISIBILITY[key]);
+      }
+    } else {
+      const firstActivation = !anyActiveBefore && anyActiveNow;
+      for (const [overlay, isActive] of filterActivityByOverlay) {
+        const wasActive = prev[overlay];
+        if (isActive !== wasActive) {
+          setBoundaryOverlayVisibility(overlay, isActive);
+        }
+      }
+      if (firstActivation) {
+        for (const [overlay, isActive] of filterActivityByOverlay) {
+          if (!isActive && DEFAULT_BOUNDARY_OVERLAY_VISIBILITY[overlay]) {
+            setBoundaryOverlayVisibility(overlay, false);
+          }
+        }
+      }
+    }
+
+    prevFilterActivityRef.current = currentActivity;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedDistricts,
+    selectedCounties,
+    selectedAreaOffices,
+    selectedMpos,
+    selectedRegionalCommissions,
+    selectedStateHouseDistricts,
+    selectedStateSenateDistricts,
+    selectedCongressionalDistricts,
+  ]);
 
   useEffect(() => {
     if (thematicOptions.length === 0) {
@@ -193,7 +346,7 @@ export function AppShell() {
     detailAbortRef.current?.abort();
     closeRoadwayDetail();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDistricts, selectedCounties, selectedHighwayTypes]);
+  }, [queryFilters]);
 
   const handleDistrictChange = (districts: number[]) => {
     const nextSelectedCounties = selectedCounties.filter((countyName) =>
@@ -222,10 +375,44 @@ export function AppShell() {
     );
   };
 
+  const handleAreaOfficeDelete = (id: number) => {
+    setSelectedAreaOffices(selectedAreaOffices.filter((areaOffice) => areaOffice !== id));
+  };
+
+  const handleMpoDelete = (id: string) => {
+    setSelectedMpos(selectedMpos.filter((mpo) => mpo !== id));
+  };
+
+  const handleRegionalCommissionDelete = (id: number) => {
+    setSelectedRegionalCommissions(
+      selectedRegionalCommissions.filter((rc) => rc !== id),
+    );
+  };
+
+  const handleStateHouseDelete = (id: number) => {
+    setSelectedStateHouseDistricts(
+      selectedStateHouseDistricts.filter((district) => district !== id),
+    );
+  };
+
+  const handleStateSenateDelete = (id: number) => {
+    setSelectedStateSenateDistricts(
+      selectedStateSenateDistricts.filter((district) => district !== id),
+    );
+  };
+
+  const handleCongressionalDelete = (id: number) => {
+    setSelectedCongressionalDistricts(
+      selectedCongressionalDistricts.filter((district) => district !== id),
+    );
+  };
+
+  const handleCityDelete = (id: number) => {
+    setSelectedCities(selectedCities.filter((city) => city !== id));
+  };
+
   const handleResetFilters = () => {
-    setSelectedDistricts([]);
-    setSelectedCounties([]);
-    setSelectedHighwayTypes([...DEFAULT_HIGHWAY_TYPES]);
+    resetAllAdminFilters();
     resetAllThemeFilters();
   };
 
@@ -275,7 +462,13 @@ export function AppShell() {
     roadwayVisualizationsQuery.isError ||
     Boolean(roadwayLoader.error) ||
     boundaryLayersQuery.countiesQuery.isError ||
-    boundaryLayersQuery.districtsQuery.isError;
+    boundaryLayersQuery.districtsQuery.isError ||
+    boundaryLayersQuery.areaOfficesQuery.isError ||
+    boundaryLayersQuery.mposQuery.isError ||
+    boundaryLayersQuery.regionalCommissionsQuery.isError ||
+    boundaryLayersQuery.stateHouseQuery.isError ||
+    boundaryLayersQuery.stateSenateQuery.isError ||
+    boundaryLayersQuery.congressionalQuery.isError;
 
   return (
     <Box
@@ -343,9 +536,24 @@ export function AppShell() {
                 districts={districts}
                 counties={counties}
                 highwayTypes={highwayTypes}
+                areaOffices={areaOffices}
+                mpos={mpos}
+                regionalCommissions={regionalCommissions}
+                stateHouseDistricts={stateHouseDistricts}
+                stateSenateDistricts={stateSenateDistricts}
+                congressionalDistricts={congressionalDistricts}
+                cities={cities}
                 selectedDistricts={selectedDistricts}
                 selectedCounties={selectedCounties}
                 selectedHighwayTypes={selectedHighwayTypes}
+                selectedAreaOffices={selectedAreaOffices}
+                selectedMpos={selectedMpos}
+                selectedRegionalCommissions={selectedRegionalCommissions}
+                selectedStateHouseDistricts={selectedStateHouseDistricts}
+                selectedStateSenateDistricts={selectedStateSenateDistricts}
+                selectedCongressionalDistricts={selectedCongressionalDistricts}
+                selectedCities={selectedCities}
+                includeUnincorporated={includeUnincorporated}
                 themeFilters={themeFilters}
                 roadwayVisualizationCatalog={roadwayVisualizationCatalog}
                 selectedVisualizationId={selectedVisualization?.id ?? selectedVisualizationId}
@@ -359,8 +567,27 @@ export function AppShell() {
                 onCountyDelete={handleCountyDelete}
                 onHighwayTypeChange={setSelectedHighwayTypes}
                 onHighwayTypeDelete={handleHighwayTypeDelete}
+                onAreaOfficeChange={setSelectedAreaOffices}
+                onAreaOfficeDelete={handleAreaOfficeDelete}
+                onMpoChange={setSelectedMpos}
+                onMpoDelete={handleMpoDelete}
+                onRegionalCommissionChange={setSelectedRegionalCommissions}
+                onRegionalCommissionDelete={handleRegionalCommissionDelete}
+                onStateHouseChange={setSelectedStateHouseDistricts}
+                onStateHouseDelete={handleStateHouseDelete}
+                onStateSenateChange={setSelectedStateSenateDistricts}
+                onStateSenateDelete={handleStateSenateDelete}
+                onCongressionalChange={setSelectedCongressionalDistricts}
+                onCongressionalDelete={handleCongressionalDelete}
+                onCityChange={setSelectedCities}
+                onCityDelete={handleCityDelete}
+                onIncludeUnincorporatedChange={setIncludeUnincorporated}
                 setThemeFilter={setThemeFilter}
                 resetThemeFilter={resetThemeFilter}
+                boundaryOverlayVisibility={boundaryOverlayVisibility}
+                onBoundaryOverlayToggle={setBoundaryOverlayVisibility}
+                roadwayNetworkVisible={roadwayNetworkVisible}
+                onRoadwayNetworkVisibleChange={setRoadwayNetworkVisible}
                 onResetFilters={handleResetFilters}
                 onVisualizationChange={handleVisualizationChange}
               />
@@ -371,6 +598,16 @@ export function AppShell() {
                 roadwayChunks={roadwayLoader.roadwayChunks}
                 countyBoundaries={boundaryLayersQuery.countiesQuery.data}
                 districtBoundaries={boundaryLayersQuery.districtsQuery.data}
+                areaOfficeBoundaries={boundaryLayersQuery.areaOfficesQuery.data}
+                mpoBoundaries={boundaryLayersQuery.mposQuery.data}
+                regionalCommissionBoundaries={
+                  boundaryLayersQuery.regionalCommissionsQuery.data
+                }
+                stateHouseBoundaries={boundaryLayersQuery.stateHouseQuery.data}
+                stateSenateBoundaries={boundaryLayersQuery.stateSenateQuery.data}
+                congressionalBoundaries={boundaryLayersQuery.congressionalQuery.data}
+                boundaryOverlayVisibility={boundaryOverlayVisibility}
+                roadwayNetworkVisible={roadwayNetworkVisible}
                 loadToken={roadwayLoader.loadToken}
                 bounds={roadwayLoader.bounds}
                 isLoading={roadwayLoader.isLoading}
