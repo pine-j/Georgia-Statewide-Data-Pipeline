@@ -201,6 +201,34 @@ def _normalize_text(value: Any) -> str | None:
     return text or None
 
 
+def _normalize_mpo_id(value: Any) -> str | None:
+    """Normalize an MPO_ID to a clean integer-like string.
+
+    MPO_ID arrives from two upstream sources with different dtype
+    conventions: the staged SQLite segments table holds it as REAL
+    (so str(13197100.0) -> '13197100.0'), while the GPKG roadway_segments
+    layer holds it as clean text ('13197100'). This helper collapses
+    both to the clean form so filter options, incoming query params,
+    and boundary/segment predicates agree.
+
+    TODO: fix the upstream ingestion in
+    02-Data-Staging/scripts/01_roadway_inventory/normalize.py
+    (fetch_official_mpo_boundaries) to coerce MPO_ID through Int64
+    before stringifying, then remove this workaround.
+    """
+    if _is_missing(value):
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if text.endswith(".0") and text[:-2].lstrip("-").isdigit():
+        text = text[:-2]
+
+    return text
+
+
 def _format_functional_class(value: Any) -> str:
     if _is_missing(value):
         return "Unknown"
@@ -333,7 +361,19 @@ def resolve_filters_from_request(
         counties=_selected_county_names(counties),
         highway_route_families=_selected_highway_route_families(highway_types),
         area_offices=tuple(sorted(area_offices)) if area_offices else (),
-        mpos=tuple(sorted(str(m).strip() for m in mpos if str(m).strip())) if mpos else (),
+        mpos=(
+            tuple(
+                sorted(
+                    {
+                        normalized
+                        for m in mpos
+                        if (normalized := _normalize_mpo_id(m)) is not None
+                    }
+                )
+            )
+            if mpos
+            else ()
+        ),
         regional_commissions=(
             tuple(sorted(regional_commissions)) if regional_commissions else ()
         ),
@@ -884,7 +924,7 @@ def get_staged_roadway_features(
                     area_office_name=_normalize_text(
                         getattr(row, "area_office_name", None)
                     ),
-                    mpo_id=_normalize_text(getattr(row, "mpo_id", None)),
+                    mpo_id=_normalize_mpo_id(getattr(row, "mpo_id", None)),
                     mpo_name=_normalize_text(getattr(row, "mpo_name", None)),
                     rc_id=_normalize_int(getattr(row, "rc_id", None)),
                     rc_name=_normalize_text(getattr(row, "rc_name", None)),
@@ -1160,14 +1200,17 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
         if _normalize_int(area_office_id) is not None
     ]
 
-    mpos = [
-        MpoOption(
-            id=str(mpo_id).strip(),
-            label=_normalize_text(mpo_name) or str(mpo_id).strip(),
+    mpos = []
+    for mpo_id, mpo_name in mpo_rows:
+        normalized_id = _normalize_mpo_id(mpo_id)
+        if not normalized_id:
+            continue
+        mpos.append(
+            MpoOption(
+                id=normalized_id,
+                label=_normalize_text(mpo_name) or normalized_id,
+            )
         )
-        for mpo_id, mpo_name in mpo_rows
-        if str(mpo_id).strip()
-    ]
 
     regional_commissions = [
         RegionalCommissionOption(

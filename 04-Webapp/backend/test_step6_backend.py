@@ -184,6 +184,30 @@ def test_boundary_type_map_has_no_city() -> None:
     assert "city_boundaries" not in svc.BOUNDARY_FILTER_COLUMNS
 
 
+def test_normalize_mpo_id_strips_trailing_float_zero() -> None:
+    """MPO_ID arrives from SQLite as str(REAL) like '13197100.0'; the
+    normalizer must collapse that to '13197100' so GPKG queries (which
+    store MPO_ID as clean text) match, and so both float- and
+    integer-stringified forms from the UI resolve to the same id.
+    """
+    assert svc._normalize_mpo_id("13197100.0") == "13197100"
+    assert svc._normalize_mpo_id("13197100") == "13197100"
+    assert svc._normalize_mpo_id(13197100.0) == "13197100"
+    assert svc._normalize_mpo_id("  45199300.0  ") == "45199300"
+    # Non-integer-looking strings are left alone (no over-stripping).
+    assert svc._normalize_mpo_id("ATL") == "ATL"
+    assert svc._normalize_mpo_id("1.5") == "1.5"
+    # Blank / missing returns None.
+    assert svc._normalize_mpo_id(None) is None
+    assert svc._normalize_mpo_id("") is None
+    assert svc._normalize_mpo_id("   ") is None
+
+    # resolve_filters_from_request must apply normalization to both
+    # float-stringified and clean-string forms from the UI.
+    f = svc.resolve_filters_from_request(mpos=["13197100.0", "13197100"])
+    assert f.mpos == ("13197100",), f.mpos
+
+
 def test_dispatch_dict_uses_canonical_filter_attrs() -> None:
     """Every filter name in BOUNDARY_FILTER_COLUMNS must exist as a
     RoadwayFilters field (or be the special 'counties' name that's
@@ -205,6 +229,7 @@ TESTS = [
     test_build_boundary_where_county_codes_go_to_county_layer,
     test_build_boundary_where_unmapped_layer_returns_empty,
     test_boundary_type_map_has_no_city,
+    test_normalize_mpo_id_strips_trailing_float_zero,
     test_dispatch_dict_uses_canonical_filter_attrs,
 ]
 
