@@ -1,0 +1,12 @@
+{
+  "routeid": "route_id",
+  "beginpoint": "begin_point",
+  "endpoint": "end_point",
+  "datayear": "data_year",
+  "stateid": "state_id",
+  "route_number": "routenumber",
+  "route_signing": "routesigning",
+  "route_qualifier": "routequalifier",
+  "pct_dh_single_unit": "pct_dh_single",
+  "strahnet": "strahnet_type"
+}

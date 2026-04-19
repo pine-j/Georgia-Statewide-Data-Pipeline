@@ -1,0 +1,11 @@
+{
+  "route_name": "routename",
+  "route_number": "routenumber",
+  "route_qualifier": "routequalifier",
+  "route_signing": "routesigning",
+  "state_code": "state_id",
+  "county_code": "county_id",
+  "urban_code": "urban_id",
+  "year_record": "data_year",
+  "dir_trough_lanes": "dir_through_lanes"
+}
