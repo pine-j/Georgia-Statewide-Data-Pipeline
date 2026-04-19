@@ -132,6 +132,25 @@ MEGA_MIN_RATIO = 0.50
 CLIP_SKIP_PORTION = 0.90
 CLIP_MIN_LENGTH_M = 30.0
 
+# Local/Other on-corridor gate: a Local/Other segment must be close to a
+# state-system (Interstate/US/SR) segment that is ALSO flagged on the same
+# corridor, along most of its length. Corrects for two FP mechanisms:
+#   1. The source evac polyline digitizes onto a parallel county road, so
+#      the CR passes the polyline-distance check even though the actual
+#      state highway is hundreds of meters away (e.g. Schley CR-150).
+#   2. Frontage/service roads consistently 30-50 m offset from a mainline
+#      pass the 50 m matcher buffer but aren't really on the corridor
+#      (e.g. Muscogee CR-1724, Atkinson CR-131).
+# The state-system sibling gate catches both: if CR-150 has no US-19
+# nearby and CR-1724 has I-185 right next to it, the threshold separates
+# them. We use per-sample distance averaged along the segment so an
+# endpoint intersection doesn't let a divergent road pass.
+# Exempted:
+#   - CR-785 — explicitly designated CR evac corridor in the source.
+LOCAL_SIBLING_SAMPLE_DIST_M = 25.0
+LOCAL_SIBLING_SAMPLE_FRAC = 0.80
+LOCAL_SIBLING_EXEMPT_HWY_NAMES = frozenset({"CR-785"})
+
 # Families that belong to the signed state road system.
 _STATE_SYSTEM_FAMILIES = frozenset(
     {"interstate", "us route", "u.s. route", "state route"}
@@ -606,7 +625,16 @@ def per_corridor_evac_overlay(
             "match_method": "spatial",
             "clipped_geom": clipped_geom,
             "match_portion": match_portion,
+            "_corridor_keys": list(matched_corridors),
+            "_is_state_system": is_state_system,
         }
+
+    # =================================================================
+    # STEP 4: Local/Other on-corridor post-filter
+    # =================================================================
+    local_sibling_rejects = _apply_local_on_corridor_filter(
+        results, segments, hwy_name_col, corridor_public_name, corridor_geom,
+    )
 
     # =================================================================
     # Diagnostics
@@ -639,6 +667,7 @@ def per_corridor_evac_overlay(
         "mega_rejects": mega_rejects,
         "short_state_rejects": short_state_rejects,
         "unnamed_tight_rejects": unnamed_tight_rejects,
+        "local_on_corridor_rejects": local_sibling_rejects,
         "unnamed_features_count": unnamed_count,
         "corridors_with_zero_matches": [
             name for name, count in per_corridor_counts.items() if count == 0
@@ -651,16 +680,132 @@ def per_corridor_evac_overlay(
 
     LOGGER.info(
         "Evac overlay total: %d matched (rejects — attr=%d, alignment=%d, "
-        "mega=%d, short_state=%d, unnamed_tight=%d)",
+        "mega=%d, short_state=%d, unnamed_tight=%d, local_on_corridor=%d)",
         len(results),
         attribute_rejects,
         alignment_rejects,
         mega_rejects,
         short_state_rejects,
         unnamed_tight_rejects,
+        local_sibling_rejects,
     )
 
+    # Strip internal helper keys before returning — callers don't need them.
+    for r in results.values():
+        r.pop("_corridor_keys", None)
+        r.pop("_is_state_system", None)
+
     return results, diagnostics
+
+
+def _apply_local_on_corridor_filter(
+    results: dict[int, dict[str, Any]],
+    segments: gpd.GeoDataFrame,
+    hwy_name_col: int | None,
+    corridor_public_name: dict[str, str | None],
+    corridor_geom: dict[str, Any],
+) -> int:
+    """Drop Local/Other matches that aren't close to a state-system sibling
+    on the same corridor along most of their length.
+
+    For each Local/Other result matched to a named corridor, require that
+    along at least LOCAL_SIBLING_SAMPLE_FRAC of 11 sample points, the
+    segment is within LOCAL_SIBLING_SAMPLE_DIST_M of a state-system
+    (Interstate/US/SR) segment that the matcher also flagged on the SAME
+    corridor. This:
+      - Drops CR-150 (no US-19 within 50 m — polyline wandered onto CR-150).
+      - Drops CR-1724/CR-131 parallel frontage roads (consistently 30-50 m
+        from I-185/US-82 mainline but not close enough for 70% of samples).
+      - Keeps CS-823 Thomasville (CS segment IS the state route alignment,
+        adjacent flagged US-341 segments run alongside).
+
+    Exempted:
+      - Segments with HWY_NAME in LOCAL_SIBLING_EXEMPT_HWY_NAMES (CR-785).
+
+    Mutates ``results`` in place, removing rejected entries. Returns the
+    count removed.
+    """
+    # Index state-system matched geometries by corridor key.
+    state_geoms_by_corridor: dict[str, list] = {}
+    for seg_idx, r in results.items():
+        if not r.get("_is_state_system"):
+            continue
+        for ckey in r.get("_corridor_keys", []):
+            state_geoms_by_corridor.setdefault(ckey, []).append(
+                segments.at[seg_idx, "geometry"]
+            )
+
+    to_remove: list[int] = []
+    for seg_idx, r in results.items():
+        if r.get("_is_state_system"):
+            continue
+        corridor_keys = r.get("_corridor_keys", [])
+        if not corridor_keys:
+            continue
+
+        # Exempt explicitly-designated CR evac segments.
+        if hwy_name_col is not None:
+            pos = segments.index.get_loc(seg_idx)
+            hwy_val = segments.iat[pos, hwy_name_col]
+            hwy_clean = _clean_hwy_name(hwy_val)
+            if hwy_clean in LOCAL_SIBLING_EXEMPT_HWY_NAMES:
+                continue
+
+        seg_geom = segments.at[seg_idx, "geometry"]
+        if seg_geom is None or seg_geom.is_empty:
+            continue
+
+        # Sample 11 points along the segment.
+        try:
+            samples = [
+                seg_geom.interpolate(seg_geom.length * i / 10.0)
+                for i in range(11)
+            ]
+        except Exception:
+            samples = [seg_geom.representative_point()]
+
+        # The Local/Other match passes if ANY matched corridor has a
+        # state-system sibling that keeps the segment close.
+        stays_close = False
+        for ckey in corridor_keys:
+            if corridor_public_name.get(ckey) is None:
+                continue  # unnamed corridor — sibling check not meaningful
+            state_geoms = state_geoms_by_corridor.get(ckey, [])
+            if not state_geoms:
+                continue
+            near_count = 0
+            for sample in samples:
+                for sg in state_geoms:
+                    if sample.distance(sg) <= LOCAL_SIBLING_SAMPLE_DIST_M:
+                        near_count += 1
+                        break
+            if near_count / len(samples) >= LOCAL_SIBLING_SAMPLE_FRAC:
+                stays_close = True
+                break
+
+        # If the match is ONLY to unnamed corridors, preserve it — no
+        # state-system sibling check is meaningful for unnamed features.
+        if not stays_close:
+            has_named = any(
+                corridor_public_name.get(ck) is not None for ck in corridor_keys
+            )
+            if not has_named:
+                continue  # unnamed-only — don't filter
+            to_remove.append(seg_idx)
+
+    for seg_idx in to_remove:
+        del results[seg_idx]
+
+    if to_remove:
+        LOGGER.info(
+            "Local/Other sibling filter removed %d matches "
+            "(Local/Other segments without state-system evac sibling within "
+            "%.0f m along >=%.0f%% of length)",
+            len(to_remove), LOCAL_SIBLING_SAMPLE_DIST_M,
+            LOCAL_SIBLING_SAMPLE_FRAC * 100,
+        )
+
+    return len(to_remove)
 
 
 # Backward-compatible alias while callers move to the public helper name.
