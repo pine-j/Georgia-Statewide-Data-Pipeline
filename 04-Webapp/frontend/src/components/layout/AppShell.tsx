@@ -156,14 +156,12 @@ export function AppShell() {
       undefined
     );
   }, [selectedVisualization, themeFilters]);
-  const roadwayLoader = useRoadwayLoader(
-    selectedDistricts,
-    selectedCounties,
-    selectedHighwayTypes,
-    true,
-  );
-  const boundaryLayersQuery = useBoundaryLayersQuery(
-    {
+  // Build a single QueryFilters object that threads all 9 admin-geography
+  // dims + include_unincorporated into every data-fetching hook. Memoised
+  // so the object identity only changes when the underlying selections
+  // change, keeping useRoadwayLoader's filterKey stable across renders.
+  const queryFilters = useMemo(
+    () => ({
       districts: selectedDistricts,
       counties: selectedCounties,
       highwayTypes: selectedHighwayTypes,
@@ -175,7 +173,24 @@ export function AppShell() {
       congressionalDistricts: selectedCongressionalDistricts,
       cities: selectedCities,
       includeUnincorporated,
-    },
+    }),
+    [
+      selectedDistricts,
+      selectedCounties,
+      selectedHighwayTypes,
+      selectedAreaOffices,
+      selectedMpos,
+      selectedRegionalCommissions,
+      selectedStateHouseDistricts,
+      selectedStateSenateDistricts,
+      selectedCongressionalDistricts,
+      selectedCities,
+      includeUnincorporated,
+    ],
+  );
+  const roadwayLoader = useRoadwayLoader(queryFilters, true);
+  const boundaryLayersQuery = useBoundaryLayersQuery(
+    queryFilters,
     boundaryOverlayVisibility,
     true,
   );
@@ -257,7 +272,7 @@ export function AppShell() {
     detailAbortRef.current?.abort();
     closeRoadwayDetail();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDistricts, selectedCounties, selectedHighwayTypes]);
+  }, [queryFilters]);
 
   const handleDistrictChange = (districts: number[]) => {
     const nextSelectedCounties = selectedCounties.filter((countyName) =>
