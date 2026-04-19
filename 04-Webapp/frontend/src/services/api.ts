@@ -14,11 +14,29 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const DEFAULT_STATE = "ga";
 
-interface QueryFilters {
+export interface QueryFilters {
   districts?: number[];
   counties?: string[];
   highwayTypes?: string[];
+  areaOffices?: number[];
+  mpos?: string[];
+  regionalCommissions?: number[];
+  stateHouseDistricts?: number[];
+  stateSenateDistricts?: number[];
+  congressionalDistricts?: number[];
+  cities?: number[];
+  includeUnincorporated?: boolean;
 }
+
+export type BoundaryType =
+  | "counties"
+  | "districts"
+  | "area_offices"
+  | "mpos"
+  | "regional_commissions"
+  | "state_house"
+  | "state_senate"
+  | "congressional";
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { signal });
@@ -42,19 +60,31 @@ export function getStates(): Promise<StateOption[]> {
   return fetchJson<StateOption[]>("/meta/states");
 }
 
-function buildFilterQuery({ districts, counties, highwayTypes }: QueryFilters): string {
+function appendAll<T>(
+  params: URLSearchParams,
+  key: string,
+  values: readonly T[] | undefined,
+): void {
+  for (const value of values ?? []) {
+    params.append(key, String(value));
+  }
+}
+
+export function buildFilterQuery(filters: QueryFilters): string {
   const params = new URLSearchParams({ state: DEFAULT_STATE });
 
-  for (const district of districts ?? []) {
-    params.append("district", String(district));
-  }
-
-  for (const county of counties ?? []) {
-    params.append("county", county);
-  }
-
-  for (const highwayType of highwayTypes ?? []) {
-    params.append("highway_type", highwayType);
+  appendAll(params, "district", filters.districts);
+  appendAll(params, "county", filters.counties);
+  appendAll(params, "highway_type", filters.highwayTypes);
+  appendAll(params, "area_office", filters.areaOffices);
+  appendAll(params, "mpo", filters.mpos);
+  appendAll(params, "regional_commission", filters.regionalCommissions);
+  appendAll(params, "state_house", filters.stateHouseDistricts);
+  appendAll(params, "state_senate", filters.stateSenateDistricts);
+  appendAll(params, "congressional", filters.congressionalDistricts);
+  appendAll(params, "city", filters.cities);
+  if (filters.includeUnincorporated) {
+    params.set("include_unincorporated", "true");
   }
 
   return params.toString();
@@ -109,7 +139,7 @@ export function getBounds(filters: QueryFilters): Promise<BoundsResponse> {
 }
 
 export function getBoundaryLayer(
-  boundaryType: "counties" | "districts",
+  boundaryType: BoundaryType,
   filters: QueryFilters,
   signal?: AbortSignal,
 ): Promise<GeoJsonFeatureCollection> {

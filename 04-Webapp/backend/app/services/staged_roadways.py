@@ -13,18 +13,26 @@ from shapely.geometry import mapping
 
 from app.schemas import (
     AnalyticsSummaryResponse,
+    AreaOfficeOption,
+    CityOption,
+    CongressionalOption,
     CountyOption,
-    FunctionalClassSummary,
-    GeorgiaFilterOptionsResponse,
     DistrictOption,
+    FunctionalClassSummary,
     GeoJsonFeature,
     GeoJsonFeatureCollection,
+    GeorgiaFilterOptionsResponse,
     HighwayTypeOption,
+    MpoOption,
+    RegionalCommissionOption,
     RoadwayDetailResponse,
     RoadwayFeature,
     RoadwayFeatureCollection,
     RoadwayFeatureProperties,
+    RoadwayFilters,
     RoadwayManifestResponse,
+    StateHouseOption,
+    StateSenateOption,
 )
 from app.services.roadway_visualizations import (
     THEMATIC_PROPERTY_SQL,
@@ -74,6 +82,55 @@ HIGHWAY_TYPE_ROUTE_FAMILY_ALIASES = {
 }
 _STAGED_DATA_CACHE_STAMP: tuple[int | None, int | None] | None = None
 _PROPERTY_MIN_MAX_CACHE: dict[tuple[str, str], tuple[float | None, float | None]] = {}
+
+# Dispatch dict mapping each boundary layer to the segment filters that
+# should constrain its query. Keys name the layer in the staged GPKG;
+# values map a RoadwayFilters attribute to the layer column that holds
+# the corresponding id. Adding a new filter to an existing layer or a new
+# layer to the dispatch is a one-line change - no hardcoded if/elif.
+# City boundaries are intentionally omitted: city is filter-only, never a
+# map overlay layer.
+BOUNDARY_FILTER_COLUMNS: dict[str, dict[str, str]] = {
+    "county_boundaries": {
+        "district": "GDOT_DISTRICT",
+        "counties": "COUNTYFP",
+    },
+    "district_boundaries": {
+        "district": "GDOT_DISTRICT",
+    },
+    "area_office_boundaries": {
+        "district": "AREA_OFFICE_DISTRICT",
+        "area_offices": "AREA_OFFICE_ID",
+    },
+    "mpo_boundaries": {
+        "mpos": "MPO_ID",
+    },
+    "regional_commission_boundaries": {
+        "regional_commissions": "RC_ID",
+    },
+    "state_house_boundaries": {
+        "state_house_districts": "STATE_HOUSE_DISTRICT",
+    },
+    "state_senate_boundaries": {
+        "state_senate_districts": "STATE_SENATE_DISTRICT",
+    },
+    "congressional_boundaries": {
+        "congressional_districts": "CONGRESSIONAL_DISTRICT",
+    },
+}
+
+# Maps the external boundary_type path segment to the staged GPKG layer
+# name. City is intentionally absent - see BOUNDARY_FILTER_COLUMNS.
+BOUNDARY_TYPE_TO_LAYER: dict[str, str] = {
+    "counties": "county_boundaries",
+    "districts": "district_boundaries",
+    "area_offices": "area_office_boundaries",
+    "mpos": "mpo_boundaries",
+    "regional_commissions": "regional_commission_boundaries",
+    "state_house": "state_house_boundaries",
+    "state_senate": "state_senate_boundaries",
+    "congressional": "congressional_boundaries",
+}
 
 
 def _is_missing(value: Any) -> bool:
@@ -250,30 +307,113 @@ def _escape_sql_literal(value: str) -> str:
     return value.replace("'", "''")
 
 
-def _build_sqlite_filters(
-    district: tuple[int, ...] | None,
-    county_names: tuple[str, ...],
-    highway_route_families: tuple[str, ...],
-) -> tuple[str, list[Any]]:
+def resolve_filters_from_request(
+    district: list[int] | None = None,
+    counties: list[str] | None = None,
+    highway_types: list[str] | None = None,
+    area_offices: list[int] | None = None,
+    mpos: list[str] | None = None,
+    regional_commissions: list[int] | None = None,
+    state_house_districts: list[int] | None = None,
+    state_senate_districts: list[int] | None = None,
+    congressional_districts: list[int] | None = None,
+    cities: list[int] | None = None,
+    include_unincorporated: bool = False,
+) -> RoadwayFilters:
+    """Build the canonical RoadwayFilters from raw FastAPI query params.
+
+    - `counties` (display names) resolves to a sorted tuple of name
+      strings; WHERE builders match against the segment table's
+      county_all / COUNTY_NAME columns.
+    - `highway_types` resolves to ROUTE_FAMILY values (Interstate, etc).
+    - All other lists are cast to sorted tuples of ids.
+    """
+    return RoadwayFilters(
+        district=tuple(sorted(district)) if district else (),
+        counties=_selected_county_names(counties),
+        highway_route_families=_selected_highway_route_families(highway_types),
+        area_offices=tuple(sorted(area_offices)) if area_offices else (),
+        mpos=tuple(sorted(str(m).strip() for m in mpos if str(m).strip())) if mpos else (),
+        regional_commissions=(
+            tuple(sorted(regional_commissions)) if regional_commissions else ()
+        ),
+        state_house_districts=(
+            tuple(sorted(state_house_districts)) if state_house_districts else ()
+        ),
+        state_senate_districts=(
+            tuple(sorted(state_senate_districts)) if state_senate_districts else ()
+        ),
+        congressional_districts=(
+            tuple(sorted(congressional_districts)) if congressional_districts else ()
+        ),
+        cities=tuple(sorted(cities)) if cities else (),
+        include_unincorporated=bool(include_unincorporated),
+    )
+
+
+def _segment_in_list_clause(column: str, values: tuple, quote_values: bool) -> str:
+    """Build a segment WHERE fragment like `COL IN ('a','b')` or `COL IN (1,2)`.
+
+    Centralized here so the two query-string builders (sqlite /
+    pyogrio) share one idempotent format. Callers own the outer
+    grouping parentheses when combining with other clauses.
+    """
+    if not values:
+        return ""
+    if quote_values:
+        rendered = ", ".join(f"'{_escape_sql_literal(str(v))}'" for v in values)
+    else:
+        rendered = ", ".join(str(v) for v in values)
+    return f"{column} IN ({rendered})"
+
+
+# (segment_attr, column_name, needs_quoting). Shared between
+# _build_sqlite_filters and _build_gpkg_where so a new filter added to
+# RoadwayFilters only needs one row here, not two WHERE-builder edits.
+_SEGMENT_FILTER_SPECS: tuple[tuple[str, str, bool], ...] = (
+    ("district", "DISTRICT", False),
+    ("area_offices", "AREA_OFFICE_ID", False),
+    ("mpos", "MPO_ID", True),
+    ("regional_commissions", "RC_ID", False),
+    ("state_house_districts", "STATE_HOUSE_DISTRICT", False),
+    ("state_senate_districts", "STATE_SENATE_DISTRICT", False),
+    ("congressional_districts", "CONGRESSIONAL_DISTRICT", False),
+)
+
+
+def _build_sqlite_filters(filters: RoadwayFilters) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
 
-    if district:
-        clauses.append("(" + " OR ".join("DISTRICT = ?" for _ in district) + ")")
-        params.extend(district)
+    for attr, column, needs_quote in _SEGMENT_FILTER_SPECS:
+        values = getattr(filters, attr)
+        if not values:
+            continue
+        placeholders = ", ".join("?" for _ in values)
+        clauses.append(f"{column} IN ({placeholders})")
+        params.extend(values)
 
-    if county_names:
+    if filters.counties:
         county_expression = _county_all_match_expression()
         clauses.append(
-            "(" + " OR ".join(f"{county_expression} LIKE ?" for _ in county_names) + ")"
+            "(" + " OR ".join(f"{county_expression} LIKE ?" for _ in filters.counties) + ")"
         )
-        params.extend(f"%,{county_name},%" for county_name in county_names)
+        params.extend(f"%,{county_name},%" for county_name in filters.counties)
 
-    if highway_route_families:
-        clauses.append(
-            "(" + " OR ".join("ROUTE_FAMILY = ?" for _ in highway_route_families) + ")"
-        )
-        params.extend(highway_route_families)
+    if filters.highway_route_families:
+        placeholders = ", ".join("?" for _ in filters.highway_route_families)
+        clauses.append(f"ROUTE_FAMILY IN ({placeholders})")
+        params.extend(filters.highway_route_families)
+
+    if filters.cities or filters.include_unincorporated:
+        city_clauses: list[str] = []
+        if filters.cities:
+            placeholders = ", ".join("?" for _ in filters.cities)
+            city_clauses.append(f"CITY_ID IN ({placeholders})")
+            params.extend(filters.cities)
+        if filters.include_unincorporated:
+            city_clauses.append("CITY_ID IS NULL")
+        clauses.append("(" + " OR ".join(city_clauses) + ")")
 
     if not clauses:
         return "", params
@@ -281,30 +421,39 @@ def _build_sqlite_filters(
     return f"WHERE {' AND '.join(clauses)}", params
 
 
-def _build_gpkg_where(
-    district: tuple[int, ...] | None,
-    county_names: tuple[str, ...],
-    highway_route_families: tuple[str, ...],
-) -> str:
+def _build_gpkg_where(filters: RoadwayFilters) -> str:
     clauses: list[str] = []
 
-    if district:
-        clauses.append("(" + " OR ".join(f"DISTRICT = {d}" for d in district) + ")")
+    for attr, column, needs_quote in _SEGMENT_FILTER_SPECS:
+        values = getattr(filters, attr)
+        fragment = _segment_in_list_clause(column, values, needs_quote)
+        if fragment:
+            clauses.append(fragment)
 
-    if county_names:
+    if filters.counties:
         county_expression = _county_all_match_expression()
         county_patterns = " OR ".join(
             f"{county_expression} LIKE '%,{_escape_sql_literal(county_name)},%'"
-            for county_name in county_names
+            for county_name in filters.counties
         )
         clauses.append(f"({county_patterns})")
 
-    if highway_route_families:
-        route_family_patterns = " OR ".join(
-            f"ROUTE_FAMILY = '{_escape_sql_literal(route_family)}'"
-            for route_family in highway_route_families
+    if filters.highway_route_families:
+        fragment = _segment_in_list_clause(
+            "ROUTE_FAMILY", filters.highway_route_families, quote_values=True
         )
-        clauses.append(f"({route_family_patterns})")
+        if fragment:
+            clauses.append(fragment)
+
+    if filters.cities or filters.include_unincorporated:
+        city_clauses: list[str] = []
+        if filters.cities:
+            city_clauses.append(
+                _segment_in_list_clause("CITY_ID", filters.cities, quote_values=False)
+            )
+        if filters.include_unincorporated:
+            city_clauses.append("CITY_ID IS NULL")
+        clauses.append("(" + " OR ".join(city_clauses) + ")")
 
     if not clauses:
         return ""
@@ -314,17 +463,38 @@ def _build_gpkg_where(
 
 def _build_boundary_where(
     layer_name: str,
-    district: tuple[int, ...] | None,
+    filters: RoadwayFilters,
     county_codes: tuple[str, ...],
 ) -> str:
+    """Generic boundary WHERE builder driven by BOUNDARY_FILTER_COLUMNS.
+
+    Adding a new filter dimension to an existing boundary layer is a
+    one-line change in the dispatch dict. This function stays unchanged.
+    """
+    spec = BOUNDARY_FILTER_COLUMNS.get(layer_name)
+    if not spec:
+        return ""
+
     clauses: list[str] = []
+    # Counties uses county FIPS codes (COUNTYFP on the county layer). The
+    # filter-level `counties` field holds display NAMES because that is
+    # what the router receives; we pre-resolved those to 3-digit FIPS
+    # codes in the caller (`county_codes`) specifically for the
+    # county_boundaries path.
+    if "counties" in spec and county_codes:
+        column = spec["counties"]
+        quoted = ", ".join(f"'{_escape_sql_literal(code)}'" for code in county_codes)
+        clauses.append(f"{column} IN ({quoted})")
 
-    if district and layer_name in {"county_boundaries", "district_boundaries"}:
-        clauses.append("(" + " OR ".join(f"GDOT_DISTRICT = {d}" for d in district) + ")")
-
-    if county_codes and layer_name == "county_boundaries":
-        quoted_codes = ", ".join(f"'{county_code}'" for county_code in county_codes)
-        clauses.append(f"COUNTYFP IN ({quoted_codes})")
+    for filter_attr, column in spec.items():
+        if filter_attr == "counties":
+            continue  # handled above via county_codes
+        values = getattr(filters, filter_attr, ())
+        if not values:
+            continue
+        # Quote values for string id layers (currently only MPO_ID).
+        needs_quote = column == "MPO_ID"
+        clauses.append(_segment_in_list_clause(column, values, quote_values=needs_quote))
 
     if not clauses:
         return ""
@@ -440,16 +610,8 @@ def get_property_min_max(
 
 
 @lru_cache(maxsize=256)
-def _get_segment_count(
-    district: tuple[int, ...],
-    county_names: tuple[str, ...],
-    highway_route_families: tuple[str, ...],
-) -> int:
-    where_clause, params = _build_sqlite_filters(
-        district,
-        county_names,
-        highway_route_families,
-    )
+def _get_segment_count(filters: RoadwayFilters) -> int:
+    where_clause, params = _build_sqlite_filters(filters)
     query = f"SELECT COUNT(*) FROM segments {where_clause}"
 
     with _open_sqlite() as connection:
@@ -462,15 +624,9 @@ def _get_segment_count(
 
 @lru_cache(maxsize=256)
 def _get_class_summary_rows(
-    district: tuple[int, ...],
-    county_names: tuple[str, ...],
-    highway_route_families: tuple[str, ...],
+    filters: RoadwayFilters,
 ) -> tuple[tuple[str, int, float], ...]:
-    where_clause, params = _build_sqlite_filters(
-        district,
-        county_names,
-        highway_route_families,
-    )
+    where_clause, params = _build_sqlite_filters(filters)
     query = f"""
         SELECT
             FUNCTIONAL_CLASS,
@@ -498,15 +654,11 @@ def _get_class_summary_rows(
 
 
 @lru_cache(maxsize=256)
-def _get_filtered_bounds(
-    district: tuple[int, ...],
-    county_names: tuple[str, ...],
-    highway_route_families: tuple[str, ...],
-) -> list[float] | None:
-    if _get_segment_count(district, county_names, highway_route_families) == 0:
+def _get_filtered_bounds(filters: RoadwayFilters) -> list[float] | None:
+    if _get_segment_count(filters) == 0:
         return None
 
-    if not district and not county_names and not highway_route_families:
+    if filters.is_empty():
         info = pyogrio.read_info(STAGED_GPKG_PATH, layer="roadway_segments")
         total_bounds = info.get("total_bounds")
         if total_bounds is None:
@@ -514,7 +666,7 @@ def _get_filtered_bounds(
 
         return _project_bounds(tuple(float(value) for value in total_bounds))
 
-    where_clause = _build_gpkg_where(district, county_names, highway_route_families)
+    where_clause = _build_gpkg_where(filters)
     _, feature_bounds = pyogrio.read_bounds(
         STAGED_GPKG_PATH,
         layer="roadway_segments",
@@ -536,18 +688,14 @@ def _get_filtered_bounds(
 def get_staged_roadway_manifest(
     state_code: str,
     chunk_size: int,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> RoadwayManifestResponse:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_manifest(state_code, chunk_size)
 
-    county_names = _selected_county_names(counties)
-    highway_route_families = _selected_highway_route_families(highway_types)
-    district_tuple = tuple(sorted(district)) if district else ()
-    total_segments = _get_segment_count(district_tuple, county_names, highway_route_families)
+    filters = filters or RoadwayFilters()
+    total_segments = _get_segment_count(filters)
     chunk_count = math.ceil(total_segments / chunk_size) if total_segments else 0
 
     return RoadwayManifestResponse(
@@ -555,28 +703,20 @@ def get_staged_roadway_manifest(
         total_segments=total_segments,
         chunk_size=chunk_size,
         chunk_count=chunk_count,
-        bounds=_get_filtered_bounds(district_tuple, county_names, highway_route_families),
+        bounds=_get_filtered_bounds(filters),
     )
 
 
 def get_staged_roadway_summary(
     state_code: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> AnalyticsSummaryResponse:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return _empty_summary(state_code)
 
-    county_names = _selected_county_names(counties)
-    highway_route_families = _selected_highway_route_families(highway_types)
-    district_tuple = tuple(sorted(district)) if district else ()
-    class_rows = _get_class_summary_rows(
-        district_tuple,
-        county_names,
-        highway_route_families,
-    )
+    filters = filters or RoadwayFilters()
+    class_rows = _get_class_summary_rows(filters)
     classes = [
         FunctionalClassSummary(
             functional_class=functional_class,
@@ -596,36 +736,28 @@ def get_staged_roadway_summary(
 
 def get_staged_roadway_bounds(
     state_code: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> list[float] | None:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return None
 
-    county_names = _selected_county_names(counties)
-    highway_route_families = _selected_highway_route_families(highway_types)
-    district_tuple = tuple(sorted(district)) if district else ()
-    return _get_filtered_bounds(district_tuple, county_names, highway_route_families)
+    filters = filters or RoadwayFilters()
+    return _get_filtered_bounds(filters)
 
 
 def get_staged_roadway_features(
     state_code: str,
     limit: int,
     offset: int = 0,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
-    highway_types: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
 ) -> RoadwayFeatureCollection:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return RoadwayFeatureCollection(type="FeatureCollection", features=[])
 
-    county_names = _selected_county_names(counties)
-    highway_route_families = _selected_highway_route_families(highway_types)
-    district_tuple = tuple(sorted(district)) if district else ()
-    where_clause = _build_gpkg_where(district_tuple, county_names, highway_route_families)
+    filters = filters or RoadwayFilters()
+    where_clause = _build_gpkg_where(filters)
     thematic_selects = [
         f"{sql_expression} AS {alias}"
         for alias, sql_expression in THEMATIC_PROPERTY_SQL.items()
@@ -643,6 +775,19 @@ def get_staged_roadway_features(
             "AADT AS aadt,",
             "segment_length_mi AS length_miles,",
             "unique_id AS unique_id,",
+            # Step 2 admin geographies (geometry-authoritative).
+            "AREA_OFFICE_ID AS area_office_id,",
+            "AREA_OFFICE_NAME AS area_office_name,",
+            "MPO_ID AS mpo_id,",
+            "MPO_NAME AS mpo_name,",
+            "RC_ID AS rc_id,",
+            "RC_NAME AS rc_name,",
+            # Step 4 overlay flags.
+            "STATE_HOUSE_DISTRICT AS state_house_district,",
+            "STATE_SENATE_DISTRICT AS state_senate_district,",
+            "CONGRESSIONAL_DISTRICT AS congressional_district,",
+            "CITY_ID AS city_id,",
+            "CITY_NAME AS city_name,",
             ", ".join(thematic_selects) + ",",
             "geom",
             "FROM roadway_segments",
@@ -732,6 +877,29 @@ def get_staged_roadway_features(
                     sec_evac=_normalize_text(
                         getattr(row, "sec_evac", None)
                     ),
+                    # Step 2 admin geographies.
+                    area_office_id=_normalize_int(
+                        getattr(row, "area_office_id", None)
+                    ),
+                    area_office_name=_normalize_text(
+                        getattr(row, "area_office_name", None)
+                    ),
+                    mpo_id=_normalize_text(getattr(row, "mpo_id", None)),
+                    mpo_name=_normalize_text(getattr(row, "mpo_name", None)),
+                    rc_id=_normalize_int(getattr(row, "rc_id", None)),
+                    rc_name=_normalize_text(getattr(row, "rc_name", None)),
+                    # Step 4 overlay flags.
+                    state_house_district=_normalize_int(
+                        getattr(row, "state_house_district", None)
+                    ),
+                    state_senate_district=_normalize_int(
+                        getattr(row, "state_senate_district", None)
+                    ),
+                    congressional_district=_normalize_int(
+                        getattr(row, "congressional_district", None)
+                    ),
+                    city_id=_normalize_int(getattr(row, "city_id", None)),
+                    city_name=_normalize_text(getattr(row, "city_name", None)),
                 ),
             )
         )
@@ -742,23 +910,27 @@ def get_staged_roadway_features(
 def get_staged_boundary_features(
     state_code: str,
     boundary_type: str,
-    district: list[int] | None = None,
-    counties: list[str] | None = None,
+    filters: RoadwayFilters | None = None,
+    county_codes_override: tuple[str, ...] | None = None,
 ) -> GeoJsonFeatureCollection:
     _ensure_staged_data_cache_fresh()
     if state_code != SUPPORTED_STATE:
         return GeoJsonFeatureCollection(type="FeatureCollection", features=[])
 
-    layer_name = {
-        "counties": "county_boundaries",
-        "districts": "district_boundaries",
-    }.get(boundary_type)
+    layer_name = BOUNDARY_TYPE_TO_LAYER.get(boundary_type)
     if layer_name is None:
         return GeoJsonFeatureCollection(type="FeatureCollection", features=[])
 
-    county_codes = _selected_county_codes(counties)
-    district_tuple = tuple(sorted(district)) if district else ()
-    where_clause = _build_boundary_where(layer_name, district_tuple, county_codes)
+    filters = filters or RoadwayFilters()
+    # Resolve county NAMES (from filters.counties) to 3-digit FIPS codes
+    # for boundary queries that filter on COUNTYFP. Callers that already
+    # hold FIPS codes (e.g. internal cascade helpers) can short-circuit
+    # via county_codes_override.
+    if county_codes_override is not None:
+        county_codes = county_codes_override
+    else:
+        county_codes = _selected_county_codes(list(filters.counties))
+    where_clause = _build_boundary_where(layer_name, filters, county_codes)
     query = " ".join(
         [
             "SELECT *",
@@ -791,33 +963,262 @@ def get_staged_boundary_features(
     return GeoJsonFeatureCollection(type="FeatureCollection", features=features)
 
 
+def _fetch_distinct_rows(cursor: sqlite3.Cursor, sql: str) -> list[tuple]:
+    cursor.execute(sql)
+    return list(cursor.fetchall())
+
+
+def _city_cascade_map(
+    cursor: sqlite3.Cursor,
+) -> dict[int, tuple[int | None, str | None]]:
+    """Build CITY_ID -> (district, county_name) using the plan's
+    majority-by-length rule.
+
+    For each city we already know: every segment with CITY_ID=X lies
+    entirely within one DISTRICT and one COUNTY_CODE (Step 2 splits at
+    those boundaries). So "majority city->district" is a pure segment
+    aggregation - no polygon overlay needed here; the heavy lifting was
+    done once during normalize.py re-segmentation. We use
+    segment_length_mi (not count) to match Step 4's overlay convention.
+    """
+    county_code_to_name, _ = _load_county_maps()
+    city_map: dict[int, tuple[int | None, str | None]] = {}
+
+    # District cascade
+    cursor.execute(
+        """
+        SELECT CITY_ID, DISTRICT, COALESCE(SUM(segment_length_mi), 0) AS miles
+        FROM segments
+        WHERE CITY_ID IS NOT NULL AND DISTRICT IS NOT NULL
+        GROUP BY CITY_ID, DISTRICT
+        """
+    )
+    district_by_city: dict[int, tuple[int, float]] = {}
+    for city_id, district_value, miles in cursor.fetchall():
+        city_key = int(city_id)
+        district_int = _normalize_int(district_value)
+        miles_float = float(miles or 0.0)
+        best = district_by_city.get(city_key)
+        if best is None or miles_float > best[1] or (
+            miles_float == best[1] and (district_int or 0) < best[0]
+        ):
+            if district_int is not None:
+                district_by_city[city_key] = (district_int, miles_float)
+
+    # County cascade
+    cursor.execute(
+        """
+        SELECT CITY_ID, COUNTY_CODE, COALESCE(SUM(segment_length_mi), 0) AS miles
+        FROM segments
+        WHERE CITY_ID IS NOT NULL AND COUNTY_CODE IS NOT NULL
+        GROUP BY CITY_ID, COUNTY_CODE
+        """
+    )
+    county_by_city: dict[int, tuple[str, float]] = {}
+    for city_id, county_code, miles in cursor.fetchall():
+        city_key = int(city_id)
+        code_str = _normalize_county_code(county_code)
+        miles_float = float(miles or 0.0)
+        if code_str is None:
+            continue
+        best = county_by_city.get(city_key)
+        if best is None or miles_float > best[1] or (
+            miles_float == best[1] and code_str < best[0]
+        ):
+            county_by_city[city_key] = (code_str, miles_float)
+
+    for city_key in set(district_by_city) | set(county_by_city):
+        district_pair = district_by_city.get(city_key)
+        county_pair = county_by_city.get(city_key)
+        county_name = None
+        if county_pair is not None:
+            county_name = county_code_to_name.get(county_pair[0])
+        city_map[city_key] = (
+            district_pair[0] if district_pair else None,
+            county_name,
+        )
+    return city_map
+
+
 def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
     _ensure_staged_data_cache_fresh()
     county_code_to_name, _ = _load_county_maps()
 
     with _open_sqlite() as connection:
         cursor = connection.cursor()
-        cursor.execute(
+
+        # County + District (existing).
+        county_rows = _fetch_distinct_rows(
+            cursor,
             """
             SELECT COUNTY_CODE, DISTRICT
             FROM segments
             WHERE COUNTY_CODE IS NOT NULL AND DISTRICT IS NOT NULL
             GROUP BY COUNTY_CODE, DISTRICT
             ORDER BY DISTRICT, COUNTY_CODE
-            """
+            """,
         )
-        rows = cursor.fetchall()
+
+        area_office_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT AREA_OFFICE_ID, AREA_OFFICE_NAME
+            FROM segments
+            WHERE AREA_OFFICE_ID IS NOT NULL
+            GROUP BY AREA_OFFICE_ID, AREA_OFFICE_NAME
+            ORDER BY AREA_OFFICE_ID
+            """,
+        )
+
+        mpo_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT MPO_ID, MPO_NAME
+            FROM segments
+            WHERE MPO_ID IS NOT NULL AND MPO_ID != ''
+            GROUP BY MPO_ID, MPO_NAME
+            ORDER BY MPO_NAME
+            """,
+        )
+
+        rc_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT RC_ID, RC_NAME
+            FROM segments
+            WHERE RC_ID IS NOT NULL
+            GROUP BY RC_ID, RC_NAME
+            ORDER BY RC_NAME
+            """,
+        )
+
+        state_house_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT STATE_HOUSE_DISTRICT
+            FROM segments
+            WHERE STATE_HOUSE_DISTRICT IS NOT NULL
+            GROUP BY STATE_HOUSE_DISTRICT
+            ORDER BY STATE_HOUSE_DISTRICT
+            """,
+        )
+
+        state_senate_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT STATE_SENATE_DISTRICT
+            FROM segments
+            WHERE STATE_SENATE_DISTRICT IS NOT NULL
+            GROUP BY STATE_SENATE_DISTRICT
+            ORDER BY STATE_SENATE_DISTRICT
+            """,
+        )
+
+        congressional_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT CONGRESSIONAL_DISTRICT
+            FROM segments
+            WHERE CONGRESSIONAL_DISTRICT IS NOT NULL
+            GROUP BY CONGRESSIONAL_DISTRICT
+            ORDER BY CONGRESSIONAL_DISTRICT
+            """,
+        )
+
+        city_rows = _fetch_distinct_rows(
+            cursor,
+            """
+            SELECT CITY_ID, CITY_NAME
+            FROM segments
+            WHERE CITY_ID IS NOT NULL AND CITY_NAME IS NOT NULL
+            GROUP BY CITY_ID, CITY_NAME
+            ORDER BY CITY_NAME
+            """,
+        )
+
+        city_cascade = _city_cascade_map(cursor) if city_rows else {}
 
     counties = [
         CountyOption(
-            county=county_code_to_name.get(_normalize_county_code(county_code) or "", "Unknown"),
+            county=county_code_to_name.get(
+                _normalize_county_code(county_code) or "", "Unknown"
+            ),
             county_fips=_normalize_county_code(county_code) or "",
             district=_normalize_int(district) or 0,
         )
-        for county_code, district in rows
+        for county_code, district in county_rows
+    ]
+    districts = sorted({county.district for county in counties if county.district > 0})
+
+    area_offices = [
+        AreaOfficeOption(
+            id=int(area_office_id),
+            label=_normalize_text(area_office_name) or f"Area Office {area_office_id}",
+            parent_district=int(area_office_id) // 100,
+        )
+        for area_office_id, area_office_name in area_office_rows
+        if _normalize_int(area_office_id) is not None
     ]
 
-    districts = sorted({county.district for county in counties if county.district > 0})
+    mpos = [
+        MpoOption(
+            id=str(mpo_id).strip(),
+            label=_normalize_text(mpo_name) or str(mpo_id).strip(),
+        )
+        for mpo_id, mpo_name in mpo_rows
+        if str(mpo_id).strip()
+    ]
+
+    regional_commissions = [
+        RegionalCommissionOption(
+            id=int(rc_id),
+            label=_normalize_text(rc_name) or f"RC {rc_id}",
+        )
+        for rc_id, rc_name in rc_rows
+        if _normalize_int(rc_id) is not None
+    ]
+
+    state_house_districts = [
+        StateHouseOption(
+            id=int(district_id),
+            label=f"House District {int(district_id)}",
+        )
+        for (district_id,) in state_house_rows
+        if _normalize_int(district_id) is not None
+    ]
+
+    state_senate_districts = [
+        StateSenateOption(
+            id=int(district_id),
+            label=f"Senate District {int(district_id)}",
+        )
+        for (district_id,) in state_senate_rows
+        if _normalize_int(district_id) is not None
+    ]
+
+    congressional_districts = [
+        CongressionalOption(
+            id=int(district_id),
+            label=f"Congressional District {int(district_id)}",
+        )
+        for (district_id,) in congressional_rows
+        if _normalize_int(district_id) is not None
+    ]
+
+    cities: list[CityOption] = []
+    for city_id, city_name in city_rows:
+        city_int = _normalize_int(city_id)
+        if city_int is None:
+            continue
+        district_id, county_name = city_cascade.get(city_int, (None, None))
+        cities.append(
+            CityOption(
+                id=city_int,
+                label=_normalize_text(city_name) or f"City {city_int}",
+                county=county_name,
+                district=district_id,
+            )
+        )
 
     return GeorgiaFilterOptionsResponse(
         districts=[
@@ -826,6 +1227,13 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
         ],
         counties=sorted(counties, key=lambda item: item.county),
         highway_types=list_highway_type_options(),
+        area_offices=area_offices,
+        mpos=mpos,
+        regional_commissions=regional_commissions,
+        state_house_districts=state_house_districts,
+        state_senate_districts=state_senate_districts,
+        congressional_districts=congressional_districts,
+        cities=cities,
     )
 
 

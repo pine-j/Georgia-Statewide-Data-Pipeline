@@ -6,13 +6,23 @@ import {
   RoadwayFeatureCollection,
   RoadwayVisualizationOption,
 } from "../../types/api";
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import type {
+  BoundaryOverlayVisibility,
+  ThemeFilterValue,
+} from "../../store/useAppStore";
 import { MapLibreRoadwayMap } from "./MapLibreRoadwayMap";
 
 interface MapPanelProps {
   roadwayChunks: RoadwayFeatureCollection[];
   countyBoundaries?: GeoJsonFeatureCollection;
   districtBoundaries?: GeoJsonFeatureCollection;
+  areaOfficeBoundaries?: GeoJsonFeatureCollection;
+  mpoBoundaries?: GeoJsonFeatureCollection;
+  regionalCommissionBoundaries?: GeoJsonFeatureCollection;
+  stateHouseBoundaries?: GeoJsonFeatureCollection;
+  stateSenateBoundaries?: GeoJsonFeatureCollection;
+  congressionalBoundaries?: GeoJsonFeatureCollection;
+  boundaryOverlayVisibility?: BoundaryOverlayVisibility;
   loadToken: number;
   bounds?: BoundsResponse["bounds"];
   isLoading: boolean;
@@ -45,6 +55,13 @@ export function MapPanel({
   roadwayChunks,
   countyBoundaries,
   districtBoundaries,
+  areaOfficeBoundaries,
+  mpoBoundaries,
+  regionalCommissionBoundaries,
+  stateHouseBoundaries,
+  stateSenateBoundaries,
+  congressionalBoundaries,
+  boundaryOverlayVisibility,
   loadToken,
   bounds,
   isLoading,
@@ -80,6 +97,13 @@ export function MapPanel({
           roadwayChunks={roadwayChunks}
           countyBoundaries={countyBoundaries}
           districtBoundaries={districtBoundaries}
+          areaOfficeBoundaries={areaOfficeBoundaries}
+          mpoBoundaries={mpoBoundaries}
+          regionalCommissionBoundaries={regionalCommissionBoundaries}
+          stateHouseBoundaries={stateHouseBoundaries}
+          stateSenateBoundaries={stateSenateBoundaries}
+          congressionalBoundaries={congressionalBoundaries}
+          boundaryOverlayVisibility={boundaryOverlayVisibility}
           loadToken={loadToken}
           bounds={bounds}
           selectedVisualization={selectedVisualization}

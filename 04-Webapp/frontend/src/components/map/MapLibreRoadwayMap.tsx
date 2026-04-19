@@ -7,7 +7,11 @@ import {
   RoadwayFeatureCollection,
   RoadwayVisualizationOption,
 } from "../../types/api";
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import type {
+  BoundaryOverlayVisibility,
+  ThemeFilterValue,
+} from "../../store/useAppStore";
+import { DEFAULT_BOUNDARY_OVERLAY_VISIBILITY } from "../../store/useAppStore";
 import {
   buildRoadwayLineSortKeyExpression,
   buildThemeContextFilterColorExpression,
@@ -19,6 +23,36 @@ const DISTRICT_FILL_LAYER_ID = "district-boundaries-fill";
 const DISTRICT_LINE_LAYER_ID = "district-boundaries-line";
 const COUNTY_SOURCE_ID = "county-boundaries";
 const COUNTY_LINE_LAYER_ID = "county-boundaries-line";
+
+const AREA_OFFICE_SOURCE_ID = "area-office-boundaries";
+const AREA_OFFICE_FILL_LAYER_ID = "area-office-boundaries-fill";
+const AREA_OFFICE_LINE_LAYER_ID = "area-office-boundaries-line";
+const MPO_SOURCE_ID = "mpo-boundaries";
+const MPO_FILL_LAYER_ID = "mpo-boundaries-fill";
+const MPO_LINE_LAYER_ID = "mpo-boundaries-line";
+const REGIONAL_COMMISSION_SOURCE_ID = "regional-commission-boundaries";
+const REGIONAL_COMMISSION_FILL_LAYER_ID = "regional-commission-boundaries-fill";
+const REGIONAL_COMMISSION_LINE_LAYER_ID = "regional-commission-boundaries-line";
+const STATE_HOUSE_SOURCE_ID = "state-house-boundaries";
+const STATE_HOUSE_LINE_LAYER_ID = "state-house-boundaries-line";
+const STATE_SENATE_SOURCE_ID = "state-senate-boundaries";
+const STATE_SENATE_LINE_LAYER_ID = "state-senate-boundaries-line";
+const CONGRESSIONAL_SOURCE_ID = "congressional-boundaries";
+const CONGRESSIONAL_LINE_LAYER_ID = "congressional-boundaries-line";
+
+// Shared palette for the 8 boundary overlays. Muted tones, distinct from the
+// roadway thematic ramps so overlays read as chrome rather than data.
+export const BOUNDARY_OVERLAY_COLORS = {
+  districts: "#8b5e13",
+  counties: "#5f6e73",
+  areaOffices: "#b4673f",
+  mpos: "#4a7a6c",
+  regionalCommissions: "#7a6d4a",
+  stateHouse: "#6b4a7a",
+  stateSenate: "#4a5e7a",
+  congressional: "#8b3a5c",
+} as const;
+
 const SOURCE_ID = "roadways";
 const HIGHLIGHT_LAYER_ID = "roadways-highlight";
 const CASING_LAYER_ID = "roadways-casing";
@@ -30,6 +64,13 @@ interface MapLibreRoadwayMapProps {
   roadwayChunks: RoadwayFeatureCollection[];
   countyBoundaries?: GeoJsonFeatureCollection;
   districtBoundaries?: GeoJsonFeatureCollection;
+  areaOfficeBoundaries?: GeoJsonFeatureCollection;
+  mpoBoundaries?: GeoJsonFeatureCollection;
+  regionalCommissionBoundaries?: GeoJsonFeatureCollection;
+  stateHouseBoundaries?: GeoJsonFeatureCollection;
+  stateSenateBoundaries?: GeoJsonFeatureCollection;
+  congressionalBoundaries?: GeoJsonFeatureCollection;
+  boundaryOverlayVisibility?: BoundaryOverlayVisibility;
   loadToken: number;
   bounds?: [number, number, number, number] | null;
   selectedVisualization?: RoadwayVisualizationOption;
@@ -98,6 +139,13 @@ export function MapLibreRoadwayMap({
   roadwayChunks,
   countyBoundaries,
   districtBoundaries,
+  areaOfficeBoundaries,
+  mpoBoundaries,
+  regionalCommissionBoundaries,
+  stateHouseBoundaries,
+  stateSenateBoundaries,
+  congressionalBoundaries,
+  boundaryOverlayVisibility,
   loadToken,
   bounds,
   selectedVisualization,
@@ -106,11 +154,31 @@ export function MapLibreRoadwayMap({
   onSegmentClick,
   onBackgroundClick,
 }: MapLibreRoadwayMapProps) {
+  const effectiveOverlayVisibility =
+    boundaryOverlayVisibility ?? DEFAULT_BOUNDARY_OVERLAY_VISIBILITY;
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const roadwayChunksRef = useRef<RoadwayFeatureCollection[]>(roadwayChunks);
   const countyBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(countyBoundaries);
   const districtBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(districtBoundaries);
+  const areaOfficeBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(
+    areaOfficeBoundaries,
+  );
+  const mpoBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(mpoBoundaries);
+  const regionalCommissionBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(
+    regionalCommissionBoundaries,
+  );
+  const stateHouseBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(
+    stateHouseBoundaries,
+  );
+  const stateSenateBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(
+    stateSenateBoundaries,
+  );
+  const congressionalBoundariesRef = useRef<GeoJsonFeatureCollection | undefined>(
+    congressionalBoundaries,
+  );
+  const overlayVisibilityRef = useRef<BoundaryOverlayVisibility>(effectiveOverlayVisibility);
   const boundsRef = useRef(bounds);
   const loadTokenRef = useRef(loadToken);
   const selectedVisualizationRef = useRef<RoadwayVisualizationOption | undefined>(
@@ -125,6 +193,13 @@ export function MapLibreRoadwayMap({
   roadwayChunksRef.current = roadwayChunks;
   countyBoundariesRef.current = countyBoundaries;
   districtBoundariesRef.current = districtBoundaries;
+  areaOfficeBoundariesRef.current = areaOfficeBoundaries;
+  mpoBoundariesRef.current = mpoBoundaries;
+  regionalCommissionBoundariesRef.current = regionalCommissionBoundaries;
+  stateHouseBoundariesRef.current = stateHouseBoundaries;
+  stateSenateBoundariesRef.current = stateSenateBoundaries;
+  congressionalBoundariesRef.current = congressionalBoundaries;
+  overlayVisibilityRef.current = effectiveOverlayVisibility;
   boundsRef.current = bounds;
   loadTokenRef.current = loadToken;
   selectedVisualizationRef.current = selectedVisualization;
@@ -188,7 +263,7 @@ export function MapLibreRoadwayMap({
         type: "line",
         source: DISTRICT_SOURCE_ID,
         paint: {
-          "line-color": "#8b5e13",
+          "line-color": BOUNDARY_OVERLAY_COLORS.districts,
           "line-width": 2.2,
           "line-opacity": 0.85,
         },
@@ -212,11 +287,234 @@ export function MapLibreRoadwayMap({
         type: "line",
         source: COUNTY_SOURCE_ID,
         paint: {
-          "line-color": "#5f6e73",
+          "line-color": BOUNDARY_OVERLAY_COLORS.counties,
           "line-width": 0.9,
           "line-opacity": 0.5,
         },
       });
+    }
+
+    // Area office boundaries (Engineering family) - fill + line.
+    const areaOfficeData = areaOfficeBoundariesRef.current ?? buildEmptyCollection();
+    const areaOfficeSource = getGeoJsonSource(map, AREA_OFFICE_SOURCE_ID);
+    if (areaOfficeSource) {
+      areaOfficeSource.setData(areaOfficeData);
+    } else {
+      map.addSource(AREA_OFFICE_SOURCE_ID, {
+        type: "geojson",
+        data: areaOfficeData,
+      });
+    }
+
+    if (!map.getLayer(AREA_OFFICE_FILL_LAYER_ID)) {
+      map.addLayer({
+        id: AREA_OFFICE_FILL_LAYER_ID,
+        type: "fill",
+        source: AREA_OFFICE_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_OVERLAY_COLORS.areaOffices,
+          "fill-opacity": 0.05,
+        },
+      });
+    }
+
+    if (!map.getLayer(AREA_OFFICE_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: AREA_OFFICE_LINE_LAYER_ID,
+        type: "line",
+        source: AREA_OFFICE_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.areaOffices,
+          "line-width": 1.6,
+          "line-opacity": 0.8,
+        },
+      });
+    }
+
+    // MPO boundaries (Planning family) - fill + line.
+    const mpoData = mpoBoundariesRef.current ?? buildEmptyCollection();
+    const mpoSource = getGeoJsonSource(map, MPO_SOURCE_ID);
+    if (mpoSource) {
+      mpoSource.setData(mpoData);
+    } else {
+      map.addSource(MPO_SOURCE_ID, {
+        type: "geojson",
+        data: mpoData,
+      });
+    }
+
+    if (!map.getLayer(MPO_FILL_LAYER_ID)) {
+      map.addLayer({
+        id: MPO_FILL_LAYER_ID,
+        type: "fill",
+        source: MPO_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_OVERLAY_COLORS.mpos,
+          "fill-opacity": 0.05,
+        },
+      });
+    }
+
+    if (!map.getLayer(MPO_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: MPO_LINE_LAYER_ID,
+        type: "line",
+        source: MPO_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.mpos,
+          "line-width": 1.4,
+          "line-opacity": 0.8,
+        },
+      });
+    }
+
+    // Regional commission boundaries (Planning family) - fill + line.
+    const regionalCommissionData =
+      regionalCommissionBoundariesRef.current ?? buildEmptyCollection();
+    const regionalCommissionSource = getGeoJsonSource(map, REGIONAL_COMMISSION_SOURCE_ID);
+    if (regionalCommissionSource) {
+      regionalCommissionSource.setData(regionalCommissionData);
+    } else {
+      map.addSource(REGIONAL_COMMISSION_SOURCE_ID, {
+        type: "geojson",
+        data: regionalCommissionData,
+      });
+    }
+
+    if (!map.getLayer(REGIONAL_COMMISSION_FILL_LAYER_ID)) {
+      map.addLayer({
+        id: REGIONAL_COMMISSION_FILL_LAYER_ID,
+        type: "fill",
+        source: REGIONAL_COMMISSION_SOURCE_ID,
+        paint: {
+          "fill-color": BOUNDARY_OVERLAY_COLORS.regionalCommissions,
+          "fill-opacity": 0.05,
+        },
+      });
+    }
+
+    if (!map.getLayer(REGIONAL_COMMISSION_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: REGIONAL_COMMISSION_LINE_LAYER_ID,
+        type: "line",
+        source: REGIONAL_COMMISSION_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.regionalCommissions,
+          "line-width": 1.4,
+          "line-opacity": 0.8,
+        },
+      });
+    }
+
+    // State house boundaries (Legislative family) - line only.
+    const stateHouseData = stateHouseBoundariesRef.current ?? buildEmptyCollection();
+    const stateHouseSource = getGeoJsonSource(map, STATE_HOUSE_SOURCE_ID);
+    if (stateHouseSource) {
+      stateHouseSource.setData(stateHouseData);
+    } else {
+      map.addSource(STATE_HOUSE_SOURCE_ID, {
+        type: "geojson",
+        data: stateHouseData,
+      });
+    }
+
+    if (!map.getLayer(STATE_HOUSE_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: STATE_HOUSE_LINE_LAYER_ID,
+        type: "line",
+        source: STATE_HOUSE_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.stateHouse,
+          "line-width": 0.8,
+          "line-opacity": 0.7,
+        },
+      });
+    }
+
+    // State senate boundaries (Legislative family) - line only.
+    const stateSenateData = stateSenateBoundariesRef.current ?? buildEmptyCollection();
+    const stateSenateSource = getGeoJsonSource(map, STATE_SENATE_SOURCE_ID);
+    if (stateSenateSource) {
+      stateSenateSource.setData(stateSenateData);
+    } else {
+      map.addSource(STATE_SENATE_SOURCE_ID, {
+        type: "geojson",
+        data: stateSenateData,
+      });
+    }
+
+    if (!map.getLayer(STATE_SENATE_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: STATE_SENATE_LINE_LAYER_ID,
+        type: "line",
+        source: STATE_SENATE_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.stateSenate,
+          "line-width": 1.0,
+          "line-opacity": 0.75,
+        },
+      });
+    }
+
+    // Congressional boundaries (Legislative family) - line only.
+    const congressionalData = congressionalBoundariesRef.current ?? buildEmptyCollection();
+    const congressionalSource = getGeoJsonSource(map, CONGRESSIONAL_SOURCE_ID);
+    if (congressionalSource) {
+      congressionalSource.setData(congressionalData);
+    } else {
+      map.addSource(CONGRESSIONAL_SOURCE_ID, {
+        type: "geojson",
+        data: congressionalData,
+      });
+    }
+
+    if (!map.getLayer(CONGRESSIONAL_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: CONGRESSIONAL_LINE_LAYER_ID,
+        type: "line",
+        source: CONGRESSIONAL_SOURCE_ID,
+        paint: {
+          "line-color": BOUNDARY_OVERLAY_COLORS.congressional,
+          "line-width": 1.4,
+          "line-opacity": 0.8,
+        },
+      });
+    }
+
+    // Apply visibility layout property for each overlay. We keep the sources
+    // & layers installed and toggle `visibility` so that re-enabling an
+    // overlay is instant when data was already fetched.
+    const visibility = overlayVisibilityRef.current;
+    const overlayLayerGroups: Array<{
+      visible: boolean;
+      layerIds: readonly string[];
+    }> = [
+      {
+        visible: visibility.districts,
+        layerIds: [DISTRICT_FILL_LAYER_ID, DISTRICT_LINE_LAYER_ID],
+      },
+      { visible: visibility.counties, layerIds: [COUNTY_LINE_LAYER_ID] },
+      {
+        visible: visibility.areaOffices,
+        layerIds: [AREA_OFFICE_FILL_LAYER_ID, AREA_OFFICE_LINE_LAYER_ID],
+      },
+      { visible: visibility.mpos, layerIds: [MPO_FILL_LAYER_ID, MPO_LINE_LAYER_ID] },
+      {
+        visible: visibility.regionalCommissions,
+        layerIds: [REGIONAL_COMMISSION_FILL_LAYER_ID, REGIONAL_COMMISSION_LINE_LAYER_ID],
+      },
+      { visible: visibility.stateHouse, layerIds: [STATE_HOUSE_LINE_LAYER_ID] },
+      { visible: visibility.stateSenate, layerIds: [STATE_SENATE_LINE_LAYER_ID] },
+      { visible: visibility.congressional, layerIds: [CONGRESSIONAL_LINE_LAYER_ID] },
+    ];
+
+    for (const group of overlayLayerGroups) {
+      const layoutValue = group.visible ? "visible" : "none";
+      for (const layerId of group.layerIds) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, "visibility", layoutValue);
+        }
+      }
     }
 
     const nextData = combineRoadwayChunks(roadwayChunksRef.current);
@@ -494,6 +792,13 @@ export function MapLibreRoadwayMap({
   }, [
     countyBoundaries,
     districtBoundaries,
+    areaOfficeBoundaries,
+    mpoBoundaries,
+    regionalCommissionBoundaries,
+    stateHouseBoundaries,
+    stateSenateBoundaries,
+    congressionalBoundaries,
+    boundaryOverlayVisibility,
     loadToken,
     roadwayChunks,
     selectedVisualization,

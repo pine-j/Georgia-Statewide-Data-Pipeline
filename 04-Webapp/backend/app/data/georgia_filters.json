@@ -1,4 +1,5 @@
 {
+  "_notes": "Seed fallback payload for DATA_MODE=seed (dev/unit-test only). Production DATA_MODE=staged populates the 7 new geography option lists from the staged GPKG via get_staged_filter_options(); this file is not load-bearing there. Districts + counties are legacy static snapshots retained for parity.",
   "districts": [
     {
       "id": 1,
@@ -825,5 +826,12 @@
       "county_fips": "321",
       "district": 4
     }
-  ]
+  ],
+  "area_offices": [],
+  "mpos": [],
+  "regional_commissions": [],
+  "state_house_districts": [],
+  "state_senate_districts": [],
+  "congressional_districts": [],
+  "cities": []
 }

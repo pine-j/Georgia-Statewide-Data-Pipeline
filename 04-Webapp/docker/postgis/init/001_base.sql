@@ -19,6 +19,23 @@ CREATE TABLE IF NOT EXISTS roadway_segments (
     functional_class TEXT NOT NULL,
     aadt INTEGER,
     length_miles NUMERIC(10, 2) NOT NULL,
+    -- Step 2: geometry-authoritative admin geography columns
+    -- (populated by the staging pipeline; nullable here because the
+    -- seed rows below predate these columns and the real data comes
+    -- from the staged GPKG).
+    area_office_id INTEGER,
+    area_office_name TEXT,
+    mpo_id TEXT,
+    mpo_name TEXT,
+    rc_id INTEGER,
+    rc_name TEXT,
+    -- Step 4: overlay-based flag columns. city_id is BIGINT because
+    -- the name-hash primary key uses a 48-bit digest.
+    state_house_district INTEGER,
+    state_senate_district INTEGER,
+    congressional_district INTEGER,
+    city_id BIGINT,
+    city_name TEXT,
     geometry geometry(LineString, 4326) NOT NULL
 );
 

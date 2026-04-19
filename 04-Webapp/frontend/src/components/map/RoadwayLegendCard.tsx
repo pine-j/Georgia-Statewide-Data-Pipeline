@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
-import { Box, Checkbox, Link, Paper, Stack, Typography } from "@mui/material";
+import { Box, Checkbox, Divider, Link, Paper, Stack, Typography } from "@mui/material";
 
-import type { ThemeFilterValue } from "../../store/useAppStore";
+import type {
+  BoundaryOverlayVisibility,
+  ThemeFilterValue,
+} from "../../store/useAppStore";
 import {
   RoadwayLegendItem,
   RoadwayVisualizationOption,
@@ -14,6 +17,64 @@ import {
   getLegendItemPresenceKey,
   getLegendItemsForDisplay,
 } from "./roadwayVisualization";
+import { BOUNDARY_OVERLAY_COLORS } from "./MapLibreRoadwayMap";
+
+interface BoundaryOverlayLegendRow {
+  key: keyof BoundaryOverlayVisibility;
+  label: string;
+  color: string;
+}
+
+interface BoundaryOverlayLegendGroup {
+  groupLabel: string;
+  rows: BoundaryOverlayLegendRow[];
+}
+
+const BOUNDARY_OVERLAY_GROUPS: BoundaryOverlayLegendGroup[] = [
+  {
+    groupLabel: "Engineering",
+    rows: [
+      { key: "districts", label: "District", color: BOUNDARY_OVERLAY_COLORS.districts },
+      {
+        key: "areaOffices",
+        label: "Area Office",
+        color: BOUNDARY_OVERLAY_COLORS.areaOffices,
+      },
+    ],
+  },
+  {
+    groupLabel: "Planning",
+    rows: [
+      { key: "counties", label: "County", color: BOUNDARY_OVERLAY_COLORS.counties },
+      { key: "mpos", label: "MPO", color: BOUNDARY_OVERLAY_COLORS.mpos },
+      {
+        key: "regionalCommissions",
+        label: "Regional Commission",
+        color: BOUNDARY_OVERLAY_COLORS.regionalCommissions,
+      },
+    ],
+  },
+  {
+    groupLabel: "Legislative",
+    rows: [
+      {
+        key: "stateHouse",
+        label: "State House",
+        color: BOUNDARY_OVERLAY_COLORS.stateHouse,
+      },
+      {
+        key: "stateSenate",
+        label: "State Senate",
+        color: BOUNDARY_OVERLAY_COLORS.stateSenate,
+      },
+      {
+        key: "congressional",
+        label: "Congressional",
+        color: BOUNDARY_OVERLAY_COLORS.congressional,
+      },
+    ],
+  },
+];
 
 interface RoadwayLegendCardProps {
   visualization: RoadwayVisualizationOption;
@@ -23,6 +84,11 @@ interface RoadwayLegendCardProps {
   setThemeFilter?: (
     visualizationId: string,
     patch: Partial<ThemeFilterValue>,
+  ) => void;
+  boundaryOverlayVisibility?: BoundaryOverlayVisibility;
+  onBoundaryOverlayToggle?: (
+    overlay: keyof BoundaryOverlayVisibility,
+    visible: boolean,
   ) => void;
 }
 
@@ -94,7 +160,12 @@ export function RoadwayLegendCard({
   themeFilterValue,
   defaultThemeFilterValue,
   setThemeFilter,
+  boundaryOverlayVisibility,
+  onBoundaryOverlayToggle,
 }: RoadwayLegendCardProps) {
+  const showBoundaryOverlays = Boolean(
+    boundaryOverlayVisibility && onBoundaryOverlayToggle,
+  );
   const filterSpec = getToggleableFilterSpec(visualization);
   const isFilterable = Boolean(
     filterSpec &&
@@ -384,6 +455,76 @@ export function RoadwayLegendCard({
           <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, fontSize: "0.68rem" }}>
             {visualization.notes}
           </Typography>
+        )}
+
+        {showBoundaryOverlays && boundaryOverlayVisibility && onBoundaryOverlayToggle && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <Stack spacing={0.6}>
+              <Typography
+                variant="subtitle2"
+                sx={{ fontWeight: 700, fontSize: "0.72rem" }}
+              >
+                Boundary Overlays
+              </Typography>
+
+              {BOUNDARY_OVERLAY_GROUPS.map((group) => (
+                <Stack key={group.groupLabel} spacing={0.25}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      fontSize: "0.62rem",
+                      letterSpacing: 0.4,
+                      textTransform: "uppercase",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {group.groupLabel}
+                  </Typography>
+
+                  {group.rows.map((row) => {
+                    const checked = boundaryOverlayVisibility[row.key];
+                    return (
+                      <Box
+                        key={row.key}
+                        role="button"
+                        onClick={() => onBoundaryOverlayToggle(row.key, !checked)}
+                        sx={FILTER_ROW_GRID}
+                      >
+                        <Checkbox
+                          icon={<CheckBoxOutlineBlankIcon fontSize="inherit" />}
+                          checkedIcon={<CheckBoxIcon fontSize="inherit" />}
+                          checked={checked}
+                          onChange={(event) =>
+                            onBoundaryOverlayToggle(row.key, event.target.checked)
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                          size="small"
+                          sx={{ p: 0, fontSize: "0.95rem" }}
+                        />
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: "2px",
+                            bgcolor: row.color,
+                            border: "1px solid rgba(16, 35, 47, 0.12)",
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          sx={{ lineHeight: 1.35, fontSize: "0.68rem" }}
+                        >
+                          {row.label}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              ))}
+            </Stack>
+          </>
         )}
       </Stack>
     </Paper>

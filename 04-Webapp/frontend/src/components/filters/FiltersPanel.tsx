@@ -2,9 +2,12 @@ import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Autocomplete,
-  AutocompleteRenderGroupParams,
   Box,
   Button,
   Checkbox,
@@ -17,21 +20,39 @@ import {
 } from "@mui/material";
 
 import {
+  AreaOfficeOption,
+  CityOption,
+  CongressionalOption,
   CountyOption,
   DistrictOption,
   HighwayTypeOption,
+  MpoOption,
+  RegionalCommissionOption,
   RoadwayVisualizationCatalog,
   RoadwayVisualizationOption,
+  StateHouseOption,
+  StateSenateOption,
 } from "../../types/api";
-import type { ThemeFilterState, ThemeFilterValue } from "../../store/useAppStore";
+import type {
+  BoundaryOverlayVisibility,
+  ThemeFilterState,
+  ThemeFilterValue,
+} from "../../store/useAppStore";
 import { RoadwayLegendCard } from "../map/RoadwayLegendCard";
 import { LegendPresence } from "../map/roadwayVisualization";
+import { GeographyAutocomplete } from "./GeographyAutocomplete";
 import { ThemeContextFilter } from "./ThemeContextFilter";
 
 const ALL_DISTRICTS_OPTION: DistrictOption = { id: -1, label: "All Districts" };
 
 interface ActiveThemeFilterChip {
   key: string;
+  label: string;
+  onDelete: () => void;
+}
+
+interface FilterChipSpec {
+  key: string | number;
   label: string;
   onDelete: () => void;
 }
@@ -101,9 +122,24 @@ interface FiltersPanelProps {
   districts: DistrictOption[];
   counties: CountyOption[];
   highwayTypes: HighwayTypeOption[];
+  areaOffices: AreaOfficeOption[];
+  mpos: MpoOption[];
+  regionalCommissions: RegionalCommissionOption[];
+  stateHouseDistricts: StateHouseOption[];
+  stateSenateDistricts: StateSenateOption[];
+  congressionalDistricts: CongressionalOption[];
+  cities: CityOption[];
   selectedDistricts: number[];
   selectedCounties: string[];
   selectedHighwayTypes: string[];
+  selectedAreaOffices: number[];
+  selectedMpos: string[];
+  selectedRegionalCommissions: number[];
+  selectedStateHouseDistricts: number[];
+  selectedStateSenateDistricts: number[];
+  selectedCongressionalDistricts: number[];
+  selectedCities: number[];
+  includeUnincorporated: boolean;
   themeFilters: ThemeFilterState;
   roadwayVisualizationCatalog?: RoadwayVisualizationCatalog;
   selectedVisualizationId: string;
@@ -115,10 +151,30 @@ interface FiltersPanelProps {
   onCountyDelete: (county: string) => void;
   onHighwayTypeChange: (highwayTypes: string[]) => void;
   onHighwayTypeDelete: (highwayTypeId: string) => void;
+  onAreaOfficeChange: (ids: number[]) => void;
+  onAreaOfficeDelete: (id: number) => void;
+  onMpoChange: (ids: string[]) => void;
+  onMpoDelete: (id: string) => void;
+  onRegionalCommissionChange: (ids: number[]) => void;
+  onRegionalCommissionDelete: (id: number) => void;
+  onStateHouseChange: (ids: number[]) => void;
+  onStateHouseDelete: (id: number) => void;
+  onStateSenateChange: (ids: number[]) => void;
+  onStateSenateDelete: (id: number) => void;
+  onCongressionalChange: (ids: number[]) => void;
+  onCongressionalDelete: (id: number) => void;
+  onCityChange: (ids: number[]) => void;
+  onCityDelete: (id: number) => void;
+  onIncludeUnincorporatedChange: (value: boolean) => void;
   setThemeFilter: (visualizationId: string, patch: Partial<ThemeFilterValue>) => void;
   resetThemeFilter: (visualizationId: string) => void;
   selectedVisualization?: RoadwayVisualizationOption;
   legendPresence?: LegendPresence | null;
+  boundaryOverlayVisibility?: BoundaryOverlayVisibility;
+  onBoundaryOverlayToggle?: (
+    overlay: keyof BoundaryOverlayVisibility,
+    visible: boolean,
+  ) => void;
   onResetFilters: () => void;
   onVisualizationChange: (visualizationId: string) => void;
 }
@@ -127,9 +183,24 @@ export function FiltersPanel({
   districts,
   counties,
   highwayTypes,
+  areaOffices,
+  mpos,
+  regionalCommissions,
+  stateHouseDistricts,
+  stateSenateDistricts,
+  congressionalDistricts,
+  cities,
   selectedDistricts,
   selectedCounties,
   selectedHighwayTypes,
+  selectedAreaOffices,
+  selectedMpos,
+  selectedRegionalCommissions,
+  selectedStateHouseDistricts,
+  selectedStateSenateDistricts,
+  selectedCongressionalDistricts,
+  selectedCities,
+  includeUnincorporated,
   themeFilters,
   roadwayVisualizationCatalog,
   selectedVisualizationId,
@@ -143,8 +214,25 @@ export function FiltersPanel({
   onCountyDelete,
   onHighwayTypeChange,
   onHighwayTypeDelete,
+  onAreaOfficeChange,
+  onAreaOfficeDelete,
+  onMpoChange,
+  onMpoDelete,
+  onRegionalCommissionChange,
+  onRegionalCommissionDelete,
+  onStateHouseChange,
+  onStateHouseDelete,
+  onStateSenateChange,
+  onStateSenateDelete,
+  onCongressionalChange,
+  onCongressionalDelete,
+  onCityChange,
+  onCityDelete,
+  onIncludeUnincorporatedChange,
   setThemeFilter,
   resetThemeFilter,
+  boundaryOverlayVisibility,
+  onBoundaryOverlayToggle,
   onResetFilters,
   onVisualizationChange,
 }: FiltersPanelProps) {
@@ -153,23 +241,27 @@ export function FiltersPanel({
   const selectedDistrictOptions = isAllDistricts
     ? []
     : districts.filter((district) => selectedDistricts.includes(district.id));
-  const countyOptions =
-    selectedDistricts.length > 0
-      ? counties.filter((county) => selectedDistricts.includes(county.district))
-      : counties;
 
   const districtLabelMap = new Map(districts.map((district) => [district.id, district.label]));
-
-  const sortedCountyOptions = [...countyOptions].sort((left, right) => {
-    if (left.district !== right.district) {
-      return left.district - right.district;
-    }
-    return left.county.localeCompare(right.county);
-  });
 
   const selectedHighwayTypeOptions = highwayTypes.filter((highwayType) =>
     selectedHighwayTypes.includes(highwayType.id),
   );
+
+  const areaOfficeLabelMap = new Map(areaOffices.map((ao) => [ao.id, ao.label]));
+  const mpoLabelMap = new Map(mpos.map((m) => [m.id, m.label]));
+  const rcLabelMap = new Map(regionalCommissions.map((rc) => [rc.id, rc.label]));
+  const stateHouseLabelMap = new Map(
+    stateHouseDistricts.map((sh) => [sh.id, sh.label]),
+  );
+  const stateSenateLabelMap = new Map(
+    stateSenateDistricts.map((ss) => [ss.id, ss.label]),
+  );
+  const congressionalLabelMap = new Map(
+    congressionalDistricts.map((cd) => [cd.id, cd.label]),
+  );
+  const cityLabelMap = new Map(cities.map((c) => [c.id, c.label]));
+
   const thematicOptions = roadwayVisualizationCatalog?.thematic_options ?? [];
   const defaultThemeFilterValue = buildDefaultThemeFilterValue(selectedVisualization);
   const effectiveThemeFilterValue = getEffectiveThemeFilterValue(
@@ -261,6 +353,14 @@ export function FiltersPanel({
     selectedDistricts.length ||
       selectedCounties.length ||
       selectedHighwayTypeOptions.length ||
+      selectedAreaOffices.length ||
+      selectedMpos.length ||
+      selectedRegionalCommissions.length ||
+      selectedStateHouseDistricts.length ||
+      selectedStateSenateDistricts.length ||
+      selectedCongressionalDistricts.length ||
+      selectedCities.length ||
+      includeUnincorporated ||
       themeFilterChips.length,
   );
 
@@ -272,6 +372,180 @@ export function FiltersPanel({
 
     onDistrictChange(values.filter((value) => value.id !== ALL_DISTRICTS_OPTION.id).map((value) => value.id));
   };
+
+  const renderFilterChipRow = (label: string, chips: FilterChipSpec[]) => {
+    if (chips.length === 0) {
+      return null;
+    }
+
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 0.5,
+          minWidth: 0,
+        }}
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+          {label}:
+        </Typography>
+        <Box
+          sx={{
+            minWidth: 0,
+            flex: 1,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 0.5,
+          }}
+        >
+          {chips.map((chip) => (
+            <Box
+              key={chip.key}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.5,
+                minWidth: 0,
+                px: 0.5,
+                py: 0.125,
+                borderRadius: "4px",
+                bgcolor: "rgba(17, 61, 73, 0.06)",
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.primary",
+                  fontWeight: 600,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {chip.label}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={chip.onDelete}
+                aria-label={`Remove ${chip.label} ${label} filter`}
+                sx={{ p: 0.25 }}
+              >
+                <CloseRoundedIcon fontSize="inherit" />
+              </IconButton>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    );
+  };
+
+  const highwayTypeChips: FilterChipSpec[] = selectedHighwayTypeOptions.map((highwayType) => ({
+    key: highwayType.id,
+    label: highwayType.label,
+    onDelete: () => onHighwayTypeDelete(highwayType.id),
+  }));
+
+  const districtChips: FilterChipSpec[] = selectedDistrictOptions.map((district) => ({
+    key: district.id,
+    label: district.label,
+    onDelete: () => onDistrictDelete(district.id),
+  }));
+
+  const areaOfficeChips: FilterChipSpec[] = selectedAreaOffices.map((id) => ({
+    key: id,
+    label: areaOfficeLabelMap.get(id) ?? `Area Office ${id}`,
+    onDelete: () => onAreaOfficeDelete(id),
+  }));
+
+  const countyChips: FilterChipSpec[] = selectedCounties.map((county) => ({
+    key: county,
+    label: county,
+    onDelete: () => onCountyDelete(county),
+  }));
+
+  const mpoChips: FilterChipSpec[] = selectedMpos.map((id) => ({
+    key: id,
+    label: mpoLabelMap.get(id) ?? id,
+    onDelete: () => onMpoDelete(id),
+  }));
+
+  const rcChips: FilterChipSpec[] = selectedRegionalCommissions.map((id) => ({
+    key: id,
+    label: rcLabelMap.get(id) ?? `RC ${id}`,
+    onDelete: () => onRegionalCommissionDelete(id),
+  }));
+
+  const cityChipsFromSelection: FilterChipSpec[] = selectedCities.map((id) => ({
+    key: id,
+    label: cityLabelMap.get(id) ?? `City ${id}`,
+    onDelete: () => onCityDelete(id),
+  }));
+
+  const cityChips: FilterChipSpec[] = includeUnincorporated
+    ? [
+        {
+          key: "__unincorporated__",
+          label: "Unincorporated",
+          onDelete: () => onIncludeUnincorporatedChange(false),
+        },
+        ...cityChipsFromSelection,
+      ]
+    : cityChipsFromSelection;
+
+  const stateHouseChips: FilterChipSpec[] = selectedStateHouseDistricts.map((id) => ({
+    key: id,
+    label: stateHouseLabelMap.get(id) ?? `HD ${id}`,
+    onDelete: () => onStateHouseDelete(id),
+  }));
+
+  const stateSenateChips: FilterChipSpec[] = selectedStateSenateDistricts.map((id) => ({
+    key: id,
+    label: stateSenateLabelMap.get(id) ?? `SD ${id}`,
+    onDelete: () => onStateSenateDelete(id),
+  }));
+
+  const congressionalChips: FilterChipSpec[] = selectedCongressionalDistricts.map((id) => ({
+    key: id,
+    label: congressionalLabelMap.get(id) ?? `CD ${id}`,
+    onDelete: () => onCongressionalDelete(id),
+  }));
+
+  const accordionSx = {
+    "&:before": { display: "none" },
+    boxShadow: "none",
+    border: "1px solid rgba(17, 61, 73, 0.12)",
+    borderRadius: 1,
+    "&.Mui-expanded": { margin: 0 },
+  } as const;
+
+  const accordionSummarySx = {
+    minHeight: 36,
+    px: 1.25,
+    "&.Mui-expanded": { minHeight: 36 },
+    "& .MuiAccordionSummary-content": {
+      my: 0.5,
+      "&.Mui-expanded": { my: 0.5 },
+    },
+  } as const;
+
+  const accordionDetailsSx = {
+    px: 1,
+    pt: 1,
+    pb: 1.25,
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+  } as const;
+
+  const accordionTitleSx = {
+    fontWeight: 700,
+    fontSize: "0.72rem",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: "#47626b",
+  } as const;
 
   return (
     <Paper
@@ -361,67 +635,7 @@ export function FiltersPanel({
                 </Button>
               </Box>
 
-              {selectedHighwayTypeOptions.length > 0 && (
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 0.5,
-                    minWidth: 0,
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                    Highway Type:
-                  </Typography>
-                  <Box
-                    sx={{
-                      minWidth: 0,
-                      flex: 1,
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 0.5,
-                    }}
-                  >
-                    {selectedHighwayTypeOptions.map((highwayType) => (
-                      <Box
-                        key={highwayType.id}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.5,
-                          minWidth: 0,
-                          px: 0.5,
-                          py: 0.125,
-                          borderRadius: "4px",
-                          bgcolor: "rgba(17, 61, 73, 0.06)",
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: "text.primary",
-                            fontWeight: 600,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {highwayType.label}
-                        </Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => onHighwayTypeDelete(highwayType.id)}
-                          aria-label={`Remove ${highwayType.label} highway type filter`}
-                          sx={{ p: 0.25 }}
-                        >
-                          <CloseRoundedIcon fontSize="inherit" />
-                        </IconButton>
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              )}
+              {renderFilterChipRow("Highway Type", highwayTypeChips)}
 
               {selectedVisualization && themeFilterChips.length > 0 && (
                 <Box
@@ -485,129 +699,15 @@ export function FiltersPanel({
                 </Box>
               )}
 
-              {selectedDistrictOptions.length > 0 && (
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 0.5,
-                    minWidth: 0,
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                    District:
-                  </Typography>
-                  <Box
-                    sx={{
-                      minWidth: 0,
-                      flex: 1,
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 0.5,
-                    }}
-                  >
-                    {selectedDistrictOptions.map((district) => (
-                      <Box
-                        key={district.id}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.5,
-                          minWidth: 0,
-                          px: 0.5,
-                          py: 0.125,
-                          borderRadius: "4px",
-                          bgcolor: "rgba(17, 61, 73, 0.06)",
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: "text.primary",
-                            fontWeight: 600,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {district.label}
-                        </Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => onDistrictDelete(district.id)}
-                          aria-label={`Remove ${district.label} district filter`}
-                          sx={{ p: 0.25 }}
-                        >
-                          <CloseRoundedIcon fontSize="inherit" />
-                        </IconButton>
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              )}
-
-              {selectedCounties.length > 0 && (
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 0.5,
-                    minWidth: 0,
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                    County:
-                  </Typography>
-                  <Box
-                    sx={{
-                      minWidth: 0,
-                      flex: 1,
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 0.5,
-                    }}
-                  >
-                    {selectedCounties.map((county) => (
-                      <Box
-                        key={county}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.5,
-                          minWidth: 0,
-                          px: 0.5,
-                          py: 0.125,
-                          borderRadius: "4px",
-                          bgcolor: "rgba(17, 61, 73, 0.06)",
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: "text.primary",
-                            fontWeight: 600,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {county}
-                        </Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => onCountyDelete(county)}
-                          aria-label={`Remove ${county} county filter`}
-                          sx={{ p: 0.25 }}
-                        >
-                          <CloseRoundedIcon fontSize="inherit" />
-                        </IconButton>
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              )}
+              {renderFilterChipRow("District", districtChips)}
+              {renderFilterChipRow("Area Office", areaOfficeChips)}
+              {renderFilterChipRow("County", countyChips)}
+              {renderFilterChipRow("MPO", mpoChips)}
+              {renderFilterChipRow("Regional Commission", rcChips)}
+              {renderFilterChipRow("City", cityChips)}
+              {renderFilterChipRow("State House", stateHouseChips)}
+              {renderFilterChipRow("State Senate", stateSenateChips)}
+              {renderFilterChipRow("Congressional", congressionalChips)}
             </Stack>
           )}
 
@@ -643,108 +743,191 @@ export function FiltersPanel({
             )}
           />
 
-          <Autocomplete
-            multiple
-            size="small"
-            options={districtOptionsWithAll}
-            value={selectedDistrictOptions}
-            onChange={handleDistrictAutocompleteChange}
-            disableCloseOnSelect
-            renderOption={(props, option, { selected }) => {
-              const isAll = option.id === ALL_DISTRICTS_OPTION.id;
-              return (
-                <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
-                  <Checkbox
-                    icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                    checkedIcon={<CheckBoxIcon fontSize="small" />}
-                    style={{ marginRight: 6, padding: 2 }}
-                    checked={isAll ? isAllDistricts : selected}
+          {/*
+            Engineering Geographies accordion.
+            District kept as an inline Autocomplete to preserve the
+            "All Districts" pseudo-option UX (an extra row at the top whose
+            checkbox reflects the empty-selection state and whose click
+            clears the entire selection). GeographyAutocomplete has a
+            pseudoOption slot but it models a boolean toggle, not a
+            "clear-selection" action, so reusing it here would require
+            contorting the toggle semantics. Inline keeps the existing UX.
+          */}
+          <Accordion defaultExpanded disableGutters sx={accordionSx}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreRoundedIcon fontSize="small" />}
+              sx={accordionSummarySx}
+            >
+              <Typography sx={accordionTitleSx}>Engineering Geographies</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={accordionDetailsSx}>
+              <Autocomplete
+                multiple
+                size="small"
+                options={districtOptionsWithAll}
+                value={selectedDistrictOptions}
+                onChange={handleDistrictAutocompleteChange}
+                disableCloseOnSelect
+                renderOption={(props, option, { selected }) => {
+                  const isAll = option.id === ALL_DISTRICTS_OPTION.id;
+                  return (
+                    <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
+                      <Checkbox
+                        icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                        checkedIcon={<CheckBoxIcon fontSize="small" />}
+                        style={{ marginRight: 6, padding: 2 }}
+                        checked={isAll ? isAllDistricts : selected}
+                      />
+                      <span style={{ fontWeight: isAll ? 600 : 400 }}>
+                        {isAll ? "Show all districts" : option.label}
+                      </span>
+                    </li>
+                  );
+                }}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                getOptionLabel={(option) =>
+                  option.id === ALL_DISTRICTS_OPTION.id ? "All Districts" : option.label
+                }
+                renderTags={() => null}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="District"
+                    placeholder={isAllDistricts ? "All districts shown" : "Select districts"}
+                    inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
+                    InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
                   />
-                  <span style={{ fontWeight: isAll ? 600 : 400 }}>
-                    {isAll ? "Show all districts" : option.label}
-                  </span>
-                </li>
-              );
-            }}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            getOptionLabel={(option) =>
-              option.id === ALL_DISTRICTS_OPTION.id ? "All Districts" : option.label
-            }
-            renderTags={() => null}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="District"
-                placeholder={isAllDistricts ? "All districts shown" : "Select districts"}
-                inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
-                InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
+                )}
               />
-            )}
-          />
+              <GeographyAutocomplete<AreaOfficeOption, number>
+                label="Area Office"
+                placeholder="Select area offices"
+                options={areaOffices}
+                selected={selectedAreaOffices}
+                onChange={onAreaOfficeChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+                parentIds={selectedDistricts}
+                getOptionParentId={(o) => o.parent_district}
+              />
+            </AccordionDetails>
+          </Accordion>
 
-          <Autocomplete
-            multiple
-            size="small"
-            options={sortedCountyOptions}
-            value={sortedCountyOptions.filter((county) => selectedCounties.includes(county.county))}
-            onChange={(_, values) => onCountyChange(values.map((value) => value.county))}
-            groupBy={(option) => districtLabelMap.get(option.district) ?? `District ${option.district}`}
-            getOptionLabel={(option) => option.county}
-            isOptionEqualToValue={(option, value) => option.county === value.county}
-            disableCloseOnSelect
-            renderGroup={(params: AutocompleteRenderGroupParams) => (
-              <li key={params.key}>
-                <Box
-                  sx={{
-                    position: "sticky",
-                    top: -8,
-                    zIndex: 1,
-                    px: 1.5,
-                    py: 0.5,
-                    bgcolor: "#f0f2f3",
-                    borderBottom: "1px solid rgba(17, 61, 73, 0.1)",
-                  }}
-                >
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      fontWeight: 700,
-                      color: "#47626b",
-                      textTransform: "uppercase",
-                      fontSize: "0.68rem",
-                      letterSpacing: 0.4,
-                    }}
-                  >
-                    {params.group}
-                  </Typography>
-                </Box>
-                <ul style={{ padding: 0 }}>{params.children}</ul>
-              </li>
-            )}
-            renderOption={(props, option, { selected }) => (
-              <li {...props} style={{ fontSize: "0.78rem", paddingTop: 2, paddingBottom: 2 }}>
-                <Checkbox
-                  icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                  checkedIcon={<CheckBoxIcon fontSize="small" />}
-                  style={{ marginRight: 6, padding: 2 }}
-                  checked={selected}
-                />
-                {option.county}
-              </li>
-            )}
-            renderTags={() => null}
-            renderInput={(params) => (
-              <TextField
-                {...params}
+          <Accordion defaultExpanded disableGutters sx={accordionSx}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreRoundedIcon fontSize="small" />}
+              sx={accordionSummarySx}
+            >
+              <Typography sx={accordionTitleSx}>Planning Geographies</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={accordionDetailsSx}>
+              <GeographyAutocomplete<CountyOption, string>
                 label="County"
                 placeholder="Search counties"
-                helperText="Includes segments crossing county boundaries."
-                inputProps={{ ...params.inputProps, sx: { fontSize: "0.78rem" } }}
-                InputLabelProps={{ sx: { fontSize: "0.78rem" } }}
-                FormHelperTextProps={{ sx: { fontSize: "0.65rem", mt: 0.25, lineHeight: 1.3 } }}
+                options={[...counties].sort((left, right) => {
+                  if (left.district !== right.district) {
+                    return left.district - right.district;
+                  }
+                  return left.county.localeCompare(right.county);
+                })}
+                selected={selectedCounties}
+                onChange={onCountyChange}
+                getOptionId={(o) => o.county}
+                getOptionLabel={(o) => o.county}
+                parentIds={selectedDistricts}
+                getOptionParentId={(o) => o.district}
+                groupBy={(o) =>
+                  districtLabelMap.get(o.district) ?? `District ${o.district}`
+                }
               />
-            )}
-          />
+              <GeographyAutocomplete<MpoOption, string>
+                label="MPO"
+                placeholder="Select MPOs"
+                options={mpos}
+                selected={selectedMpos}
+                onChange={onMpoChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+              />
+              <GeographyAutocomplete<RegionalCommissionOption, number>
+                label="Regional Commission"
+                placeholder="Select regional commissions"
+                options={regionalCommissions}
+                selected={selectedRegionalCommissions}
+                onChange={onRegionalCommissionChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+              />
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion disableGutters sx={accordionSx}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreRoundedIcon fontSize="small" />}
+              sx={accordionSummarySx}
+            >
+              <Typography sx={accordionTitleSx}>Local Geographies</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={accordionDetailsSx}>
+              <GeographyAutocomplete<CityOption, number>
+                label="City"
+                placeholder="Select cities"
+                options={cities}
+                selected={selectedCities}
+                onChange={onCityChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+                parentIds={selectedDistricts}
+                getOptionParentId={(o) => o.district ?? undefined}
+                secondaryParentIds={selectedCounties}
+                getOptionSecondaryParentId={(o) => o.county ?? undefined}
+                pseudoOption={{
+                  label: "Unincorporated",
+                  selected: includeUnincorporated,
+                  onToggle: onIncludeUnincorporatedChange,
+                  helperText: "Roadway segments outside any incorporated city",
+                }}
+              />
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion disableGutters sx={accordionSx}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreRoundedIcon fontSize="small" />}
+              sx={accordionSummarySx}
+            >
+              <Typography sx={accordionTitleSx}>Legislative Geographies</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={accordionDetailsSx}>
+              <GeographyAutocomplete<StateHouseOption, number>
+                label="State House"
+                placeholder="Select state house districts"
+                options={stateHouseDistricts}
+                selected={selectedStateHouseDistricts}
+                onChange={onStateHouseChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+              />
+              <GeographyAutocomplete<StateSenateOption, number>
+                label="State Senate"
+                placeholder="Select state senate districts"
+                options={stateSenateDistricts}
+                selected={selectedStateSenateDistricts}
+                onChange={onStateSenateChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+              />
+              <GeographyAutocomplete<CongressionalOption, number>
+                label="Congressional"
+                placeholder="Select congressional districts"
+                options={congressionalDistricts}
+                selected={selectedCongressionalDistricts}
+                onChange={onCongressionalChange}
+                getOptionId={(o) => o.id}
+                getOptionLabel={(o) => o.label}
+              />
+            </AccordionDetails>
+          </Accordion>
         </Stack>
       </Box>
 
@@ -756,6 +939,8 @@ export function FiltersPanel({
             themeFilterValue={themeFilters[selectedVisualization.id]}
             defaultThemeFilterValue={defaultThemeFilterValue}
             setThemeFilter={setThemeFilter}
+            boundaryOverlayVisibility={boundaryOverlayVisibility}
+            onBoundaryOverlayToggle={onBoundaryOverlayToggle}
           />
         </Box>
       )}
