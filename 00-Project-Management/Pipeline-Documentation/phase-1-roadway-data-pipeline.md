@@ -18,7 +18,7 @@ Current closeout position:
 |---|--------|-----|------------------|
 | 1 | **GDOT Road Inventory 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Base route geometry (`GA_2024_Routes`), route IDs, milepoints, and 15 attribute event layers (COUNTY_ID, F_SYSTEM, NHS, FACILITY_TYPE, THROUGH_LANES, LANE_WIDTH, MEDIAN_TYPE/WIDTH, SHOULDER_TYPE/WIDTH, OWNERSHIP, STRAHNET, SURFACE_TYPE, URBAN_ID). This is the foundation — every segment starts here. |
 | 2 | **GDOT Traffic Data 2024 GDB** | [GDOT Road & Traffic Data](https://www.dot.ga.gov/GDOT/Pages/RoadTrafficData.aspx) | Current AADT, future AADT, truck AADT, VMT, K-factor, D-factor, traffic class, and count station numbers. The traffic intervals define the segment boundaries — routes are sliced at traffic milepoint breaks to assign per-segment traffic values. |
-| 3 | **FHWA HPMS Georgia 2024** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0) | Parallel GDOT-official AADT, future AADT, and roadway attributes — particularly for federally-reportable segments outside the state 2024 GDB scope (e.g., off-system roads). HPMS is GDOT's annual federal submission, not a secondary fallback. Pavement condition (IRI, PSR, rutting, cracking). Broad-coverage initial signed-route classification via `routesigning` codes. Access control and terrain type. |
+| 3 | **FHWA HPMS Georgia (2020, 2022, 2023, 2024)** | [HPMS Feature Server](https://geo.dot.gov/server/rest/services/Hosted/) | Parallel GDOT-official AADT for 4 years — 2024 canonical + 2020/2022/2023 additive `AADT_{year}_HPMS` historic panel. 2021 not published by FHWA. Also contributes future AADT, roadway attributes for federally-reportable segments outside the state 2024 GDB scope (e.g., off-system roads), pavement condition (IRI, PSR, rutting, cracking), broad-coverage initial signed-route classification via `routesigning` codes, access control and terrain type. |
 | 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags for state highway routes, matched by route ID and milepoint overlap. |
 | 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads (81,778 features). Most records lack geometry; matched by normalized road name + county FIPS code. |
 | 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
@@ -170,13 +170,14 @@ Current traffic fields come from:
 
 This source contributes current AADT and related traffic measures.
 
-### Historical traffic source (archived, not in pipeline output)
+### Historical traffic sources
 
-Historical route-segment traffic files are available at:
+Two sources feed historic AADT into the staged network:
 
-- `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`
+- **FHWA HPMS submissions, 2020 / 2022 / 2023** — staged as additive `AADT_{year}_HPMS` columns. Joined by `ROUTE_ID` + milepoint interval overlap on the current segmentation; do not re-introduce historic breakpoints. See the HPMS section below for coverage detail.
+- **GDOT published traffic archive 2010-2019 at `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`** — retained raw but NOT loaded into the staged outputs. Removing pre-2020 breakpoints as segmentation drivers is what reduced the segment count from 622,255 to 245,863 during the original Phase 1 build.
 
-These files are retained for future use but are no longer loaded into the pipeline output. Removing historic traffic breakpoints reduced the segment count from 622,255 to 245,863, producing a cleaner network that segments only on current-year traffic intervals.
+No 2021 HPMS column exists — FHWA did not publish a 2021 Georgia HPMS submission.
 
 ### Signed-route verification (HPMS first, GPAS authoritative)
 
@@ -192,14 +193,24 @@ The speed zone enrichment downloads from GDOT GPAS to:
 These snapshots are cached locally and only re-downloaded when
 `01-Raw-Data/Roadway-Inventory/scripts/download_rnhp_enrichment.py` is run.
 
-### FHWA HPMS 2024 data
+### FHWA HPMS data (2020, 2022, 2023, 2024)
 
 The HPMS (Highway Performance Monitoring System) dataset is GDOT's annual federal submission to FHWA — a parallel GDOT-official source, not a secondary fallback. It uses the same GDOT `ROUTE_ID` and milepoint system as our base network, enabling direct interval-overlap matching without spatial joins. HPMS is the canonical AADT source for federally-reportable segments that fall outside the state 2024 GDB scope (e.g., off-system roads).
 
-Source: `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
+**Historic panel.** The staged network now carries a 4-year HPMS AADT panel — `AADT_2020_HPMS`, `AADT_2022_HPMS`, `AADT_2023_HPMS`, and the canonical `AADT_2024_HPMS`. 2021 is omitted: FHWA did not publish a 2021 Georgia HPMS submission on `geo.dot.gov`, and an exhaustive source probe (FHWA public releases, USDOT Open Data, GDOT open-data portals) found no alternative. See [FHWA_HPMS/2021/NO_DATA.md](../../01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2021/NO_DATA.md) for the probed-sources log. Full per-year coverage + FC / SYSTEM_CODE / urban-rural slicing is in [aadt_hpms_historic_coverage.md](../../02-Data-Staging/reports/aadt_hpms_historic_coverage.md).
 
-Downloaded snapshot:
+Sources:
 
+- `https://geo.dot.gov/server/rest/services/Hosted/HPMS_FULL_GA_2020/FeatureServer/0`
+- `https://geo.dot.gov/server/rest/services/Hosted/HPMS_FULL_GA_2022/FeatureServer/0`
+- `https://geo.dot.gov/server/rest/services/Hosted/HPMS_FULL_GA3_2023/FeatureServer/0` (note: service name carries a `3` suffix, not a typo)
+- `https://geo.dot.gov/server/rest/services/Hosted/HPMS_Full_GA_2024/FeatureServer/0`
+
+Downloaded snapshots:
+
+- `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2020/hpms_ga_2020_tabular.json`
+- `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2022/hpms_ga_2022_tabular.json`
+- `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2023/hpms_ga_2023_tabular.json`
 - `01-Raw-Data/Roadway-Inventory/FHWA_HPMS/2024/hpms_ga_2024_tabular.json`
 
 **Key finding: HPMS AADT values are 99.7% identical to GDOT state-system values where both sources have data.** This is direct evidence that HPMS *is* the GDOT data — packaged for federal reporting — rather than an independent estimate. The 2024 hygiene pass treats HPMS as a parallel GDOT-official source and cross-validates the two wherever they overlap. Direct state 2024 GDB current-year coverage is `45,938` of `245,863` segments; HPMS adds GDOT-official AADT for the federally-reportable segments outside that scope, raising combined GDOT-official coverage to roughly `242,033` segments (`96.5%`). The remaining `~3.5%` is filled by pipeline-derived methods (direction mirror, analytical interpolation, nearest neighbor), and `~0.04%` remains truly missing.
@@ -224,6 +235,22 @@ The 2024 hygiene pass added four columns that surface the two-source picture exp
 - `AADT_2024_SAMPLE_STATUS` — pass-through of the GDOT `SampleStatus` free-text descriptor for the most recent sample-adequacy pass.
 
 `AADT_2024_CONFIDENCE` semantics changed in this pass and now use a four-tier scheme: `high` when `Statistics_Type = Actual` or the two GDOT sources agree; `medium` when `Statistics_Type` is `Estimated`/`Calculated` or the segment has a single GDOT-official source with no disagreement; `low` when the value is pipeline-derived (`direction_mirror`, `analytical_gap_fill`, `nearest_neighbor`) or the two GDOT sources disagree; `missing` when no value is available. Note that `direction_mirror` was previously tagged `high` and `analytical_gap_fill` was previously `medium`; both are now `low` so that the confidence tier reflects measurement provenance rather than fill method.
+
+#### Historic HPMS AADT columns (2020, 2022, 2023)
+
+The 4-year HPMS panel adds three sibling columns populated by the same interval-overlap match logic as `AADT_2024_HPMS`:
+
+- `AADT_2020_HPMS` — 249,604 of 263,947 segments (94.57%). Source: `HPMS_FULL_GA_2020` REST service. The 2020 submission duplicates each segment 2-3× for section-type sparsity (ownership on one row, maintenance operations on another) with identical AADT; the load step collapses duplicates on `(route_id, begin_point, end_point)` keeping the first row (849,986 of 1,584,000 rows dropped).
+- `AADT_2022_HPMS` — 42,689 segments (16.17%). Source: `HPMS_FULL_GA_2022` REST service.
+- `AADT_2023_HPMS` — 42,796 segments (16.21%). Source: `HPMS_FULL_GA3_2023` REST service (the `3` in the service name is intentional, not a typo).
+
+**Consumer guidance — 2022/2023 low coverage is FHWA-designed, not a pipeline miss.** FHWA requires full AADT enumeration only for NHS + FC 1-5. The 2022 and 2023 Georgia submissions report FC 6-9 segments with a coded `volumegroup` band instead of a row-level `aadt` value — 60% of 2022 rows and 70% of 2023 rows have `aadt = NULL`. On FC 1-5 the 2022/2023 panels hit 74-100% coverage, parity with 2020 and 2024. Downstream consumers (webapp, modeling plans, RAPTOR) must treat `AADT_{year}_HPMS IS NULL` on FC 6-9 for 2022/2023 as "intentionally unreported," not as missing data to fill.
+
+**Interstate FC 1 ~75% floor — structural, all four years.** FC 1 coverage lands within a 1.2pp band (74.2%, 74.6%, 75.3%, 75.4%) across 2020, 2022, 2023, 2024. Four independent vintages converging on the same floor is a structural signature: our segmentation splits Interstate rows finer than HPMS does. The gap pre-dates this work — the 2024 Phase 1 baseline produces the same 75.4%. A follow-up ticket investigates widening the milepoint-overlap tolerance in `_find_best_hpms_match`.
+
+2021 is intentionally absent from the panel (no FHWA submission exists). No `AADT_2021_HPMS` column is staged; see the panel narrative above for the source-probe record. 2024 re-enrichment in this pass is byte-identical to the Phase 1 `AADT_2024_HPMS` column — same 254,208 populated rows, zero value or null-alignment mismatches.
+
+The historic HPMS panel does NOT participate in the canonical `AADT` / `AADT_2024` tie-breaker chain — the three historic columns are purely additive and are intended for time-series analysis, future AADT modeling (see `C:/Users/adith/.claude/plans/aadt-modeling-scoped-2020-2024.md`), and per-segment provenance against prior federal submissions.
 
 ### Official boundary source
 
@@ -756,6 +783,9 @@ with:
 - `AADT_2024` — canonical 2024 AADT chosen by tie-breaker: state 2024 GDB > HPMS 2024 federal submission > pipeline-derived (mirror / interpolation / nearest)
 - `AADT_2024_OFFICIAL` — audit trail for the state 2024 GDB match only, never overwritten by HPMS or any pipeline-derived fill
 - `AADT_2024_HPMS` — raw HPMS 2024 AADT captured for every HPMS-matched segment regardless of which source wins (cross-validation column)
+- `AADT_2020_HPMS` — historic HPMS 2020 AADT, additive, 94.57% coverage (see historic HPMS section)
+- `AADT_2022_HPMS` — historic HPMS 2022 AADT, additive, 16.17% overall (74-100% on FC 1-5; FC 6-9 NULL by FHWA volumegroup sampling)
+- `AADT_2023_HPMS` — historic HPMS 2023 AADT, additive, 16.21% overall (74-100% on FC 1-5; FC 6-9 NULL by FHWA volumegroup sampling)
 - `AADT_2024_SOURCE_AGREEMENT` — `state_only`, `hpms_only`, `both_agree` (within ±15% or ±200 veh/day), `both_disagree`, or null
 - `AADT_2024_STATS_TYPE` — pass-through of GDOT `Statistics_Type` (`Actual`, `Estimated`, `Calculated`)
 - `AADT_2024_SAMPLE_STATUS` — pass-through of GDOT `SampleStatus` free-text descriptor
@@ -917,9 +947,11 @@ This fixes the null district/county issue at the roadway-segment level without c
 
 ### Historical AADT
 
-Historical AADT columns (2010-2020) have been removed from the pipeline output to produce a cleaner network. This eliminated historic traffic breakpoints as segmentation drivers, reducing the segment count from 622,255 to 245,863.
+The staged network now carries a 4-year HPMS AADT panel — `AADT_2020_HPMS`, `AADT_2022_HPMS`, `AADT_2023_HPMS`, `AADT_2024_HPMS` — sourced from GDOT's annual federal HPMS submissions on `geo.dot.gov`. These are purely additive columns joined by `ROUTE_ID` + milepoint overlap on the current segmentation; they do not re-introduce historic traffic breakpoints as segmentation drivers. Coverage is 94.6% / 16.2% / 16.2% / 96.3% overall (the 2022/2023 low figures are FHWA volumegroup sampling on FC 6-9; the federal-aid network FC 1-5 is 74-100% covered in every year). Full per-year and per-FC coverage is in [aadt_hpms_historic_coverage.md](../../02-Data-Staging/reports/aadt_hpms_historic_coverage.md).
 
-Raw historical source files remain available in `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip` for future use.
+2021 is not staged — FHWA did not publish a Georgia HPMS submission for that year. The pre-2020 historic AADT (2010-2019) remains out of the pipeline output — removing the pre-2020 breakpoints is what reduced the segment count from 622,255 to 245,863 during the original Phase 1 build, and nothing in this pass reverses that decision.
+
+Raw pre-2020 historic source files remain available in `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip` for future use.
 
 ---
 
@@ -1165,9 +1197,11 @@ The `AADT_2024_SOURCE` and `AADT_2024_CONFIDENCE` fields distinguish these sourc
 
 Future AADT 2044 direct coverage (GDOT official + HPMS + direction mirror) is `46,619` of `245,863` segments (`19.0%`). Total post-imputation coverage is `245,766` of `245,863` segments (`99.96%`) after the official implied growth projection applies GDOT's own implied growth rate (~1.17% annual, back-derived from known official pairs) to `AADT_2024` for the remaining covered segments.
 
-### 2. Historical AADT removed from output
+### 2. Historical AADT scope
 
-Historical AADT columns (2010-2020) have been removed from the pipeline output. Raw source files are retained for future use if multi-year trend analysis is needed.
+The staged network carries a 4-year HPMS AADT panel (2020, 2022, 2023, 2024) as additive columns. 2021 is not staged — FHWA did not publish a 2021 Georgia HPMS submission. The pre-2020 GDOT published traffic archive (2010-2019) is not loaded into the pipeline output; raw files remain at `01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip`.
+
+On FC 1-5 (federal-aid network) the 2022/2023 columns reach 74-100% coverage; FC 6-9 for those two vintages is NULL by FHWA volumegroup-sampling design, not by pipeline miss. Consumers time-series-joining on the panel should filter to FC 1-5 or treat FC 6-9 NULLs on 2022/2023 as "intentionally unreported."
 
 ### 3. Some official roadway event layers remain sparse after staging
 
@@ -1223,6 +1257,7 @@ Closed with Phase 1:
 
 - statewide staged roadway ETL with 245,863 segments and 118 columns
 - 2024 AADT coverage at 99.9605% (`245,766` segments): ~96.5% from two parallel GDOT-official sources (state 2024 GDB + HPMS federal submission), ~3.5% from pipeline-derived fill (direction mirror, analytical interpolation, nearest neighbor), ~0.04% truly missing. Cross-validation captured in `AADT_2024_HPMS` / `AADT_2024_SOURCE_AGREEMENT`
+- 4-year HPMS AADT panel staged as `AADT_{2020,2022,2023,2024}_HPMS` additive columns: 94.6% / 16.2% / 16.2% / 96.3% overall coverage; 74-100% on the federal-aid network (FC 1-5) in every year. 2022/2023 FC 6-9 NULL is FHWA volumegroup sampling by design, not a pipeline miss. 2021 not published by FHWA
 - Future AADT 2044 coverage extended from `46,619` direct-forecast segments (`19.0%`) to `245,766` total post-imputation segments (`99.96%`) via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with `AADT_2024`
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority
