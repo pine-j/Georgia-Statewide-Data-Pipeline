@@ -109,6 +109,43 @@ def test_build_link_rows_emits_full_schema() -> None:
         assert row["station_distance_m"] >= 0
 
 
+def test_build_link_rows_same_route_flag_fires_for_co_route_match() -> None:
+    # Station S_R1 will link to segments on R1 (it sits on top of seg_R1).
+    # Station S_R2 is on R2. For a segment on R1 whose nearest station is
+    # S_R1, same_route_flag should be 1; for a segment on R1 whose nearest
+    # station is S_R2 (because geographically closer), same_route_flag=0.
+    stations = pd.DataFrame(
+        {
+            "year": [2020, 2020],
+            "tc_number": ["S_R1", "S_R2"],
+            "latitude": [33.0, 34.0],
+            "longitude": [-84.0, -84.0],
+        }
+    )
+    segments = pd.DataFrame(
+        {
+            "unique_id": ["seg_R1_near", "seg_R1_far", "seg_R2_near"],
+            "mid_latitude": [33.001, 33.9, 34.001],
+            "mid_longitude": [-84.0, -84.0, -84.0],
+            "ROUTE_ID": ["R1", "R1", "R2"],
+        }
+    )
+    out = build_link_rows(segments=segments, stations=stations, years=[2020])
+
+    by_id = {row["unique_id"]: row for _, row in out.iterrows()}
+    # seg_R1_near is closest to S_R1 (which infers R1 because its nearest
+    # segment is on R1); same_route_flag=1.
+    assert by_id["seg_R1_near"]["nearest_tc_number"] == "S_R1"
+    assert by_id["seg_R1_near"]["same_route_flag"] == 1
+    # seg_R1_far is closer to S_R2 (S_R2 infers R2 because its nearest
+    # segment is seg_R2_near on R2); same_route_flag=0.
+    assert by_id["seg_R1_far"]["nearest_tc_number"] == "S_R2"
+    assert by_id["seg_R1_far"]["same_route_flag"] == 0
+    # seg_R2_near is closest to S_R2 which infers R2; same_route_flag=1.
+    assert by_id["seg_R2_near"]["nearest_tc_number"] == "S_R2"
+    assert by_id["seg_R2_near"]["same_route_flag"] == 1
+
+
 def test_build_link_rows_one_row_per_segment_year() -> None:
     # 2 segments × 3 years = 6 rows expected.
     stations = pd.DataFrame(

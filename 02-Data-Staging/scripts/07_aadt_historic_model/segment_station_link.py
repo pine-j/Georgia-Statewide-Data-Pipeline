@@ -108,11 +108,35 @@ def build_link_rows(
             continue
         linked = nearest_station_per_segment(segments=segments, stations=yr_stations)
         linked["year"] = year
-        linked["same_route_flag"] = 0
+
+        # same_route_flag: a station's inferred ROUTE_ID is the ROUTE_ID
+        # of the closest segment to that station. Flag segments whose
+        # ROUTE_ID matches the linked station's inferred ROUTE_ID.
+        station_route = _station_inferred_route(yr_stations, segments)
+        station_to_route = dict(zip(station_route["tc_number"], station_route["inferred_route_id"]))
+        linked_route = linked["nearest_tc_number"].map(station_to_route)
+        linked["same_route_flag"] = (linked_route == segments["ROUTE_ID"].to_numpy()).astype("int64")
         out_frames.append(linked)
 
     combined = pd.concat(out_frames, axis=0, ignore_index=True)
     return combined[LINK_COLUMNS]
+
+
+def _station_inferred_route(stations: pd.DataFrame, segments: pd.DataFrame) -> pd.DataFrame:
+    """For each station, infer a ROUTE_ID from the nearest segment."""
+
+    seg_xy = np.c_[segments["mid_x_m"].to_numpy(), segments["mid_y_m"].to_numpy()]
+    tree = cKDTree(seg_xy)
+
+    station_xy = np.c_[stations["x_m"].to_numpy(), stations["y_m"].to_numpy()]
+    _, idx = tree.query(station_xy, k=1)
+    matched = segments.iloc[idx].reset_index(drop=True)
+    return pd.DataFrame(
+        {
+            "tc_number": stations["tc_number"].to_numpy(),
+            "inferred_route_id": matched["ROUTE_ID"].to_numpy(),
+        }
+    )
 
 
 __all__ = [
