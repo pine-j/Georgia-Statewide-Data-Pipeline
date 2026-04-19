@@ -27,7 +27,8 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import LineString, MultiLineString
+from shapely.geometry import LineString, MultiLineString, Point
+from shapely.ops import substring, unary_union
 
 from _evac_corridor_match import per_corridor_evac_overlay
 
@@ -47,7 +48,19 @@ ENRICHMENT_COLUMNS = [
     "SEC_EVAC_MATCH_METHOD",
     "SEC_EVAC_OVERLAP_M",
     "SEC_EVAC_OVERLAP_RATIO",
+    "SEC_EVAC_MATCH_PORTION",
 ]
+
+# Segment splitting — when a matched segment's in-corridor portion covers
+# <SPLIT_SKIP_PORTION of its length, the segment is cut into inside/outside
+# child rows so downstream consumers (webapp, RAPTOR) see SEC_EVAC=True
+# only on the geometry that actually follows the corridor. Pieces shorter
+# than SPLIT_MIN_PIECE_M are absorbed into the adjacent piece (takes the
+# survivor's is_inside status). Matches the matcher's CLIP_SKIP_PORTION /
+# CLIP_MIN_LENGTH_M so the GPKG row and the QC display stay in sync.
+SPLIT_SKIP_PORTION = 0.90
+SPLIT_MIN_PIECE_M = 30.0
+SPLIT_ENDPOINT_SNAP_M = 0.5  # tolerance for merging touching intervals
 
 # Tiered overlap thresholds — length-adaptive to avoid filtering out short
 # segments that sit entirely within an evacuation corridor.
@@ -842,6 +855,315 @@ def _update_overlap_diagnostics(
         enriched.at[idx, "SEC_EVAC_OVERLAP_RATIO"] = overlap_ratio
 
 
+# ---------------------------------------------------------------------------
+# Segment splitting — cut SEC_EVAC=True segments at the corridor boundary so
+# the GPKG reflects only the in-corridor portion as flagged, matching the QC
+# map's clipped display. Called after all flagging is done; changes row count.
+# ---------------------------------------------------------------------------
+
+
+def _clip_to_intervals(
+    clip_geom,
+    parent: LineString,
+    parent_len: float,
+) -> list[tuple[float, float]]:
+    """Project clip sub-lines onto the parent and return merged distance
+    intervals (in meters along the parent) covered by the clip.
+    """
+    if clip_geom is None or clip_geom.is_empty:
+        return []
+    if isinstance(clip_geom, LineString):
+        lines = [clip_geom]
+    elif isinstance(clip_geom, MultiLineString):
+        lines = list(clip_geom.geoms)
+    else:
+        try:
+            lines = list(clip_geom.geoms)
+        except AttributeError:
+            return []
+
+    raw: list[tuple[float, float]] = []
+    for ln in lines:
+        if not isinstance(ln, LineString) or ln.is_empty or ln.length < 0.01:
+            continue
+        coords = list(ln.coords)
+        d0 = parent.project(Point(coords[0]))
+        d1 = parent.project(Point(coords[-1]))
+        lo, hi = (d0, d1) if d0 <= d1 else (d1, d0)
+        lo = max(0.0, min(parent_len, lo))
+        hi = max(0.0, min(parent_len, hi))
+        if hi - lo < 0.01:
+            continue
+        raw.append((lo, hi))
+
+    raw.sort()
+    merged: list[tuple[float, float]] = []
+    for s, e in raw:
+        if merged and s <= merged[-1][1] + SPLIT_ENDPOINT_SNAP_M:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def _absorb_slivers(
+    pieces: list[tuple[float, float, bool]],
+) -> list[tuple[float, float, bool]]:
+    """Merge pieces shorter than SPLIT_MIN_PIECE_M into the longer adjacent
+    piece. The merged piece takes the ``is_inside`` flag of the survivor.
+    """
+    if len(pieces) <= 1:
+        return pieces
+
+    changed = True
+    while changed and len(pieces) > 1:
+        changed = False
+        for i, (s, e, _flag) in enumerate(pieces):
+            if e - s >= SPLIT_MIN_PIECE_M:
+                continue
+            # Sliver — merge into the longer neighbor.
+            prev_len = (pieces[i - 1][1] - pieces[i - 1][0]) if i > 0 else -1.0
+            next_len = (
+                (pieces[i + 1][1] - pieces[i + 1][0]) if i + 1 < len(pieces) else -1.0
+            )
+            if prev_len < 0 and next_len < 0:
+                return pieces  # only sliver, nothing to merge
+            if next_len > prev_len:
+                # merge into next
+                ns, ne, nflag = pieces[i + 1]
+                pieces = (
+                    pieces[:i]
+                    + [(s, ne, nflag)]
+                    + pieces[i + 2 :]
+                )
+            else:
+                # merge into previous
+                ps, pe, pflag = pieces[i - 1]
+                pieces = (
+                    pieces[: i - 1]
+                    + [(ps, e, pflag)]
+                    + pieces[i + 1 :]
+                )
+            changed = True
+            break
+    return pieces
+
+
+def _split_single_segment(
+    parent_row: pd.Series,
+    intervals: list[tuple[float, float]],
+) -> list[dict] | None:
+    """Split ``parent_row`` at corridor boundaries given inside intervals.
+
+    Returns a list of new row dicts (2+ children) or ``None`` if splitting
+    should be skipped (segment kept whole).
+    """
+    parent_geom = parent_row.geometry
+    if parent_geom is None or parent_geom.is_empty:
+        return None
+    if not isinstance(parent_geom, LineString):
+        # Only split simple LineStrings; MultiLineStrings are rare here and
+        # the milepoint projection assumptions break down.
+        return None
+
+    parent_len = float(parent_geom.length)
+    if parent_len <= 0.0 or not intervals:
+        return None
+
+    # Clamp intervals once more and compute inside length.
+    clamped = [(max(0.0, s), min(parent_len, e)) for s, e in intervals if e > s]
+    if not clamped:
+        return None
+    inside_len = sum(e - s for s, e in clamped)
+    if inside_len / parent_len >= SPLIT_SKIP_PORTION:
+        return None  # mostly inside — keep whole
+
+    # Build ordered piece list covering [0, parent_len] alternating inside/outside.
+    pieces: list[tuple[float, float, bool]] = []
+    cursor = 0.0
+    for s, e in clamped:
+        if s > cursor + SPLIT_ENDPOINT_SNAP_M:
+            pieces.append((cursor, s, False))
+        pieces.append((s, e, True))
+        cursor = e
+    if parent_len > cursor + SPLIT_ENDPOINT_SNAP_M:
+        pieces.append((cursor, parent_len, False))
+
+    pieces = _absorb_slivers(pieces)
+    if len(pieces) <= 1:
+        return None  # nothing to split after sliver absorption
+
+    mp_from = parent_row.get("FROM_MILEPOINT")
+    mp_to = parent_row.get("TO_MILEPOINT")
+    try:
+        mp_from_f = float(mp_from) if pd.notna(mp_from) else None
+        mp_to_f = float(mp_to) if pd.notna(mp_to) else None
+    except (TypeError, ValueError):
+        mp_from_f = mp_to_f = None
+    mp_range = (
+        (mp_to_f - mp_from_f)
+        if (mp_from_f is not None and mp_to_f is not None)
+        else None
+    )
+
+    parent_dict = parent_row.to_dict()
+    children: list[dict] = []
+    for s, e, is_inside in pieces:
+        try:
+            piece_geom = substring(parent_geom, s, e)
+        except Exception:
+            return None
+        if piece_geom is None or piece_geom.is_empty:
+            return None
+
+        child = dict(parent_dict)
+        child["geometry"] = piece_geom
+        child["segment_length_m"] = float(piece_geom.length)
+        child["segment_length_mi"] = float(piece_geom.length) / 1609.344
+
+        if mp_range is not None and parent_len > 0 and mp_from_f is not None:
+            frac_s = s / parent_len
+            frac_e = e / parent_len
+            child["FROM_MILEPOINT"] = round(mp_from_f + frac_s * mp_range, 4)
+            child["TO_MILEPOINT"] = round(mp_from_f + frac_e * mp_range, 4)
+
+        if not is_inside:
+            # Outside pieces lose all evac flagging and diagnostics. Contraflow
+            # flagging is also cleared because contraflow corridors are a
+            # subset of the evac corridor for the Interstates we flag.
+            child["SEC_EVAC"] = False
+            child["SEC_EVAC_CONTRAFLOW"] = False
+            child["SEC_EVAC_ROUTE_NAME"] = None
+            child["SEC_EVAC_SOURCE"] = None
+            child["SEC_EVAC_MATCH_METHOD"] = None
+            child["SEC_EVAC_OVERLAP_M"] = 0.0
+            child["SEC_EVAC_OVERLAP_RATIO"] = 0.0
+            child["SEC_EVAC_MATCH_PORTION"] = None
+
+        children.append(child)
+    return children
+
+
+def split_flagged_segments_at_corridor(
+    enriched: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    contraflow_corridor,
+) -> gpd.GeoDataFrame:
+    """Cut SEC_EVAC=True segments at corridor boundaries.
+
+    ``evac_matches`` is the matcher's per-segment dict, keyed by the row
+    index used at matching time. Each entry provides ``clipped_geom`` (the
+    portion of the segment that passed all gates) and ``match_portion``.
+
+    For contraflow-only segments — currently empty since all contraflow
+    matches coincide with evac matches — we clip against ``contraflow_corridor``.
+
+    Returns a new GeoDataFrame with split rows replacing the originals.
+    Column set is preserved; row count changes.
+    """
+    if enriched.empty:
+        return enriched
+
+    flagged_mask = enriched["SEC_EVAC"].fillna(False).astype(bool)
+    if not flagged_mask.any():
+        LOGGER.info("Segment splitting: 0 flagged segments, nothing to split")
+        return enriched
+
+    # Copy matches geometry into a lookup the splitter can use per parent index.
+    parent_indices = enriched.index[flagged_mask]
+    matches_by_idx: dict = {}
+    for idx in parent_indices:
+        m = evac_matches.get(idx)
+        if m and m.get("clipped_geom") is not None:
+            matches_by_idx[idx] = (m["clipped_geom"], float(m.get("match_portion", 1.0)))
+            continue
+        # Contraflow-only fallback — clip the parent against contraflow corridor.
+        if contraflow_corridor is not None:
+            seg_geom = enriched.at[idx, "geometry"]
+            if seg_geom is not None and not seg_geom.is_empty:
+                try:
+                    clip = seg_geom.intersection(contraflow_corridor)
+                except Exception:
+                    clip = None
+                if clip is not None and not clip.is_empty and clip.length >= SPLIT_MIN_PIECE_M:
+                    portion = float(clip.length) / float(seg_geom.length) if seg_geom.length > 0 else 1.0
+                    matches_by_idx[idx] = (clip, portion)
+
+    if not matches_by_idx:
+        LOGGER.info("Segment splitting: no clipped geometries available, skipping")
+        return enriched
+
+    # Record match_portion for every flagged row (whether or not it splits).
+    enriched["SEC_EVAC_MATCH_PORTION"] = pd.Series(
+        {idx: portion for idx, (_g, portion) in matches_by_idx.items()},
+        dtype="float64",
+    )
+
+    split_parents: list[int] = []
+    new_rows: list[dict] = []
+    skipped_full_inside = 0
+    skipped_invalid = 0
+    total_children_emitted = 0
+    pieces_absorbed = 0
+
+    for idx, (clip_geom, _portion) in matches_by_idx.items():
+        parent_row = enriched.loc[idx]
+        parent_geom = parent_row.geometry
+        if parent_geom is None or parent_geom.is_empty or not isinstance(parent_geom, LineString):
+            skipped_invalid += 1
+            continue
+        parent_len = float(parent_geom.length)
+        intervals = _clip_to_intervals(clip_geom, parent_geom, parent_len)
+        if not intervals:
+            skipped_invalid += 1
+            continue
+        inside_len = sum(e - s for s, e in intervals)
+        if parent_len > 0 and inside_len / parent_len >= SPLIT_SKIP_PORTION:
+            skipped_full_inside += 1
+            continue
+        children = _split_single_segment(parent_row, intervals)
+        if not children:
+            skipped_full_inside += 1
+            continue
+        split_parents.append(idx)
+        new_rows.extend(children)
+        total_children_emitted += len(children)
+        # Pieces absorbed = (raw interval pieces + gaps) - emitted pieces.
+        raw_piece_count = len(intervals) * 2 + 1  # worst case alternation
+        if raw_piece_count > len(children):
+            pieces_absorbed += raw_piece_count - len(children)
+
+    if not split_parents:
+        LOGGER.info(
+            "Segment splitting: 0 segments split (%d kept whole >=%.0f%% inside, %d skipped invalid)",
+            skipped_full_inside, SPLIT_SKIP_PORTION * 100, skipped_invalid,
+        )
+        return enriched
+
+    # Assemble new frame: drop parents, append children.
+    kept = enriched.drop(index=split_parents)
+    children_gdf = gpd.GeoDataFrame(new_rows, crs=enriched.crs)
+
+    # Preserve column order and any extension columns.
+    for col in enriched.columns:
+        if col not in children_gdf.columns:
+            children_gdf[col] = None
+    children_gdf = children_gdf[enriched.columns]
+
+    combined = pd.concat([kept, children_gdf], ignore_index=True)
+    combined = gpd.GeoDataFrame(combined, geometry="geometry", crs=enriched.crs)
+
+    LOGGER.info(
+        "Segment splitting: %d parents split into %d children "
+        "(kept whole >=%.0f%% inside=%d, skipped invalid=%d). "
+        "Net row delta: +%d.",
+        len(split_parents), total_children_emitted, SPLIT_SKIP_PORTION * 100,
+        skipped_full_inside, skipped_invalid,
+        total_children_emitted - len(split_parents),
+    )
+    return combined
+
+
 def apply_evacuation_enrichment(
     gdf: gpd.GeoDataFrame,
     refresh: bool = False,
@@ -856,6 +1178,7 @@ def apply_evacuation_enrichment(
     enriched["SEC_EVAC_MATCH_METHOD"] = None
     enriched["SEC_EVAC_OVERLAP_M"] = 0.0
     enriched["SEC_EVAC_OVERLAP_RATIO"] = 0.0
+    enriched["SEC_EVAC_MATCH_PORTION"] = pd.NA
 
     # --- Evacuation routes (hybrid attribute + spatial matching) ---
     try:
@@ -890,6 +1213,7 @@ def apply_evacuation_enrichment(
 
     # --- Contraflow routes (standalone spatial-only matching) ---
     contraflow_matches: dict[int, dict[str, object]] = {}
+    contra_corridor = None
     try:
         contraflow = _load_contraflow_routes(refresh=refresh)
         contraflow_matches = _contraflow_overlay_standalone(
@@ -946,6 +1270,21 @@ def apply_evacuation_enrichment(
     LOGGER.info(
         "Evacuation enrichment complete: %d evacuation segments (%d contraflow)",
         total, contra,
+    )
+
+    # --- Split flagged segments at corridor boundary ---
+    # Replace parent rows with inside/outside child rows so SEC_EVAC=True
+    # applies only to the geometry actually following the corridor. Matches
+    # the QC map's clipped display.
+    enriched = split_flagged_segments_at_corridor(
+        enriched, evac_matches, contra_corridor,
+    )
+
+    post_total = int(enriched["SEC_EVAC"].sum())
+    post_contra = int(enriched["SEC_EVAC_CONTRAFLOW"].sum())
+    LOGGER.info(
+        "Post-split totals: %d SEC_EVAC segments (%d contraflow), %d total rows",
+        post_total, post_contra, len(enriched),
     )
 
     return enriched
