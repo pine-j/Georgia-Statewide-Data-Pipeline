@@ -1092,8 +1092,11 @@ def get_staged_filter_options() -> GeorgiaFilterOptionsResponse:
         cursor = connection.cursor()
 
         # One row per COUNTY_CODE at the majority DISTRICT; stale-DISTRICT
-        # rows from the source GDB would otherwise inflate the dropdown
-        # (see 02-Data-Staging/docs/county_district_stale_pairs.md).
+        # rows from the source GDB would otherwise inflate the dropdown.
+        # Invariant: majority-count DISTRICT == canonical GDOT_DISTRICT.
+        # Largest stale-minority ratio is ~1% (Fulton), well below the 50%
+        # flip threshold. See 02-Data-Staging/docs/county_district_stale_pairs.md
+        # section 5 for rationale (Option A).
         county_rows = _fetch_distinct_rows(
             cursor,
             """
