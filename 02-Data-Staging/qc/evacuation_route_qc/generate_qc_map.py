@@ -518,6 +518,7 @@ def html_template(summary: dict[str, object]) -> str:
   ></script>
   <script>
     const map = L.map('map');
+    window._leafletMap = map;
     L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
