@@ -54,6 +54,7 @@ Retirement rule:
 
 - do not delete a worktree on a timer
 - only retire a worktree when its branch is merged into local `master`, `master` has been pushed to remote, and the worktree is clean
+- **before** running `git worktree remove`, copy any newly downloaded gitignored data files from the worktree into the equivalent path under the main repo working tree (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/`). Gitignored files are permanently lost on worktree removal — they are not on any branch.
 - after retirement, delete the local feature branch so only `master` and active task branches remain
 
 Cleanup command:
@@ -65,6 +66,14 @@ Cleanup command:
 ## Worktree Data Access
 
 Raw inputs and staged outputs are gitignored and exist only in the main repo working tree. They are not copied into sibling worktree checkouts (`D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\*`) when `git worktree add` runs.
+
+**Critical — gitignored files are destroyed on worktree removal.** Any raw data file downloaded into a worktree (e.g. under `01-Raw-Data/`) is gitignored and lives only in that worktree's working tree. When `git worktree remove` runs, those files are permanently deleted. They are NOT in the main repo and NOT on any branch.
+
+Rules that follow from this:
+
+- Before declaring a workstream complete and merging, copy any newly downloaded gitignored data files (e.g. `FHWA_HPMS/{year}/hpms_ga_{year}_tabular.json`) into the **main repo working tree** at the equivalent path (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/01-Raw-Data/...`). Do this before `git worktree remove`.
+- When a script depends on gitignored source files, verify those files exist in the main repo working tree before running the script. Do not assume a prior agent left them there.
+- If a required gitignored file is missing from the main repo working tree, re-download it before proceeding. Document the re-download in your report so the orchestrator knows it happened.
 
 - Read gitignored data from the main repo via absolute path. Examples: `D:\Jacobs\Georgia-Statewide-Data-Pipeline\01-Raw-Data\...`, `...\02-Data-Staging\staged\...`. Do not copy these files into the worktree.
 - Never write into the main repo's gitignored data dirs from a worktree. Other worktrees may be reading the same files concurrently; overwriting them corrupts other agents' reads. Regenerate into a worktree-local scratch dir (for example `_scratch/staged/`) and point the code at that override via an explicit argument or config. Exclude the scratch dir via `.git/info/exclude` so it does not land on the feature branch.
@@ -161,6 +170,8 @@ Practical rule:
 - push earlier only when backup, handoff, or collaboration requires it
 
 ## PR Writing Style
+
+This is a solo-developer repo. The default merge workflow is local (see §Merge to Main below) — do NOT open a GitHub PR unless the user explicitly asks for one. When an agent says "ready for merge review" or "merge to master," that means: merge the branch locally, not open a PR.
 
 If a remote PR is explicitly needed, the project lead is not a developer. PR titles and descriptions must be in plain English describing what changed from a user's perspective. Never use `--fill`.
 
