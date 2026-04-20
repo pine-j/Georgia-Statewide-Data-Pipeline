@@ -22,10 +22,10 @@ from _evac_corridor_match import (
 )
 
 
-OUTPUT_DIR = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\qc\evacuation_route_qc")
-ROADWAY_PATH = Path(r"D:\Jacobs\Georgia-Statewide-Data-Pipeline\02-Data-Staging\spatial\base_network.gpkg")
-ROADWAY_LAYER = "roadway_segments"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+OUTPUT_DIR = Path(__file__).resolve().parent
+ROADWAY_PATH = PROJECT_ROOT / "02-Data-Staging" / "spatial" / "base_network.gpkg"
+ROADWAY_LAYER = "roadway_segments"
 RAW_GDOT_EOC_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "GDOT_EOC"
 EVAC_PATH = RAW_GDOT_EOC_DIR / "ga_evac_routes.geojson"
 CONTRAFLOW_PATH = RAW_GDOT_EOC_DIR / "ga_contraflow_routes.geojson"
@@ -68,6 +68,9 @@ ROADWAY_COLUMNS = [
     "DISTRICT_NAME",
     "COUNTY_NAME",
     "segment_length_m",
+    "ROUTE_ID",
+    "FROM_MILEPOINT",
+    "TO_MILEPOINT",
     "geometry",
 ]
 CONTEXT_COLUMNS = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "geometry"]
@@ -178,6 +181,469 @@ def _parse_route_designations(
             suffix = suffix_raw.capitalize()
         results.append((route_type, number, suffix))
     return results
+
+
+# Mirror sanity gates. Mirroring INC->DEC purely on ROUTE_ID base amplifies
+# any INC false positive into a DEC false positive (and in cases where a
+# ROUTE_ID base covers a concurrent bypass that diverges from the mainline,
+# the DEC segment can land on a completely different road). Two gates:
+#   - INC match must be a confident corridor follower: the matcher's
+#     match_portion must be >= MIRROR_MIN_INC_PORTION. Clipped partials
+#     that only brushed the corridor briefly shouldn't be amplified.
+#   - DEC geometry must actually lie near a polyline for one of the
+#     matched corridor names (distance <= MIRROR_MAX_DEC_OFFSET_M). Rejects
+#     DEC partners that diverge onto a different alignment.
+MIRROR_MIN_INC_PORTION = 0.50
+MIRROR_MAX_DEC_OFFSET_M = 75.0
+
+# Hardcoded concurrent-corridor force-flags. Where the official evac
+# polyline for a state-route corridor runs on a US route through a
+# stretch of counties (because the signed state route is actually
+# concurrent with the US route there), the matcher sometimes misses
+# individual segments — most often DEC-direction lanes on divided
+# highways whose INC partner didn't match cleanly or whose
+# auto-discovered HWY_NAME prefix failed the strict gates. Rather than
+# keep loosening thresholds (which reintroduces cross-street FPs),
+# we force-flag the concurrent HWY_NAME within the concurrent-county
+# set for the specific corridor. Each entry = (corridor_name, {
+# HWY_NAME: {counties}}).
+FORCED_CONCURRENT_FLAGS: list[tuple[str, dict[str, set[str]]]] = [
+    # SR 3 runs concurrently with US-19 from Taylor County south
+    # through Schley/Sumter/Lee/Dougherty/Mitchell — the canonical
+    # Macon-to-Albany evac spine.
+    ("SR 3", {
+        "US-19": {"Taylor", "Macon", "Marion", "Schley", "Sumter",
+                   "Lee", "Dougherty", "Mitchell", "Upson"},
+    }),
+]
+
+
+# Corridor-proximity post-filter. After matcher + mirror, a flagged
+# segment's rendered geometry must lie mostly within POST_FILTER_BUFFER_M
+# of one of its matched corridor polylines. Drops residual FPs where a
+# segment barely clips the polyline at an intersection but trails off
+# onto a cross-street for most of its length — a cross-street that
+# shares a HWY_NAME with an auto-discovered concurrent designation
+# (e.g. SR-19 running south from a US-80/SR-26 intersection) lands in
+# the flagged set because attribute filtering alone cannot distinguish
+# "on-corridor" from "crossing-corridor".
+# Tuned at POST_FILTER_BUFFER_M = 40 m / ratio >= 0.70 so the
+# rendered geometry must truly hug the polyline — a segment whose
+# samples drift past 40 m for more than 30 % of its length is on a
+# different road than the corridor it's attributed to.
+POST_FILTER_BUFFER_M = 40.0
+POST_FILTER_MIN_RATIO = 0.70
+
+
+# Hard cap applied to ALL flagged segments regardless of match_method.
+# User's rule: "anything outside the buffer stays out." Every sample
+# along the rendered geometry must lie within GLOBAL_HARD_CAP_BUFFER_M
+# of a polyline for ONE of its matched corridors. A single sample
+# beyond the cap drops the segment. 100 m accommodates DEC-lane
+# offsets on the widest-median divided highways while still catching
+# cross-street stubs, bypass trails, and mis-attributed long segments.
+GLOBAL_HARD_CAP_BUFFER_M = 100.0
+
+
+def _global_hard_cap(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
+) -> dict[int, dict]:
+    """Drop any flagged segment with any sample farther than
+    ``GLOBAL_HARD_CAP_BUFFER_M`` from a polyline for one of its matched
+    corridors. Unnamed-only matches are tested against the full
+    polyline union.
+    """
+    if not evac_matches:
+        return evac_matches
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+    all_polyline = None
+    try:
+        all_polyline = unary_union(
+            [g for g in evac_routes.geometry.values if g is not None and not g.is_empty]
+        )
+    except Exception:
+        pass
+
+    dropped = 0
+    for idx in list(evac_matches.keys()):
+        match = evac_matches[idx]
+        names = [n for n in match.get("names", []) if n]
+        geom = match.get("clipped_geom") or roads.at[idx, "geometry"]
+        if geom is None or geom.is_empty:
+            continue
+        try:
+            seg_len = float(geom.length)
+        except Exception:
+            continue
+        if seg_len <= 0:
+            continue
+        try:
+            samples = [geom.interpolate(seg_len * i / 10.0) for i in range(11)]
+        except Exception:
+            samples = [geom.representative_point()]
+        # Pick the best matched-corridor polyline (lowest max-sample-dist).
+        passes = False
+        targets = [name_to_polyline.get(n) for n in names if name_to_polyline.get(n) is not None]
+        if not targets and all_polyline is not None:
+            targets = [all_polyline]
+        for poly in targets:
+            max_d = 0.0
+            bad = False
+            for s in samples:
+                d = s.distance(poly)
+                if d > GLOBAL_HARD_CAP_BUFFER_M:
+                    bad = True
+                    break
+                if d > max_d:
+                    max_d = d
+            if not bad:
+                passes = True
+                break
+        if not passes:
+            del evac_matches[idx]
+            dropped += 1
+    print(
+        f"Global hard-cap: dropped {dropped} segments "
+        f"(any sample > {GLOBAL_HARD_CAP_BUFFER_M:.0f} m from matched corridor polyline)"
+    )
+    return evac_matches
+
+
+# Forced entries must still actually follow the corridor polyline.
+# A US-19 bypass segment around Ellaville is nominally in Schley County
+# but physically sits ~500 m east of the polyline (which runs through
+# downtown on CS-552/556). Require the forced segment to hug the
+# polyline: >= FORCED_MIN_SAMPLE_FRAC of 11 samples within
+# FORCED_MAX_SAMPLE_DIST_M of the corridor's polyline.
+FORCED_MAX_SAMPLE_DIST_M = 75.0
+FORCED_MIN_SAMPLE_FRAC = 0.70
+
+
+def _apply_forced_concurrent_flags(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
+) -> dict[int, dict]:
+    """Force-flag (HWY_NAME, COUNTY_NAME) tuples listed in
+    ``FORCED_CONCURRENT_FLAGS`` as matched to the specified corridor —
+    provided the segment actually hugs the corridor polyline.
+
+    Used to close gaps where a state-route corridor's official polyline
+    runs concurrently with a US route and the matcher's thresholds miss
+    individual directional segments. Bypass alignments that share the
+    HWY_NAME but are physically offset from the polyline (e.g. US-19
+    bypass around Ellaville vs. the SR 3 polyline through downtown)
+    are rejected by the sample-distance gate.
+    """
+    if not FORCED_CONCURRENT_FLAGS:
+        return evac_matches
+    hwy_col = roads.columns.get_loc("HWY_NAME") if "HWY_NAME" in roads.columns else None
+    cty_col = roads.columns.get_loc("COUNTY_NAME") if "COUNTY_NAME" in roads.columns else None
+    if hwy_col is None or cty_col is None:
+        return evac_matches
+
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+
+    added = 0
+    rejected_by_distance = 0
+    for corridor_name, rules in FORCED_CONCURRENT_FLAGS:
+        polyline = name_to_polyline.get(corridor_name)
+        if polyline is None:
+            continue
+        for hwy, counties in rules.items():
+            for pos in range(len(roads)):
+                h = roads.iat[pos, hwy_col]
+                c = roads.iat[pos, cty_col]
+                if h != hwy or c not in counties:
+                    continue
+                idx = roads.index[pos]
+                geom = roads.at[idx, "geometry"]
+                if geom is None or geom.is_empty:
+                    continue
+                try:
+                    seg_len = float(geom.length)
+                except Exception:
+                    continue
+                if seg_len <= 0:
+                    continue
+                try:
+                    samples = [geom.interpolate(seg_len * i / 10.0) for i in range(11)]
+                except Exception:
+                    continue
+                near = sum(1 for s in samples if s.distance(polyline) <= FORCED_MAX_SAMPLE_DIST_M)
+                if near / len(samples) < FORCED_MIN_SAMPLE_FRAC:
+                    rejected_by_distance += 1
+                    continue
+                if idx in evac_matches:
+                    existing = evac_matches[idx]
+                    if corridor_name not in existing.get("names", []):
+                        existing.setdefault("names", []).append(corridor_name)
+                    continue
+                evac_matches[idx] = {
+                    "names": [corridor_name],
+                    "overlap_m": 0.0,
+                    "overlap_ratio": 0.0,
+                    "match_method": "concurrent_forced",
+                    "clipped_geom": geom,
+                    "match_portion": 1.0,
+                }
+                added += 1
+    print(
+        f"Forced concurrent-corridor flags: added {added} segments "
+        f"(rejected {rejected_by_distance} for being > {FORCED_MAX_SAMPLE_DIST_M:.0f} m "
+        f"from corridor polyline)"
+    )
+    return evac_matches
+
+
+def _mirror_inc_to_dec(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
+) -> dict[int, dict]:
+    """Copy INC-direction matches onto unflagged DEC partners by ROUTE_ID
+    base + milepoint overlap. Mirrors ``apply_direction_mirror_evac`` so
+    the QC map matches what the pipeline delivers.
+
+    The DEC mirror entry reuses the INC match's names/overlap metadata
+    but carries the DEC segment's own geometry (clipped_geom = DEC line)
+    so the rendered red overlay tracks the DEC alignment, not the INC
+    one 30-50 m away.
+
+    Two FP gates (see MIRROR_MIN_INC_PORTION, MIRROR_MAX_DEC_OFFSET_M):
+      - Skip INC matches whose match_portion is below the threshold.
+      - Skip DEC candidates whose own geometry is farther than the
+        threshold from any matched corridor's polyline.
+    """
+    if not evac_matches or "ROUTE_ID" not in roads.columns:
+        return evac_matches
+
+    # Per-name polyline union for the DEC-distance gate. Uses the raw
+    # evacuation polyline geometries keyed by ROUTE_NAME so we can check
+    # each mirror candidate against the specific corridors the INC
+    # partner matched.
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+
+    MILEPOINT_TOLERANCE = 0.01
+    route_id_col = roads.columns.get_loc("ROUTE_ID")
+    from_mp_col = roads.columns.get_loc("FROM_MILEPOINT") if "FROM_MILEPOINT" in roads.columns else None
+    to_mp_col = roads.columns.get_loc("TO_MILEPOINT") if "TO_MILEPOINT" in roads.columns else None
+    if from_mp_col is None or to_mp_col is None:
+        return evac_matches
+
+    def _mp(pos: int, col: int) -> float:
+        v = roads.iat[pos, col]
+        try:
+            return float(v) if v is not None and pd.notna(v) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Build INC lookup: route_base -> list of (from_mp, to_mp, idx, match).
+    # Skip INC matches whose match_portion is too low — those are partial
+    # / clipped matches that shouldn't be amplified onto their DEC partner.
+    inc_lookup: dict[str, list[tuple[float, float, int, dict]]] = {}
+    for idx, match in evac_matches.items():
+        if float(match.get("match_portion", 1.0)) < MIRROR_MIN_INC_PORTION:
+            continue
+        pos = roads.index.get_loc(idx)
+        rid = roads.iat[pos, route_id_col]
+        if not isinstance(rid, str) or not rid.endswith("INC"):
+            continue
+        base = rid[:-3]
+        inc_lookup.setdefault(base, []).append(
+            (_mp(pos, from_mp_col), _mp(pos, to_mp_col), idx, match)
+        )
+
+    if not inc_lookup:
+        return evac_matches
+
+    mirrored = 0
+    rejected_by_distance = 0
+    for pos in range(len(roads)):
+        rid = roads.iat[pos, route_id_col]
+        if not isinstance(rid, str) or not rid.endswith("DEC"):
+            continue
+        dec_idx = roads.index[pos]
+        if dec_idx in evac_matches:
+            continue
+        base = rid[:-3]
+        candidates = inc_lookup.get(base)
+        if not candidates:
+            continue
+        dec_from = _mp(pos, from_mp_col)
+        dec_to = _mp(pos, to_mp_col)
+        best_overlap = -1.0
+        best_match: dict | None = None
+        for inc_from, inc_to, _, m in candidates:
+            ov = min(dec_to, inc_to) - max(dec_from, inc_from)
+            if ov > best_overlap:
+                best_overlap = ov
+                best_match = m
+        if best_match is None or best_overlap < -MILEPOINT_TOLERANCE:
+            continue
+        dec_geom = roads.at[dec_idx, "geometry"]
+        # Polyline-proximity gate: DEC must actually lie near one of the
+        # matched corridor polylines. Avoids painting DEC segments that
+        # diverge onto a different physical road even though their
+        # ROUTE_ID base and milepoint range match an INC evac segment.
+        names = list(best_match.get("names", []))
+        dec_ok = False
+        for name in names:
+            poly = name_to_polyline.get(name)
+            if poly is None:
+                continue
+            try:
+                if dec_geom.distance(poly) <= MIRROR_MAX_DEC_OFFSET_M:
+                    dec_ok = True
+                    break
+            except Exception:
+                continue
+        # Unnamed-only matches (names empty / no matched-name polyline) —
+        # skip the distance gate, mirror through. These are rare and
+        # correspond to unnamed-corridor matches where name lookup is not
+        # meaningful.
+        if names and not dec_ok and any(n in name_to_polyline for n in names):
+            rejected_by_distance += 1
+            continue
+        evac_matches[dec_idx] = {
+            "names": names,
+            "overlap_m": float(best_match.get("overlap_m", 0.0)),
+            "overlap_ratio": float(best_match.get("overlap_ratio", 0.0)),
+            "match_method": "direction_mirror",
+            "clipped_geom": dec_geom,
+            "match_portion": 1.0,
+        }
+        mirrored += 1
+
+    print(
+        f"Direction mirror: filled {mirrored} DEC segments from INC partners "
+        f"(rejected {rejected_by_distance} for DEC > {MIRROR_MAX_DEC_OFFSET_M:.0f} m "
+        f"from any matched corridor polyline)"
+    )
+    return evac_matches
+
+
+def _post_filter_corridor_proximity(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
+) -> dict[int, dict]:
+    """Drop flagged entries whose rendered geometry lies mostly outside
+    the matched corridor polyline.
+
+    Sample-distance gate (fast): 11 points along the segment; if fewer
+    than POST_FILTER_MIN_RATIO lie within POST_FILTER_BUFFER_M of any
+    matched corridor's polyline, drop. Cleans up residual FPs where a
+    bypass alignment shares a ROUTE_ID or concurrent designation with
+    the corridor and the clipped_geom retains a length that trails off
+    onto a different road.
+    """
+    if not evac_matches:
+        return evac_matches
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+
+    # For unnamed-only matches (corridor name is null because the source
+    # polyline feature has no ROUTE_NAME), test against the union of ALL
+    # polyline features — the segment must still be near SOME polyline to
+    # be a legitimate match.
+    all_polyline = None
+    try:
+        all_polyline = unary_union(
+            [g for g in evac_routes.geometry.values if g is not None and not g.is_empty]
+        )
+    except Exception:
+        pass
+
+    dropped = 0
+    for idx in list(evac_matches.keys()):
+        match = evac_matches[idx]
+        # direction_mirror entries are intentionally ~30-50 m offset from
+        # the polyline (opposing lane of a divided highway). They have
+        # their own proximity gate (MIRROR_MAX_DEC_OFFSET_M) and would
+        # be falsely dropped by this post-filter's tighter 40 m / 70 %
+        # threshold. Skip.
+        if match.get("match_method") == "direction_mirror":
+            continue
+        names = [n for n in match.get("names", []) if n]
+        geom = match.get("clipped_geom") or roads.at[idx, "geometry"]
+        if geom is None or geom.is_empty:
+            continue
+        try:
+            seg_len = float(geom.length)
+        except Exception:
+            continue
+        if seg_len <= 0:
+            continue
+        # Sample 11 points along the rendered geometry.
+        try:
+            samples = [geom.interpolate(seg_len * i / 10.0) for i in range(11)]
+        except Exception:
+            samples = [geom.representative_point()]
+        passes = False
+        # Test against each named corridor's polyline first.
+        for name in names:
+            poly = name_to_polyline.get(name)
+            if poly is None:
+                continue
+            near = sum(1 for s in samples if s.distance(poly) <= POST_FILTER_BUFFER_M)
+            if near / len(samples) >= POST_FILTER_MIN_RATIO:
+                passes = True
+                break
+        # Unnamed-only match (no named corridor hit or names were all
+        # unknown in the polyline set) — fall back to the full-polyline
+        # union. This catches cross-street FPs that slipped in via the
+        # unnamed-corridor path.
+        if not passes and not names and all_polyline is not None:
+            near = sum(1 for s in samples if s.distance(all_polyline) <= POST_FILTER_BUFFER_M)
+            if near / len(samples) >= POST_FILTER_MIN_RATIO:
+                passes = True
+        if not passes:
+            del evac_matches[idx]
+            dropped += 1
+    print(
+        f"Corridor proximity post-filter: dropped {dropped} segments "
+        f"(< {POST_FILTER_MIN_RATIO:.0%} of samples within {POST_FILTER_BUFFER_M:.0f} m "
+        f"of any matched corridor polyline)"
+    )
+    return evac_matches
 
 
 _LOCAL_ROUTE_TYPES = frozenset({"CR", "CS"})
@@ -518,6 +984,7 @@ def html_template(summary: dict[str, object]) -> str:
   ></script>
   <script>
     const map = L.map('map');
+    window._leafletMap = map;
     L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -792,6 +1259,37 @@ def main() -> None:
     evac_matches, evac_diagnostics = per_corridor_evac_overlay(
         roads, evac_routes, name_field="ROUTE_NAME",
     )
+
+    # --- Direction mirror: INC->DEC on divided highways ---
+    # Mirror the pipeline's apply_direction_mirror_evac so the QC map
+    # reflects what the final webapp delivery will have. Divided highways
+    # carry INC and DEC ROUTE_ID pairs; the matcher typically flags only
+    # one direction because the opposing lane's geometry is offset 30-50 m
+    # from the polyline. Here we copy an INC match onto its DEC partner
+    # (matched by route_base + milepoint overlap) using the DEC's own
+    # segment geometry so the gap on the QC map closes.
+    evac_matches = _mirror_inc_to_dec(roads, evac_matches, evac_routes)
+
+    # --- Corridor-proximity post-filter ---
+    # Drop any flagged segment whose rendered geometry lies mostly outside
+    # the buffered polyline of any of its matched corridors. Cleans up
+    # residual FPs where long or diverging segments make it through the
+    # matcher/mirror gates but visually trace a different alignment.
+    evac_matches = _post_filter_corridor_proximity(roads, evac_matches, evac_routes)
+
+    # --- Forced concurrent-corridor flags ---
+    # Closes residual FN gaps where the matcher couldn't reach a
+    # DEC-direction segment or failed auto-discovery on a concurrent
+    # US-route designation. Applied LAST so the proximity post-filter
+    # doesn't strip force-flagged entries.
+    evac_matches = _apply_forced_concurrent_flags(roads, evac_matches, evac_routes)
+
+    # --- Global hard cap: every rendered segment must stay inside
+    #     GLOBAL_HARD_CAP_BUFFER_M of ITS matched corridor polyline for
+    #     the entire length. Drops any segment with any sample farther
+    #     than the cap. User rule: "anything outside the buffer stays
+    #     out."
+    evac_matches = _global_hard_cap(roads, evac_matches, evac_routes)
 
     # Convert results dict to GeoDataFrame for export. Use the clipped-to-
     # corridor geometry so partial-follow overshoots render only the in-

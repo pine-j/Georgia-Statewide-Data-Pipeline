@@ -4251,6 +4251,12 @@ def main() -> None:
     route_type_fields = apply_gdot_route_type_classification(segmented)
     segmented = pd.concat([segmented, route_type_fields], axis=1)
     segmented = apply_evacuation_enrichment(segmented)
+    # Splitting changed milepoints on SEC_EVAC children — rebuild the
+    # deterministic unique_id (keyed on ROUTE_ID|FROM|TO milepoint) and
+    # re-run the admin-tuple collision guard so downstream tables stay
+    # keyable by unique_id.
+    segmented = build_unique_id(segmented)
+    segmented = apply_unique_id_collision_guard(segmented)
     segmented = sync_derived_alias_fields(segmented)
     segmented = apply_direction_mirror_aadt(segmented)
     segmented = apply_state_system_current_aadt_gap_fill(segmented)

@@ -132,6 +132,52 @@ MEGA_MIN_RATIO = 0.50
 CLIP_SKIP_PORTION = 0.90
 CLIP_MIN_LENGTH_M = 30.0
 
+# Local/Other on-corridor gate: a Local/Other segment must be close to a
+# state-system (Interstate/US/SR) segment that is ALSO flagged on the same
+# corridor, along most of its length. Corrects for two FP mechanisms:
+#   1. The source evac polyline digitizes onto a parallel county road, so
+#      the CR passes the polyline-distance check even though the actual
+#      state highway is hundreds of meters away (e.g. Schley CR-150).
+#   2. Frontage/service roads consistently 30-50 m offset from a mainline
+#      pass the 50 m matcher buffer but aren't really on the corridor
+#      (e.g. Muscogee CR-1724, Atkinson CR-131).
+# The state-system sibling gate catches both: if CR-150 has no US-19
+# nearby and CR-1724 has I-185 right next to it, the threshold separates
+# them. We use per-sample distance averaged along the segment so an
+# endpoint intersection doesn't let a divergent road pass.
+# Exempted:
+#   - CR-785 — explicitly designated CR evac corridor in the source.
+LOCAL_SIBLING_SAMPLE_DIST_M = 25.0
+LOCAL_SIBLING_SAMPLE_FRAC = 0.80
+LOCAL_SIBLING_EXEMPT_HWY_NAMES = frozenset({"CR-785"})
+
+# Polyline-follower bypass: a Local/Other segment with no state-system sibling
+# can still pass if it hugs the official evacuation polyline tightly along
+# most of its length — i.e. the segment IS the polyline path, not a parallel
+# road the polyline happens to brush past. Two mechanisms combined:
+#   1. Tight-buffer sample test: >= POLYLINE_FOLLOWER_SAMPLE_FRAC of 11
+#      sample points lie within POLYLINE_FOLLOWER_TIGHT_M of the polyline.
+#   2. Azimuth alignment: the segment's azimuth is within
+#      POLYLINE_FOLLOWER_MAX_ANGLE_DEG of the polyline's local azimuth
+#      (sampled in the segment's neighbourhood). Rejects segments that
+#      cross the polyline at a sharp angle even if most samples happen to
+#      sit close (e.g. a cul-de-sac inside a curve).
+# Known FPs — CR-150 Schley, CR-154 Schley, CR-1724 Muscogee — are kept out
+# by excluding CR-prefixed HWY_NAMEs from this bypass: county-road
+# designations represent parallel roads the source polyline tends to drift
+# onto, so they must still prove themselves through the state-system
+# sibling gate (or be explicitly listed in LOCAL_SIBLING_EXEMPT_HWY_NAMES
+# like CR-785). CS-prefixed and unnamed local segments are admitted —
+# those are where the polyline genuinely runs on a local road that has no
+# state-maintained counterpart (Ellaville/Americus city streets, White
+# Hill/Newington on GA 21, Suttons Corner on SR 1/US 27).
+POLYLINE_FOLLOWER_TIGHT_M = 20.0
+POLYLINE_FOLLOWER_SAMPLE_FRAC = 0.60
+POLYLINE_FOLLOWER_MIN_LENGTH_M = 80.0
+POLYLINE_FOLLOWER_MAX_ANGLE_DEG = 30.0
+POLYLINE_FOLLOWER_ALIGNMENT_BUFFER_M = 60.0
+POLYLINE_FOLLOWER_EXCLUDED_PREFIXES = frozenset({"CR"})
+
 # Families that belong to the signed state road system.
 _STATE_SYSTEM_FAMILIES = frozenset(
     {"interstate", "us route", "u.s. route", "state route"}
@@ -468,8 +514,38 @@ def per_corridor_evac_overlay(
 
 
             # Local/Other gate — must run along the corridor, not cross it.
+            # Two acceptance paths:
+            #   (i)  Standard: long enough AND high loose-buffer ratio.
+            #   (ii) Polyline-follower: segment hugs the corridor's tight
+            #        (20 m) buffer for most of its length. This admits
+            #        Ellaville/Americus/Smithville-style cases where the
+            #        polyline runs on a city street/unnamed local with no
+            #        state-system counterpart — segments too short or with
+            #        too-narrow loose overlap to pass (i). CR-prefixed
+            #        county roads are excluded from this bypass because the
+            #        source polyline tends to drift onto parallel CRs.
             if not is_state_system:
-                if seg_len < LOCAL_MIN_LENGTH_M or co_ratio < LOCAL_MIN_OVERLAP_RATIO:
+                passes_standard = (
+                    seg_len >= LOCAL_MIN_LENGTH_M
+                    and co_ratio >= LOCAL_MIN_OVERLAP_RATIO
+                )
+                passes_polyline = False
+                if (
+                    not passes_standard
+                    and seg_len >= POLYLINE_FOLLOWER_MIN_LENGTH_M
+                    and _polyline_follower_eligible(hwy_clean)
+                ):
+                    tight_buf = corridor_tight.get(corridor_key)
+                    if tight_buf is not None:
+                        try:
+                            tight_overlap = float(
+                                seg_geom.intersection(tight_buf).length
+                            )
+                        except Exception:
+                            tight_overlap = 0.0
+                        if tight_overlap / seg_len >= POLYLINE_FOLLOWER_SAMPLE_FRAC:
+                            passes_polyline = True
+                if not (passes_standard or passes_polyline):
                     continue
 
             # Attribute filter — state-system segments must match a HWY_NAME
@@ -606,7 +682,16 @@ def per_corridor_evac_overlay(
             "match_method": "spatial",
             "clipped_geom": clipped_geom,
             "match_portion": match_portion,
+            "_corridor_keys": list(matched_corridors),
+            "_is_state_system": is_state_system,
         }
+
+    # =================================================================
+    # STEP 4: Local/Other on-corridor post-filter
+    # =================================================================
+    local_sibling_rejects = _apply_local_on_corridor_filter(
+        results, segments, hwy_name_col, corridor_public_name, corridor_geom,
+    )
 
     # =================================================================
     # Diagnostics
@@ -639,6 +724,7 @@ def per_corridor_evac_overlay(
         "mega_rejects": mega_rejects,
         "short_state_rejects": short_state_rejects,
         "unnamed_tight_rejects": unnamed_tight_rejects,
+        "local_on_corridor_rejects": local_sibling_rejects,
         "unnamed_features_count": unnamed_count,
         "corridors_with_zero_matches": [
             name for name, count in per_corridor_counts.items() if count == 0
@@ -651,16 +737,221 @@ def per_corridor_evac_overlay(
 
     LOGGER.info(
         "Evac overlay total: %d matched (rejects — attr=%d, alignment=%d, "
-        "mega=%d, short_state=%d, unnamed_tight=%d)",
+        "mega=%d, short_state=%d, unnamed_tight=%d, local_on_corridor=%d)",
         len(results),
         attribute_rejects,
         alignment_rejects,
         mega_rejects,
         short_state_rejects,
         unnamed_tight_rejects,
+        local_sibling_rejects,
     )
 
+    # Strip internal helper keys before returning — callers don't need them.
+    for r in results.values():
+        r.pop("_corridor_keys", None)
+        r.pop("_is_state_system", None)
+
     return results, diagnostics
+
+
+def _apply_local_on_corridor_filter(
+    results: dict[int, dict[str, Any]],
+    segments: gpd.GeoDataFrame,
+    hwy_name_col: int | None,
+    corridor_public_name: dict[str, str | None],
+    corridor_geom: dict[str, Any],
+) -> int:
+    """Drop Local/Other matches that aren't close to a state-system sibling
+    on the same corridor along most of their length.
+
+    A Local/Other match passes if ANY of the following holds for at least
+    one matched named corridor:
+      (a) State-system sibling gate: along >= LOCAL_SIBLING_SAMPLE_FRAC of
+          11 sample points, the segment is within
+          LOCAL_SIBLING_SAMPLE_DIST_M of a state-system (Interstate/US/SR)
+          segment that the matcher also flagged on the SAME corridor.
+      (b) Polyline-follower bypass: the segment hugs the corridor's raw
+          polyline geometry tightly (>= POLYLINE_FOLLOWER_SAMPLE_FRAC of
+          11 samples within POLYLINE_FOLLOWER_TIGHT_M) AND its azimuth
+          aligns (<= POLYLINE_FOLLOWER_MAX_ANGLE_DEG) with the polyline's
+          local azimuth AND its length is >= POLYLINE_FOLLOWER_MIN_LENGTH_M.
+          Only segments whose HWY_NAME prefix is NOT in
+          POLYLINE_FOLLOWER_EXCLUDED_PREFIXES can use this path — CR-
+          prefixed county roads still need a state-system sibling (or an
+          explicit LOCAL_SIBLING_EXEMPT_HWY_NAMES listing), since the
+          source polyline tends to drift onto parallel county roads.
+
+    Effect on known cases:
+      - CR-150 / CR-154 Schley (FP): HWY_NAME CR-*, no US-19 sibling —
+        rejected by both gates.
+      - CR-1724 Muscogee (FP): HWY_NAME CR-*, parallel frontage to I-185 —
+        rejected by both gates.
+      - CS-823 Thomasville (TP): CS prefix, flagged US-341 sibling nearby —
+        passes gate (a).
+      - CR-785 Lowndes (TP): explicitly exempt.
+      - Ellaville/Americus/Smithville locals on SR 3 (TP): non-CR HWY
+        prefixes (CS or unnamed), polyline runs on them with no state
+        counterpart — pass gate (b).
+
+    Mutates ``results`` in place, removing rejected entries. Returns the
+    count removed.
+    """
+    # Index state-system matched geometries by corridor key.
+    state_geoms_by_corridor: dict[str, list] = {}
+    for seg_idx, r in results.items():
+        if not r.get("_is_state_system"):
+            continue
+        for ckey in r.get("_corridor_keys", []):
+            state_geoms_by_corridor.setdefault(ckey, []).append(
+                segments.at[seg_idx, "geometry"]
+            )
+
+    to_remove: list[int] = []
+    polyline_bypass_count = 0
+    for seg_idx, r in results.items():
+        if r.get("_is_state_system"):
+            continue
+        corridor_keys = r.get("_corridor_keys", [])
+        if not corridor_keys:
+            continue
+
+        # Exempt explicitly-designated CR evac segments.
+        hwy_clean: str | None = None
+        if hwy_name_col is not None:
+            pos = segments.index.get_loc(seg_idx)
+            hwy_val = segments.iat[pos, hwy_name_col]
+            hwy_clean = _clean_hwy_name(hwy_val)
+            if hwy_clean in LOCAL_SIBLING_EXEMPT_HWY_NAMES:
+                continue
+
+        seg_geom = segments.at[seg_idx, "geometry"]
+        if seg_geom is None or seg_geom.is_empty:
+            continue
+
+        # Sample 11 points along the segment — shared by both gates.
+        try:
+            seg_len = float(seg_geom.length)
+            samples = [
+                seg_geom.interpolate(seg_len * i / 10.0)
+                for i in range(11)
+            ]
+        except Exception:
+            seg_len = 0.0
+            samples = [seg_geom.representative_point()]
+
+        # Gate (a) — state-system sibling.
+        stays_close = False
+        for ckey in corridor_keys:
+            if corridor_public_name.get(ckey) is None:
+                continue  # unnamed corridor — sibling check not meaningful
+            state_geoms = state_geoms_by_corridor.get(ckey, [])
+            if not state_geoms:
+                continue
+            near_count = 0
+            for sample in samples:
+                for sg in state_geoms:
+                    if sample.distance(sg) <= LOCAL_SIBLING_SAMPLE_DIST_M:
+                        near_count += 1
+                        break
+            if near_count / len(samples) >= LOCAL_SIBLING_SAMPLE_FRAC:
+                stays_close = True
+                break
+
+        # Gate (b) — polyline-follower bypass. Only for non-CR HWY_NAMEs.
+        if not stays_close and _polyline_follower_eligible(hwy_clean) and seg_len >= POLYLINE_FOLLOWER_MIN_LENGTH_M:
+            seg_az = _line_azimuth(seg_geom)
+            for ckey in corridor_keys:
+                if corridor_public_name.get(ckey) is None:
+                    continue
+                polyline = corridor_geom.get(ckey)
+                if polyline is None:
+                    continue
+                if _segment_follows_polyline(seg_geom, samples, seg_az, polyline):
+                    stays_close = True
+                    polyline_bypass_count += 1
+                    break
+
+        # If the match is ONLY to unnamed corridors, preserve it — no
+        # state-system sibling check is meaningful for unnamed features.
+        if not stays_close:
+            has_named = any(
+                corridor_public_name.get(ck) is not None for ck in corridor_keys
+            )
+            if not has_named:
+                continue  # unnamed-only — don't filter
+            to_remove.append(seg_idx)
+
+    for seg_idx in to_remove:
+        del results[seg_idx]
+
+    if to_remove:
+        LOGGER.info(
+            "Local/Other sibling filter removed %d matches "
+            "(Local/Other segments without state-system evac sibling within "
+            "%.0f m along >=%.0f%% of length, and no polyline-follower pass)",
+            len(to_remove), LOCAL_SIBLING_SAMPLE_DIST_M,
+            LOCAL_SIBLING_SAMPLE_FRAC * 100,
+        )
+    if polyline_bypass_count:
+        LOGGER.info(
+            "Local/Other polyline-follower bypass rescued %d matches "
+            "(non-CR HWY_NAME, >=%.0f%% of samples within %.0fm of polyline, "
+            "azimuth within %.0f°)",
+            polyline_bypass_count,
+            POLYLINE_FOLLOWER_SAMPLE_FRAC * 100,
+            POLYLINE_FOLLOWER_TIGHT_M,
+            POLYLINE_FOLLOWER_MAX_ANGLE_DEG,
+        )
+
+    return len(to_remove)
+
+
+def _polyline_follower_eligible(hwy_clean: str | None) -> bool:
+    """True if the segment's HWY_NAME prefix is not in the CR excluded set."""
+    if not hwy_clean:
+        return True  # unnamed local → eligible
+    prefix = hwy_clean.split("-", 1)[0]
+    return prefix not in POLYLINE_FOLLOWER_EXCLUDED_PREFIXES
+
+
+def _segment_follows_polyline(
+    seg_geom,
+    samples: list,
+    seg_az: float | None,
+    polyline,
+) -> bool:
+    """Sample-based check: segment hugs the raw polyline geometry tightly
+    along most of its length AND aligns azimuth-wise.
+
+    Rejects segments that merely brush past a polyline (cross-streets,
+    short overshoots) and parallel frontage roads (consistently >15 m
+    offset). Accepts segments that ARE the polyline's path.
+    """
+    if seg_geom is None or seg_geom.is_empty or polyline is None:
+        return False
+    if not samples:
+        return False
+    near = sum(1 for s in samples if s.distance(polyline) <= POLYLINE_FOLLOWER_TIGHT_M)
+    if near / len(samples) < POLYLINE_FOLLOWER_SAMPLE_FRAC:
+        return False
+
+    # Azimuth alignment — the polyline's local azimuth is sampled inside the
+    # segment's immediate neighbourhood (buffer) to avoid averaging across
+    # polyline bends far from the segment.
+    if seg_az is not None:
+        try:
+            local_polyline = polyline.intersection(
+                seg_geom.buffer(POLYLINE_FOLLOWER_ALIGNMENT_BUFFER_M)
+            )
+        except Exception:
+            local_polyline = None
+        poly_az = _line_azimuth(local_polyline)
+        angle = _alignment_angle_deg(seg_az, poly_az)
+        if angle is not None and angle > POLYLINE_FOLLOWER_MAX_ANGLE_DEG:
+            return False
+
+    return True
 
 
 # Backward-compatible alias while callers move to the public helper name.
