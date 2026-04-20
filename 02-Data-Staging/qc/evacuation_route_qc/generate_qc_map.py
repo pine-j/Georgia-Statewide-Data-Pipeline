@@ -68,6 +68,9 @@ ROADWAY_COLUMNS = [
     "DISTRICT_NAME",
     "COUNTY_NAME",
     "segment_length_m",
+    "ROUTE_ID",
+    "FROM_MILEPOINT",
+    "TO_MILEPOINT",
     "geometry",
 ]
 CONTEXT_COLUMNS = ["unique_id", "HWY_NAME", "ROUTE_FAMILY", "geometry"]
@@ -178,6 +181,89 @@ def _parse_route_designations(
             suffix = suffix_raw.capitalize()
         results.append((route_type, number, suffix))
     return results
+
+
+def _mirror_inc_to_dec(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+) -> dict[int, dict]:
+    """Copy INC-direction matches onto unflagged DEC partners by ROUTE_ID
+    base + milepoint overlap. Mirrors ``apply_direction_mirror_evac`` so
+    the QC map matches what the pipeline delivers.
+
+    The DEC mirror entry reuses the INC match's names/overlap metadata
+    but carries the DEC segment's own geometry (clipped_geom = DEC line)
+    so the rendered red overlay tracks the DEC alignment, not the INC
+    one 30-50 m away.
+    """
+    if not evac_matches or "ROUTE_ID" not in roads.columns:
+        return evac_matches
+
+    MILEPOINT_TOLERANCE = 0.01
+    route_id_col = roads.columns.get_loc("ROUTE_ID")
+    from_mp_col = roads.columns.get_loc("FROM_MILEPOINT") if "FROM_MILEPOINT" in roads.columns else None
+    to_mp_col = roads.columns.get_loc("TO_MILEPOINT") if "TO_MILEPOINT" in roads.columns else None
+    if from_mp_col is None or to_mp_col is None:
+        return evac_matches
+
+    def _mp(pos: int, col: int) -> float:
+        v = roads.iat[pos, col]
+        try:
+            return float(v) if v is not None and pd.notna(v) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Build INC lookup: route_base -> list of (from_mp, to_mp, idx, match)
+    inc_lookup: dict[str, list[tuple[float, float, int, dict]]] = {}
+    for idx, match in evac_matches.items():
+        pos = roads.index.get_loc(idx)
+        rid = roads.iat[pos, route_id_col]
+        if not isinstance(rid, str) or not rid.endswith("INC"):
+            continue
+        base = rid[:-3]
+        inc_lookup.setdefault(base, []).append(
+            (_mp(pos, from_mp_col), _mp(pos, to_mp_col), idx, match)
+        )
+
+    if not inc_lookup:
+        return evac_matches
+
+    mirrored = 0
+    for pos in range(len(roads)):
+        rid = roads.iat[pos, route_id_col]
+        if not isinstance(rid, str) or not rid.endswith("DEC"):
+            continue
+        dec_idx = roads.index[pos]
+        if dec_idx in evac_matches:
+            continue
+        base = rid[:-3]
+        candidates = inc_lookup.get(base)
+        if not candidates:
+            continue
+        dec_from = _mp(pos, from_mp_col)
+        dec_to = _mp(pos, to_mp_col)
+        best_overlap = -1.0
+        best_match: dict | None = None
+        for inc_from, inc_to, _, m in candidates:
+            ov = min(dec_to, inc_to) - max(dec_from, inc_from)
+            if ov > best_overlap:
+                best_overlap = ov
+                best_match = m
+        if best_match is None or best_overlap < -MILEPOINT_TOLERANCE:
+            continue
+        dec_geom = roads.at[dec_idx, "geometry"]
+        evac_matches[dec_idx] = {
+            "names": list(best_match.get("names", [])),
+            "overlap_m": float(best_match.get("overlap_m", 0.0)),
+            "overlap_ratio": float(best_match.get("overlap_ratio", 0.0)),
+            "match_method": "direction_mirror",
+            "clipped_geom": dec_geom,
+            "match_portion": 1.0,
+        }
+        mirrored += 1
+
+    print(f"Direction mirror: filled {mirrored} DEC segments from INC partners")
+    return evac_matches
 
 
 _LOCAL_ROUTE_TYPES = frozenset({"CR", "CS"})
@@ -793,6 +879,16 @@ def main() -> None:
     evac_matches, evac_diagnostics = per_corridor_evac_overlay(
         roads, evac_routes, name_field="ROUTE_NAME",
     )
+
+    # --- Direction mirror: INC->DEC on divided highways ---
+    # Mirror the pipeline's apply_direction_mirror_evac so the QC map
+    # reflects what the final webapp delivery will have. Divided highways
+    # carry INC and DEC ROUTE_ID pairs; the matcher typically flags only
+    # one direction because the opposing lane's geometry is offset 30-50 m
+    # from the polyline. Here we copy an INC match onto its DEC partner
+    # (matched by route_base + milepoint overlap) using the DEC's own
+    # segment geometry so the gap on the QC map closes.
+    evac_matches = _mirror_inc_to_dec(roads, evac_matches)
 
     # Convert results dict to GeoDataFrame for export. Use the clipped-to-
     # corridor geometry so partial-follow overshoots render only the in-
