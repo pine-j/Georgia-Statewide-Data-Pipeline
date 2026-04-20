@@ -36,6 +36,31 @@ LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_GDOT_EOC_DIR = PROJECT_ROOT / "01-Raw-Data" / "Roadway-Inventory" / "GDOT_EOC"
+EVAC_SNAPSHOT_DIR = PROJECT_ROOT / "02-Data-Staging" / "tests" / "snapshots"
+
+
+def _evac_snapshot(label: str, gdf: pd.DataFrame) -> None:
+    """Persist a per-stage snapshot of evac flags for the regression fixture.
+
+    Writes a lightweight parquet containing only the columns the fixture
+    inspects, keyed by (HWY_NAME, COUNTY_NAME, ROUTE_ID). The test runner
+    uses these to localize which stage regressed a case.
+    """
+    try:
+        EVAC_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        cols = [c for c in (
+            "HWY_NAME", "COUNTY_NAME", "ROUTE_ID", "ROUTE_FAMILY",
+            "FROM_MILEPOINT", "TO_MILEPOINT",
+            "SEC_EVAC", "SEC_EVAC_CONTRAFLOW", "SEC_EVAC_ROUTE_NAME",
+            "SEC_EVAC_OVERLAP_M", "SEC_EVAC_OVERLAP_RATIO", "SEC_EVAC_MATCH_PORTION",
+        ) if c in gdf.columns]
+        snap = pd.DataFrame(gdf[cols]).copy()
+        snap["_stage"] = label
+        out = EVAC_SNAPSHOT_DIR / f"{label}.parquet"
+        snap.to_parquet(out, index=True)
+        LOGGER.info("Evac snapshot: wrote %s (%d rows)", out.name, len(snap))
+    except Exception as exc:
+        LOGGER.warning("Evac snapshot %s failed: %s", label, exc)
 
 EVAC_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_evac_routes.geojson"
 CONTRAFLOW_ROUTES_GEOJSON = RAW_GDOT_EOC_DIR / "ga_contraflow_routes.geojson"
@@ -1210,6 +1235,7 @@ def apply_evacuation_enrichment(
             enriched.at[idx, "SEC_EVAC_ROUTE_NAME"] = "; ".join(sorted(set(names)))
 
     LOGGER.info("Evacuation route matches: %d segments", len(evac_matches))
+    _evac_snapshot("01_after_matcher_and_filter", enriched)
 
     # --- Contraflow routes (standalone spatial-only matching) ---
     contraflow_matches: dict[int, dict[str, object]] = {}
@@ -1264,6 +1290,7 @@ def apply_evacuation_enrichment(
             enriched.at[idx, "SEC_EVAC_ROUTE_NAME"] = "; ".join(sorted(set(all_names)))
 
     LOGGER.info("Contraflow route matches: %d segments", len(contraflow_matches))
+    _evac_snapshot("02_after_contraflow", enriched)
 
     total = int(enriched["SEC_EVAC"].sum())
     contra = int(enriched["SEC_EVAC_CONTRAFLOW"].sum())
@@ -1286,8 +1313,90 @@ def apply_evacuation_enrichment(
         "Post-split totals: %d SEC_EVAC segments (%d contraflow), %d total rows",
         post_total, post_contra, len(enriched),
     )
+    _evac_snapshot("03_after_split", enriched)
+
+    # Mirror evac flags from INC to DEC direction partners so divided highways
+    # are fully flagged in both directions.
+    enriched = apply_direction_mirror_evac(enriched)
+    _evac_snapshot("04_after_direction_mirror", enriched)
 
     return enriched
+
+
+def apply_direction_mirror_evac(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Mirror SEC_EVAC flags from INC to DEC direction segments on the same route.
+
+    Divided highways are represented as INC and DEC ROUTE_ID pairs.  The
+    matcher runs on geometry and typically flags the INC direction; the
+    matching DEC segment (same physical road, opposite direction) is missed
+    because the DEC polyline is offset by a few metres from the INC one.
+    This pass finds unflagged DEC segments whose INC partner is flagged and
+    shares an overlapping milepoint range, then copies all SEC_EVAC_* columns
+    across.
+    """
+    MILEPOINT_TOLERANCE = 0.01
+
+    filled = gdf.copy()
+
+    dec_unflagged = filled[
+        (filled["ROUTE_ID"].str.endswith("DEC", na=False))
+        & (~filled["SEC_EVAC"].fillna(False).astype(bool))
+    ]
+
+    if dec_unflagged.empty:
+        LOGGER.info("Evac direction mirror: no unflagged DEC segments found")
+        return filled
+
+    inc_flagged = filled[
+        (filled["ROUTE_ID"].str.endswith("INC", na=False))
+        & (filled["SEC_EVAC"].fillna(False).astype(bool))
+    ]
+
+    if inc_flagged.empty:
+        LOGGER.info("Evac direction mirror: no flagged INC segments found")
+        return filled
+
+    # Build lookup: route_base -> [(from_mp, to_mp, idx), ...]
+    inc_lookup: dict[str, list[tuple[float, float, int]]] = {}
+    for idx, row in inc_flagged.iterrows():
+        route_base = str(row["ROUTE_ID"])[:-3]
+        from_mp = float(row["FROM_MILEPOINT"]) if pd.notna(row["FROM_MILEPOINT"]) else 0.0
+        to_mp = float(row["TO_MILEPOINT"]) if pd.notna(row["TO_MILEPOINT"]) else 0.0
+        inc_lookup.setdefault(route_base, []).append((from_mp, to_mp, idx))
+
+    evac_cols = [
+        "SEC_EVAC", "SEC_EVAC_CONTRAFLOW", "SEC_EVAC_ROUTE_NAME",
+        "SEC_EVAC_SOURCE", "SEC_EVAC_MATCH_METHOD",
+        "SEC_EVAC_OVERLAP_M", "SEC_EVAC_OVERLAP_RATIO", "SEC_EVAC_MATCH_PORTION",
+    ]
+    mirror_count = 0
+    for dec_idx, dec_row in dec_unflagged.iterrows():
+        route_base = str(dec_row["ROUTE_ID"])[:-3]
+        candidates = inc_lookup.get(route_base, [])
+        if not candidates:
+            continue
+        dec_from = float(dec_row["FROM_MILEPOINT"]) if pd.notna(dec_row["FROM_MILEPOINT"]) else 0.0
+        dec_to = float(dec_row["TO_MILEPOINT"]) if pd.notna(dec_row["TO_MILEPOINT"]) else 0.0
+
+        best_overlap = -1.0
+        best_inc_idx = None
+        for inc_from, inc_to, inc_idx in candidates:
+            overlap = min(dec_to, inc_to) - max(dec_from, inc_from)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_inc_idx = inc_idx
+
+        if best_inc_idx is None or best_overlap < -MILEPOINT_TOLERANCE:
+            continue
+
+        inc_row = filled.loc[best_inc_idx]
+        for col in evac_cols:
+            if col in filled.columns and col in inc_row.index:
+                filled.at[dec_idx, col] = inc_row[col]
+        mirror_count += 1
+
+    LOGGER.info("Evac direction mirror: filled %d DEC segments from INC partners", mirror_count)
+    return filled
 
 
 def write_evacuation_summary(gdf: pd.DataFrame) -> None:

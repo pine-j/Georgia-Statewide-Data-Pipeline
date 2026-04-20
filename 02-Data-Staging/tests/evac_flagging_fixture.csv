@@ -1,0 +1,9 @@
+category,hwy_name,county,expected_sec_evac,route_id_suffix,note
+true_positive,CR-785,Lowndes,True,,explicitly-designated CR evac connector; filter-exempt
+true_positive,CS-823,Thomas,True,,Thomasville CS segment IS the state route alignment
+true_positive,US-341,Jeff Davis,True,,Hazlehurst US-341 mainline evac corridor
+true_positive,US-19,Schley,True,INC,Ellaville US-19 INC direction on SR 3 corridor
+true_positive,US-19,Schley,True,DEC,Ellaville US-19 DEC direction — must be filled by direction mirror
+false_positive,CR-150,Schley,False,,CR-150 Schley — SR 3 polyline wandered onto CR-150; no state-system sibling within 25m
+false_positive,CR-154,Schley,False,,CR-154 Schley — only US-19 INC within 80m, no flagged sibling within 25m
+false_positive,CR-1724,Muscogee,False,,parallel frontage road to I-185, ~30-50m away
