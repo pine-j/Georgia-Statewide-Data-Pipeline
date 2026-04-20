@@ -235,18 +235,117 @@ POST_FILTER_BUFFER_M = 40.0
 POST_FILTER_MIN_RATIO = 0.70
 
 
+# Hard cap applied to ALL flagged segments regardless of match_method.
+# User's rule: "anything outside the buffer stays out." Every sample
+# along the rendered geometry must lie within GLOBAL_HARD_CAP_BUFFER_M
+# of a polyline for ONE of its matched corridors. A single sample
+# beyond the cap drops the segment. 100 m accommodates DEC-lane
+# offsets on the widest-median divided highways while still catching
+# cross-street stubs, bypass trails, and mis-attributed long segments.
+GLOBAL_HARD_CAP_BUFFER_M = 100.0
+
+
+def _global_hard_cap(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
+) -> dict[int, dict]:
+    """Drop any flagged segment with any sample farther than
+    ``GLOBAL_HARD_CAP_BUFFER_M`` from a polyline for one of its matched
+    corridors. Unnamed-only matches are tested against the full
+    polyline union.
+    """
+    if not evac_matches:
+        return evac_matches
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+    all_polyline = None
+    try:
+        all_polyline = unary_union(
+            [g for g in evac_routes.geometry.values if g is not None and not g.is_empty]
+        )
+    except Exception:
+        pass
+
+    dropped = 0
+    for idx in list(evac_matches.keys()):
+        match = evac_matches[idx]
+        names = [n for n in match.get("names", []) if n]
+        geom = match.get("clipped_geom") or roads.at[idx, "geometry"]
+        if geom is None or geom.is_empty:
+            continue
+        try:
+            seg_len = float(geom.length)
+        except Exception:
+            continue
+        if seg_len <= 0:
+            continue
+        try:
+            samples = [geom.interpolate(seg_len * i / 10.0) for i in range(11)]
+        except Exception:
+            samples = [geom.representative_point()]
+        # Pick the best matched-corridor polyline (lowest max-sample-dist).
+        passes = False
+        targets = [name_to_polyline.get(n) for n in names if name_to_polyline.get(n) is not None]
+        if not targets and all_polyline is not None:
+            targets = [all_polyline]
+        for poly in targets:
+            max_d = 0.0
+            bad = False
+            for s in samples:
+                d = s.distance(poly)
+                if d > GLOBAL_HARD_CAP_BUFFER_M:
+                    bad = True
+                    break
+                if d > max_d:
+                    max_d = d
+            if not bad:
+                passes = True
+                break
+        if not passes:
+            del evac_matches[idx]
+            dropped += 1
+    print(
+        f"Global hard-cap: dropped {dropped} segments "
+        f"(any sample > {GLOBAL_HARD_CAP_BUFFER_M:.0f} m from matched corridor polyline)"
+    )
+    return evac_matches
+
+
+# Forced entries must still actually follow the corridor polyline.
+# A US-19 bypass segment around Ellaville is nominally in Schley County
+# but physically sits ~500 m east of the polyline (which runs through
+# downtown on CS-552/556). Require the forced segment to hug the
+# polyline: >= FORCED_MIN_SAMPLE_FRAC of 11 samples within
+# FORCED_MAX_SAMPLE_DIST_M of the corridor's polyline.
+FORCED_MAX_SAMPLE_DIST_M = 75.0
+FORCED_MIN_SAMPLE_FRAC = 0.70
+
+
 def _apply_forced_concurrent_flags(
     roads: gpd.GeoDataFrame,
     evac_matches: dict[int, dict],
+    evac_routes: gpd.GeoDataFrame,
+    name_field: str = "ROUTE_NAME",
 ) -> dict[int, dict]:
     """Force-flag (HWY_NAME, COUNTY_NAME) tuples listed in
-    ``FORCED_CONCURRENT_FLAGS`` as matched to the specified corridor.
+    ``FORCED_CONCURRENT_FLAGS`` as matched to the specified corridor —
+    provided the segment actually hugs the corridor polyline.
 
     Used to close gaps where a state-route corridor's official polyline
     runs concurrently with a US route and the matcher's thresholds miss
-    individual directional segments. Each forced entry becomes a
-    synthetic match with the segment's own geometry and
-    ``match_method = "concurrent_forced"``.
+    individual directional segments. Bypass alignments that share the
+    HWY_NAME but are physically offset from the polyline (e.g. US-19
+    bypass around Ellaville vs. the SR 3 polyline through downtown)
+    are rejected by the sample-distance gate.
     """
     if not FORCED_CONCURRENT_FLAGS:
         return evac_matches
@@ -254,8 +353,23 @@ def _apply_forced_concurrent_flags(
     cty_col = roads.columns.get_loc("COUNTY_NAME") if "COUNTY_NAME" in roads.columns else None
     if hwy_col is None or cty_col is None:
         return evac_matches
+
+    from shapely.ops import unary_union
+    name_to_polyline: dict[str, object] = {}
+    if name_field in evac_routes.columns:
+        for name, grp in evac_routes.groupby(name_field):
+            if not isinstance(name, str) or not name:
+                continue
+            geoms = [g for g in grp.geometry.values if g is not None and not g.is_empty]
+            if geoms:
+                name_to_polyline[name] = unary_union(geoms)
+
     added = 0
+    rejected_by_distance = 0
     for corridor_name, rules in FORCED_CONCURRENT_FLAGS:
+        polyline = name_to_polyline.get(corridor_name)
+        if polyline is None:
+            continue
         for hwy, counties in rules.items():
             for pos in range(len(roads)):
                 h = roads.iat[pos, hwy_col]
@@ -263,13 +377,27 @@ def _apply_forced_concurrent_flags(
                 if h != hwy or c not in counties:
                     continue
                 idx = roads.index[pos]
+                geom = roads.at[idx, "geometry"]
+                if geom is None or geom.is_empty:
+                    continue
+                try:
+                    seg_len = float(geom.length)
+                except Exception:
+                    continue
+                if seg_len <= 0:
+                    continue
+                try:
+                    samples = [geom.interpolate(seg_len * i / 10.0) for i in range(11)]
+                except Exception:
+                    continue
+                near = sum(1 for s in samples if s.distance(polyline) <= FORCED_MAX_SAMPLE_DIST_M)
+                if near / len(samples) < FORCED_MIN_SAMPLE_FRAC:
+                    rejected_by_distance += 1
+                    continue
                 if idx in evac_matches:
                     existing = evac_matches[idx]
                     if corridor_name not in existing.get("names", []):
                         existing.setdefault("names", []).append(corridor_name)
-                    continue
-                geom = roads.at[idx, "geometry"]
-                if geom is None or geom.is_empty:
                     continue
                 evac_matches[idx] = {
                     "names": [corridor_name],
@@ -280,7 +408,11 @@ def _apply_forced_concurrent_flags(
                     "match_portion": 1.0,
                 }
                 added += 1
-    print(f"Forced concurrent-corridor flags: added {added} segments")
+    print(
+        f"Forced concurrent-corridor flags: added {added} segments "
+        f"(rejected {rejected_by_distance} for being > {FORCED_MAX_SAMPLE_DIST_M:.0f} m "
+        f"from corridor polyline)"
+    )
     return evac_matches
 
 
@@ -1150,7 +1282,14 @@ def main() -> None:
     # DEC-direction segment or failed auto-discovery on a concurrent
     # US-route designation. Applied LAST so the proximity post-filter
     # doesn't strip force-flagged entries.
-    evac_matches = _apply_forced_concurrent_flags(roads, evac_matches)
+    evac_matches = _apply_forced_concurrent_flags(roads, evac_matches, evac_routes)
+
+    # --- Global hard cap: every rendered segment must stay inside
+    #     GLOBAL_HARD_CAP_BUFFER_M of ITS matched corridor polyline for
+    #     the entire length. Drops any segment with any sample farther
+    #     than the cap. User rule: "anything outside the buffer stays
+    #     out."
+    evac_matches = _global_hard_cap(roads, evac_matches, evac_routes)
 
     # Convert results dict to GeoDataFrame for export. Use the clipped-to-
     # corridor geometry so partial-follow overshoots render only the in-
