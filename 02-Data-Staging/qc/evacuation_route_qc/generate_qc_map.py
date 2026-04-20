@@ -196,6 +196,28 @@ def _parse_route_designations(
 MIRROR_MIN_INC_PORTION = 0.50
 MIRROR_MAX_DEC_OFFSET_M = 75.0
 
+# Hardcoded concurrent-corridor force-flags. Where the official evac
+# polyline for a state-route corridor runs on a US route through a
+# stretch of counties (because the signed state route is actually
+# concurrent with the US route there), the matcher sometimes misses
+# individual segments — most often DEC-direction lanes on divided
+# highways whose INC partner didn't match cleanly or whose
+# auto-discovered HWY_NAME prefix failed the strict gates. Rather than
+# keep loosening thresholds (which reintroduces cross-street FPs),
+# we force-flag the concurrent HWY_NAME within the concurrent-county
+# set for the specific corridor. Each entry = (corridor_name, {
+# HWY_NAME: {counties}}).
+FORCED_CONCURRENT_FLAGS: list[tuple[str, dict[str, set[str]]]] = [
+    # SR 3 runs concurrently with US-19 from Taylor County south
+    # through Schley/Sumter/Lee/Dougherty/Mitchell — the canonical
+    # Macon-to-Albany evac spine.
+    ("SR 3", {
+        "US-19": {"Taylor", "Macon", "Marion", "Schley", "Sumter",
+                   "Lee", "Dougherty", "Mitchell", "Upson"},
+    }),
+]
+
+
 # Corridor-proximity post-filter. After matcher + mirror, a flagged
 # segment's rendered geometry must lie mostly within POST_FILTER_BUFFER_M
 # of one of its matched corridor polylines. Drops residual FPs where a
@@ -211,6 +233,55 @@ MIRROR_MAX_DEC_OFFSET_M = 75.0
 # different road than the corridor it's attributed to.
 POST_FILTER_BUFFER_M = 40.0
 POST_FILTER_MIN_RATIO = 0.70
+
+
+def _apply_forced_concurrent_flags(
+    roads: gpd.GeoDataFrame,
+    evac_matches: dict[int, dict],
+) -> dict[int, dict]:
+    """Force-flag (HWY_NAME, COUNTY_NAME) tuples listed in
+    ``FORCED_CONCURRENT_FLAGS`` as matched to the specified corridor.
+
+    Used to close gaps where a state-route corridor's official polyline
+    runs concurrently with a US route and the matcher's thresholds miss
+    individual directional segments. Each forced entry becomes a
+    synthetic match with the segment's own geometry and
+    ``match_method = "concurrent_forced"``.
+    """
+    if not FORCED_CONCURRENT_FLAGS:
+        return evac_matches
+    hwy_col = roads.columns.get_loc("HWY_NAME") if "HWY_NAME" in roads.columns else None
+    cty_col = roads.columns.get_loc("COUNTY_NAME") if "COUNTY_NAME" in roads.columns else None
+    if hwy_col is None or cty_col is None:
+        return evac_matches
+    added = 0
+    for corridor_name, rules in FORCED_CONCURRENT_FLAGS:
+        for hwy, counties in rules.items():
+            for pos in range(len(roads)):
+                h = roads.iat[pos, hwy_col]
+                c = roads.iat[pos, cty_col]
+                if h != hwy or c not in counties:
+                    continue
+                idx = roads.index[pos]
+                if idx in evac_matches:
+                    existing = evac_matches[idx]
+                    if corridor_name not in existing.get("names", []):
+                        existing.setdefault("names", []).append(corridor_name)
+                    continue
+                geom = roads.at[idx, "geometry"]
+                if geom is None or geom.is_empty:
+                    continue
+                evac_matches[idx] = {
+                    "names": [corridor_name],
+                    "overlap_m": 0.0,
+                    "overlap_ratio": 0.0,
+                    "match_method": "concurrent_forced",
+                    "clipped_geom": geom,
+                    "match_portion": 1.0,
+                }
+                added += 1
+    print(f"Forced concurrent-corridor flags: added {added} segments")
+    return evac_matches
 
 
 def _mirror_inc_to_dec(
@@ -392,6 +463,13 @@ def _post_filter_corridor_proximity(
     dropped = 0
     for idx in list(evac_matches.keys()):
         match = evac_matches[idx]
+        # direction_mirror entries are intentionally ~30-50 m offset from
+        # the polyline (opposing lane of a divided highway). They have
+        # their own proximity gate (MIRROR_MAX_DEC_OFFSET_M) and would
+        # be falsely dropped by this post-filter's tighter 40 m / 70 %
+        # threshold. Skip.
+        if match.get("match_method") == "direction_mirror":
+            continue
         names = [n for n in match.get("names", []) if n]
         geom = match.get("clipped_geom") or roads.at[idx, "geometry"]
         if geom is None or geom.is_empty:
@@ -1066,6 +1144,13 @@ def main() -> None:
     # residual FPs where long or diverging segments make it through the
     # matcher/mirror gates but visually trace a different alignment.
     evac_matches = _post_filter_corridor_proximity(roads, evac_matches, evac_routes)
+
+    # --- Forced concurrent-corridor flags ---
+    # Closes residual FN gaps where the matcher couldn't reach a
+    # DEC-direction segment or failed auto-discovery on a concurrent
+    # US-route designation. Applied LAST so the proximity post-filter
+    # doesn't strip force-flagged entries.
+    evac_matches = _apply_forced_concurrent_flags(roads, evac_matches)
 
     # Convert results dict to GeoDataFrame for export. Use the clipped-to-
     # corridor geometry so partial-follow overshoots render only the in-
