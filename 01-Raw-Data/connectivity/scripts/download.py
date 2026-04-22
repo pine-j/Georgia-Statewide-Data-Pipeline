@@ -36,16 +36,16 @@ GENERATORS_DIR = RAW_DIR / "generators"
 # Source endpoints
 # ---------------------------------------------------------------------------
 
-# GDOT SRP Priority Routes – MapServer layers 13-16
+# GDOT SRP Priority Routes – FunctionalClass MapServer layers 13-16
 SRP_BASE_URL = (
     "https://maps.itos.uga.edu/arcgis/rest/services/GDOT/"
-    "GDOT_Statewide_Strategic_Route_Plan/MapServer"
+    "GDOT_FunctionalClass/MapServer"
 )
 SRP_LAYERS = {
     "srp_critical": 13,
     "srp_high": 14,
-    "srp_elevated": 15,
-    "srp_baseline": 16,
+    "srp_medium": 15,
+    "srp_low": 16,
 }
 
 # NEVI corridors – GDOT ArcGIS Hub FeatureServer

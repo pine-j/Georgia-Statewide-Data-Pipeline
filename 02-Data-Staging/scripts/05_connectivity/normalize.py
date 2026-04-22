@@ -67,8 +67,8 @@ def normalize_srp_priority_routes() -> None:
     priority_map = {
         "srp_critical": "Critical",
         "srp_high": "High",
-        "srp_elevated": "Elevated",
-        "srp_baseline": "Baseline",
+        "srp_medium": "Medium",
+        "srp_low": "Low",
     }
     for stem, label in priority_map.items():
         path = srp_dir / f"{stem}.geojson"

@@ -1,13 +1,11 @@
 """Download OPB (Governor's Office of Planning and Budget) population projections.
 
-The OPB publishes county-level population projections for Georgia as Excel
-workbooks at:
+The OPB publishes county-level population projections for Georgia at:
 
     https://opb.georgia.gov/census-data/population-projections
 
-This script attempts to download the latest projection file.  Because the
-exact download URL may change, users can override via the ``--url`` flag or
-the ``OPB_PROJECTIONS_URL`` environment variable.
+The default downloads the 2025-2060 county residential population projection.
+Override via the ``--url`` flag or ``OPB_PROJECTIONS_URL`` environment variable.
 """
 
 from __future__ import annotations
@@ -27,8 +25,8 @@ RAW_DIR = REPO_ROOT / "01-Raw-Data" / "demographics" / "opb_projections"
 
 # Default URL — may need periodic updates when OPB publishes new vintages
 DEFAULT_URL = (
-    "https://opb.georgia.gov/sites/opb.georgia.gov/files/"
-    "related_files/document/Population%20Projections%202020-2070.xlsx"
+    "https://opb.georgia.gov/document/census-data/"
+    "county-residential-population-2025-projection/download"
 )
 
 
@@ -65,7 +63,7 @@ def write_metadata(url: str | None = None) -> Path:
         "downloaded_utc": datetime.now(timezone.utc).isoformat(),
         "source": "Georgia Governor's Office of Planning and Budget",
         "url": url,
-        "description": "County-level population projections for Georgia (2020-2070)",
+        "description": "County-level residential population projections for Georgia (2025-2060)",
     }
     outpath = RAW_DIR / "download_metadata.json"
     outpath.write_text(json.dumps(meta, indent=2))

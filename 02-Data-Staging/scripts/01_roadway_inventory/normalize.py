@@ -1127,13 +1127,8 @@ def compute_segment_length(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gdf
 
 
-def derive_texas_alignment_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Derive Texas RAPTOR alignment columns: PCT_SADT, PCT_CADT, HWY_DES.
-
-    These columns align with the Texas RAPTOR roadway base-layer schema so
-    that downstream RAPTOR scoring modules can consume Georgia data without
-    state-specific branching.
-    """
+def derive_alignment_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Derive RAPTOR alignment columns: PCT_SADT, PCT_CADT, HWY_DES."""
     result = gdf.copy()
 
     # PCT_SADT — single-unit truck % of AADT
@@ -4266,7 +4261,7 @@ def main() -> None:
     # Recompute confidence tier now that AADT_2024_SOURCE is final and the
     # cross-source agreement has been derived.
     segmented = recompute_aadt_2024_confidence(segmented)
-    segmented = derive_texas_alignment_columns(segmented)
+    segmented = derive_alignment_columns(segmented)
     segmented = add_decoded_label_columns(segmented)
     segmented = add_county_all_from_geometry(segmented, county_boundaries_for_backfill)
     segmented = _move_column_after(segmented, "county_all", "COUNTY_NAME")

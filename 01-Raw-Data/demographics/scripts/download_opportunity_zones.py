@@ -35,9 +35,9 @@ TIGER_DIR = RAW_DIR / "tiger_shapefiles"
 
 # The CDFI Fund publishes the designated QOZ list as a CSV and shapefiles.
 # The shapefile is derived from TIGER tract boundaries filtered to QOZ tracts.
-CDFI_QOZ_CSV_URL = (
-    "https://www.cdfifund.gov/sites/cdfi/files/2024-01/"
-    "QOZ_Census_Tracts_12-14-2018.csv"
+CDFI_QOZ_URL = (
+    "https://www.cdfifund.gov/system/files/documents/"
+    "designated-qozs.12.14.18.xlsx"
 )
 
 TIGER_TRACT_URL_TEMPLATE = (
@@ -54,15 +54,14 @@ def download_opportunity_zones(state_fips: str = "13") -> Path:
     """
     OZ_DIR.mkdir(parents=True, exist_ok=True)
 
-    # QOZ tract list (CSV)
     logger.info("Downloading QOZ tract list from CDFI Fund")
-    resp = requests.get(CDFI_QOZ_CSV_URL, timeout=120)
+    resp = requests.get(CDFI_QOZ_URL, timeout=120)
     resp.raise_for_status()
-    csv_path = OZ_DIR / "qoz_tracts_national.csv"
-    csv_path.write_bytes(resp.content)
-    logger.info("Saved QOZ CSV to %s", csv_path)
+    out_path = OZ_DIR / "designated_qozs.xlsx"
+    out_path.write_bytes(resp.content)
+    logger.info("Saved QOZ list to %s", out_path)
 
-    return csv_path
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +175,7 @@ def write_metadata(state_fips: str = "13", state_abbr: str = "ga") -> Path:
         "state_abbr": state_abbr,
         "opportunity_zones": {
             "source": "CDFI Fund",
-            "url": CDFI_QOZ_CSV_URL,
+            "url": CDFI_QOZ_URL,
         },
         "lehd_lodes": {
             "source": "Census Bureau LEHD",

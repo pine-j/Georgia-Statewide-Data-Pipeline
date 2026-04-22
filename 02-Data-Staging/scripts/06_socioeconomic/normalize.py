@@ -249,12 +249,16 @@ def normalize_opb() -> pd.DataFrame:
 
 def normalize_opportunity_zones(state_fips: str = STATE_FIPS) -> pd.DataFrame:
     """Normalize Qualified Opportunity Zone tract list."""
-    csv_files = list((RAW_DIR / "opportunity_zones").glob("*.csv"))
-    if not csv_files:
-        logger.warning("No QOZ CSV found")
+    oz_dir = RAW_DIR / "opportunity_zones"
+    xlsx_files = list(oz_dir.glob("*.xlsx"))
+    csv_files = list(oz_dir.glob("*.csv"))
+    if xlsx_files:
+        df = pd.read_excel(xlsx_files[0], dtype=str)
+    elif csv_files:
+        df = pd.read_csv(csv_files[0], dtype=str)
+    else:
+        logger.warning("No QOZ data found (checked xlsx and csv)")
         return pd.DataFrame()
-
-    df = pd.read_csv(csv_files[0], dtype=str)
 
     # Filter to state
     tract_col = None
