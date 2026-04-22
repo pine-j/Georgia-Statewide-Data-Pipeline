@@ -1,5 +1,16 @@
 # Agent Guidance
 
+## HARD RULE — Never Delete Raw Data
+
+**DO NOT delete, overwrite, or lose any file under `01-Raw-Data/` or any staged output under `02-Data-Staging/` (databases, spatial, tables).** These files take a long time to download and regenerate. This rule has been violated before — it must not happen again.
+
+This means:
+- Before running `git worktree remove`: enumerate and copy ALL gitignored data files back to the main repo. No exceptions.
+- Before running `git clean`, `rm -rf`, or any destructive command: verify it will not touch raw data or staged outputs.
+- If you are unsure whether an action will delete data files, stop and ask the user.
+
+Violation of this rule has caused costly multi-hour re-downloads twice. Treat any action that could destroy these files as **blocked until explicitly confirmed by the user**.
+
 ## Canonical Guidance File
 
 `AGENT.md` is the single in-repo agent guidance file. Do not recreate `CLAUDE.md` or `.claude/` guidance files.
@@ -54,7 +65,7 @@ Retirement rule:
 
 - do not delete a worktree on a timer
 - only retire a worktree when its branch is merged into local `master`, `master` has been pushed to remote, and the worktree is clean
-- **before** running `git worktree remove`, copy any newly downloaded gitignored data files from the worktree into the equivalent path under the main repo working tree (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/`). Gitignored files are permanently lost on worktree removal — they are not on any branch.
+- **BLOCKING PREREQUISITE before `git worktree remove`:** run `find <worktree>/01-Raw-Data -type f` and `find <worktree>/02-Data-Staging/{databases,spatial,tables} -type f` to enumerate every gitignored data file. Copy each one to the main repo working tree (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/`) at the equivalent relative path. Log the files copied. Only after this copy is verified may you run `git worktree remove`. Skipping this step has caused data loss twice — it is not optional.
 - after retirement, delete the local feature branch so only `master` and active task branches remain
 
 Cleanup command:
@@ -67,11 +78,11 @@ Cleanup command:
 
 Raw inputs and staged outputs are gitignored and exist only in the main repo working tree. They are not copied into sibling worktree checkouts (`D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\*`) when `git worktree add` runs.
 
-**Critical — gitignored files are destroyed on worktree removal.** Any raw data file downloaded into a worktree (e.g. under `01-Raw-Data/`) is gitignored and lives only in that worktree's working tree. When `git worktree remove` runs, those files are permanently deleted. They are NOT in the main repo and NOT on any branch.
+**CRITICAL — gitignored files are destroyed on worktree removal.** Any raw data file downloaded into a worktree (e.g. under `01-Raw-Data/`) is gitignored and lives only in that worktree's working tree. When `git worktree remove` runs, those files are permanently deleted. They are NOT in the main repo and NOT on any branch. **This has caused data loss twice. Treat this as a hard blocker — never remove a worktree without copying data files first.**
 
 Rules that follow from this:
 
-- Before declaring a workstream complete and merging, copy any newly downloaded gitignored data files (e.g. `FHWA_HPMS/{year}/hpms_ga_{year}_tabular.json`) into the **main repo working tree** at the equivalent path (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/01-Raw-Data/...`). Do this before `git worktree remove`.
+- **MANDATORY:** Before declaring a workstream complete and merging, copy ALL gitignored data files (GDBs, cached boundaries, HPMS downloads, GPAS outputs, staged databases, spatial files, CSVs — everything under `01-Raw-Data/` and `02-Data-Staging/{databases,spatial,tables}`) into the **main repo working tree** at the equivalent path (`D:/Jacobs/Georgia-Statewide-Data-Pipeline/...`). Do this before `git worktree remove`. Enumerate files explicitly with `find` — do not rely on memory of what was downloaded.
 - When a script depends on gitignored source files, verify those files exist in the main repo working tree before running the script. Do not assume a prior agent left them there.
 - If a required gitignored file is missing from the main repo working tree, re-download it before proceeding. Document the re-download in your report so the orchestrator knows it happened.
 
