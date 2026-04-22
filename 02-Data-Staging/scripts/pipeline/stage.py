@@ -100,7 +100,7 @@ def run_stage(
     Returns:
         StageResult with the stage output.
     """
-    context = context or {}
+    context = context if context is not None else {}
 
     upstream_fingerprints = [
         upstream_results[up].fingerprint for up in stage_def.upstream
