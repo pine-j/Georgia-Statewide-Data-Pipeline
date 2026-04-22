@@ -21,6 +21,7 @@
 02-Data-Staging/tables/
 02-Data-Staging/reports/
 !02-Data-Staging/reports/.gitkeep
+02-Data-Staging/staged/
 
 # Python
 __pycache__/
