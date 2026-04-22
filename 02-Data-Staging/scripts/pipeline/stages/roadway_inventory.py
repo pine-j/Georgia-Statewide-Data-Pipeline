@@ -39,13 +39,62 @@ from route_verification import (
 from route_type_gdot import apply_gdot_route_type_classification
 from utils import decode_lookup_value
 
-from ..stage import StageDefinition, StageRegistry
+from pipeline.stage import StageDefinition, StageRegistry
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
 STAGE_FILE = Path(__file__).resolve()
 
 RAW_DIR = REPO_ROOT / "01-Raw-Data" / "Roadway-Inventory"
 CONFIG_DIR = REPO_ROOT / "02-Data-Staging" / "config"
+
+_BOUNDARY_KEYS = [
+    "county", "district", "state", "mpo", "regional_commission",
+    "city", "area_office", "state_house", "state_senate", "congressional",
+]
+
+
+def _save_stage01_context(checkpoint_dir: Path, context: dict) -> None:
+    """Persist current_traffic alongside the stage 01 checkpoint."""
+    ct = context.get("current_traffic")
+    if ct is not None:
+        path = checkpoint_dir / "01_load_routes_traffic.parquet"
+        ct.to_parquet(path, engine="pyarrow")
+
+
+def _restore_stage01_context(checkpoint_dir: Path, context: dict) -> None:
+    """Reload current_traffic on cache hit."""
+    path = checkpoint_dir / "01_load_routes_traffic.parquet"
+    if path.exists():
+        context["current_traffic"] = pd.read_parquet(path)
+
+
+def _save_stage02_context(checkpoint_dir: Path, context: dict) -> None:
+    """Persist all boundary GeoDataFrames alongside the stage 02 checkpoint."""
+    boundaries = context.get("boundaries", {})
+    bdir = checkpoint_dir / "02_fetch_boundaries"
+    bdir.mkdir(parents=True, exist_ok=True)
+    for key in _BOUNDARY_KEYS:
+        gdf = boundaries.get(key)
+        if gdf is not None and not gdf.empty:
+            gdf.to_parquet(bdir / f"{key}.parquet", engine="pyarrow")
+
+
+def _restore_stage02_context(checkpoint_dir: Path, context: dict) -> None:
+    """Reload all boundary GeoDataFrames on cache hit."""
+    bdir = checkpoint_dir / "02_fetch_boundaries"
+    boundaries = {}
+    for key in _BOUNDARY_KEYS:
+        path = bdir / f"{key}.parquet"
+        if path.exists():
+            boundaries[key] = gpd.read_parquet(path)
+        else:
+            logger.warning("Missing boundary checkpoint: %s", path)
+            boundaries[key] = None
+    context["boundaries"] = boundaries
 
 
 def _find_raw_path(name: str) -> Path:
@@ -80,6 +129,8 @@ def _stage_01_load_routes(*, upstream_results, context):
 registry.add(StageDefinition(
     name="01_load_routes",
     func=_stage_01_load_routes,
+    context_save=_save_stage01_context,
+    context_restore=_restore_stage01_context,
     raw_inputs=[
         RAW_DIR / normalize.ROAD_INV_GDB_NAME,
         RAW_DIR / "GDOT_Traffic" / "Traffic_2024_Geodatabase" / normalize.TRAFFIC_GDB_NAME,
@@ -156,6 +207,8 @@ def _stage_02_fetch_boundaries(*, upstream_results, context):
 
 registry.add(StageDefinition(
     name="02_fetch_boundaries",
+    context_save=_save_stage02_context,
+    context_restore=_restore_stage02_context,
     func=_stage_02_fetch_boundaries,
     produces_geodataframe=True,
     raw_inputs=[],

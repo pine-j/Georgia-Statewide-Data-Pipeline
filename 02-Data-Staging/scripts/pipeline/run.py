@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+sys.path.insert(0, str(REPO_ROOT / "02-Data-Staging" / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "02-Data-Staging" / "scripts" / "01_roadway_inventory"))
 
 logger = logging.getLogger(__name__)
@@ -59,9 +60,9 @@ def run_pipeline(pipeline_name: str, *, force_all: bool, output_root: Path | Non
             "Use --output-root to redirect if this is not intended."
         )
 
-    from .checkpoint import cleanup_stale_temps
-    from .stage import run_stage
-    from .stages.roadway_inventory import registry
+    from pipeline.checkpoint import cleanup_stale_temps
+    from pipeline.stage import run_stage
+    from pipeline.stages.roadway_inventory import registry
 
     checkpoint_dir = REPO_ROOT / "02-Data-Staging" / "staged" / "checkpoints" / "01_roadway_inventory"
     if output_root:

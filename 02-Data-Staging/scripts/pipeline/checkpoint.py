@@ -90,12 +90,21 @@ def fingerprint_function(func: Callable) -> dict:
     }
 
 
+def _stable_repr(value: Any) -> str:
+    """repr() with deterministic ordering for sets and frozensets."""
+    if isinstance(value, (set, frozenset)):
+        return f"{type(value).__name__}({sorted(value)!r})"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k!r}: {_stable_repr(v)}" for k, v in sorted(value.items(), key=lambda x: repr(x[0]))) + "}"
+    return repr(value)
+
+
 def fingerprint_global(module: Any, name: str) -> dict:
     value = getattr(module, name)
     return {
         "module": module.__name__,
         "name": name,
-        "repr": repr(value),
+        "repr": _stable_repr(value),
     }
 
 

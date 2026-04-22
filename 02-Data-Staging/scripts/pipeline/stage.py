@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import geopandas as gpd
 
-from . import checkpoint as ckpt
+from pipeline import checkpoint as ckpt
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,8 @@ class StageDefinition:
         globals_list: list[tuple[Any, str]] | None = None,
         code_files: list[Path] | None = None,
         produces_geodataframe: bool = True,
+        context_save: Callable | None = None,
+        context_restore: Callable | None = None,
     ):
         self.name = name
         self.func = func
@@ -70,6 +72,8 @@ class StageDefinition:
         self.globals_list = globals_list or []
         self.code_files = code_files or []
         self.produces_geodataframe = produces_geodataframe
+        self.context_save = context_save
+        self.context_restore = context_restore
 
 
 def _resolve_checkpoint_path(checkpoint_dir: Path, stage_name: str) -> Path:
@@ -175,6 +179,8 @@ def run_stage(
                 data = ckpt.read_checkpoint(checkpoint_path)
             else:
                 data = None
+            if stage_def.context_restore:
+                stage_def.context_restore(checkpoint_dir, context)
             return StageResult(stage_def.name, fingerprint, data, skipped=True)
 
     logger.info(
@@ -202,6 +208,9 @@ def run_stage(
         output_meta = ckpt.write_checkpoint(checkpoint_path, data)
     else:
         output_meta = {"path": None, "note": "no geodataframe output"}
+
+    if stage_def.context_save:
+        stage_def.context_save(checkpoint_dir, context)
 
     ckpt.write_manifest(
         manifest_path,
