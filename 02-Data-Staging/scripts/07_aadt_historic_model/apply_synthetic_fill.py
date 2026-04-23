@@ -56,7 +56,7 @@ def main() -> None:
 
         logger.info("  Running IDW...")
         result = predict_idw(knn, stations)
-        predicted = result["AADT_2021_MODELED"].notna().sum()
+        predicted = result["AADT_MODELED"].notna().sum()
         logger.info("  %d predicted, %d NULL", predicted, len(result) - predicted)
 
         fill_col = f"AADT_{year}_LOCAL_FILL"
@@ -70,10 +70,10 @@ def main() -> None:
         conn.execute(f"UPDATE segments SET {fill_col} = NULL, {conf_col} = NULL")
 
         for _, row in result.iterrows():
-            if pd.notna(row["AADT_2021_MODELED"]):
+            if pd.notna(row["AADT_MODELED"]):
                 conn.execute(
                     f"UPDATE segments SET {fill_col} = ?, {conf_col} = ? WHERE unique_id = ?",
-                    (int(row["AADT_2021_MODELED"]), row["AADT_2021_CONFIDENCE"], row["unique_id"]),
+                    (int(row["AADT_MODELED"]), row["AADT_CONFIDENCE"], row["unique_id"]),
                 )
 
         conn.commit()

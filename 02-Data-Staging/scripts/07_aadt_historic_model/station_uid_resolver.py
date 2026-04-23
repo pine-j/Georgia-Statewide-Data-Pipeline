@@ -87,11 +87,16 @@ def resolve_stations(stations: pd.DataFrame) -> pd.DataFrame:
     anchor_lats = anchor_coords["latitude"].values
     anchor_lons = anchor_coords["longitude"].values
 
-    if len(anchor_coords) > 0:
-        tree = _build_balltree(anchor_coords)
-    else:
-        _assign_unresolved_years(result, [2023, 2022, 2021, 2020])
+    if len(anchor_coords) == 0:
+        for year in [2023, 2022, 2021, 2020]:
+            mask = result["year"] == year
+            result.loc[mask, "station_uid"] = result.loc[mask, "tc_number"].apply(lambda tc: f"GA{year % 100:02d}_{tc}")
+            result.loc[mask, "resolver_method"] = "unresolved"
+            result.loc[mask, "resolver_delta_m"] = np.nan
+            result.loc[mask, "resolver_confidence"] = "low"
         return result
+
+    tree = _build_balltree(anchor_coords)
 
     uid_2023: dict[str, str] = {}
     method_2023: dict[str, str] = {}
@@ -103,6 +108,13 @@ def resolve_stations(stations: pd.DataFrame) -> pd.DataFrame:
     for _, row in year_2023.iterrows():
         tc = row["tc_number"]
         lat, lon = row["latitude"], row["longitude"]
+
+        if pd.isna(lat) or pd.isna(lon):
+            uid_2023[tc] = f"GA23_{tc}"
+            method_2023[tc] = "unresolved"
+            delta_2023[tc] = np.nan
+            confidence_2023[tc] = "low"
+            continue
 
         if tc in uid_map_24 and tc in anchor_tc_set:
             idx = anchor_tc_list.index(tc)
@@ -165,11 +177,24 @@ def resolve_stations(stations: pd.DataFrame) -> pd.DataFrame:
             tc = row["tc_number"]
             lat, lon = row["latitude"], row["longitude"]
 
+            if pd.isna(lat) or pd.isna(lon):
+                if tc in uid_2023:
+                    uid_year[tc] = uid_2023[tc]
+                    method_year[tc] = "chained_via_2023"
+                    delta_year[tc] = np.nan
+                    conf_year[tc] = "low"
+                else:
+                    uid_year[tc] = f"GA{year % 100:02d}_{tc}"
+                    method_year[tc] = "unresolved"
+                    delta_year[tc] = np.nan
+                    conf_year[tc] = "low"
+                continue
+
             if tc in uid_2023:
                 resolved_uid = uid_2023[tc]
                 if resolved_uid.startswith("GA23_"):
-                    uid_year[tc] = f"GA{year % 100:02d}_{tc}"
-                    method_year[tc] = "unresolved"
+                    uid_year[tc] = resolved_uid
+                    method_year[tc] = "chained_via_2023"
                     delta_year[tc] = np.nan
                     conf_year[tc] = "low"
                 else:

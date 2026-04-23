@@ -121,8 +121,8 @@ AADT_2024_HPMS_SYNTHETIC,"Binary flag (0/1/NULL) indicating whether the 2024 HPM
 AADT_2022_HPMS_HARD_OUTLIER,"Binary flag (0/1/NULL) for 2022 HPMS values that repeat >100 times within an FC bin, flagging implausible clusters like the 657-row AADT=67 artifact.",1
 AADT_2023_HPMS_HARD_OUTLIER,"Binary flag (0/1/NULL) for 2023 HPMS hard-outlier values, same logic as 2022.",0
 AADT_2021_MODELED,"Predicted 2021 AADT via inverse-distance-weighted interpolation of the 5 nearest 2021 GDOT traffic stations. NULL when no station is within 2000m of the segment centroid.",5647
-AADT_2021_P10,"Lower bound (P10) for the 2021 AADT prediction, taken as the minimum AADT among the k nearest stations used in the IDW.",3200
-AADT_2021_P90,"Upper bound (P90) for the 2021 AADT prediction, taken as the maximum AADT among the k nearest stations used in the IDW.",8100
+AADT_2021_NEIGHBOR_MIN,"Lower bound for the 2021 AADT prediction: minimum AADT among the k nearest stations used in the IDW.",3200
+AADT_2021_NEIGHBOR_MAX,"Upper bound for the 2021 AADT prediction: maximum AADT among the k nearest stations used in the IDW.",8100
 AADT_2021_CONFIDENCE,"Confidence tier for the 2021 prediction: high = nearest station within 500m and on the same route; medium = nearest station within 2000m; none = beyond 2000m cutoff (prediction is NULL).",medium
 AADT_2021_SOURCE,Method used to produce AADT_2021_MODELED.,station_idw_v2
 AADT_2021_NEAREST_STATION_DIST_M,Distance in meters from the segment centroid to the nearest 2021 traffic station.,342.5

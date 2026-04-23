@@ -19,6 +19,18 @@ CUTOFF_M = 2000
 HIGH_CONFIDENCE_M = 500
 MIN_DISTANCE_M = 1.0  # avoid division by zero
 
+OUTPUT_COLUMNS = [
+    "unique_id",
+    "AADT_MODELED",
+    "AADT_NEIGHBOR_MIN",
+    "AADT_NEIGHBOR_MAX",
+    "AADT_CONFIDENCE",
+    "AADT_SOURCE",
+    "AADT_NEAREST_STATION_DIST_M",
+    "AADT_NEAREST_STATION_TC",
+    "AADT_N_STATIONS_USED",
+]
+
 
 def predict_idw(
     knn: pd.DataFrame,
@@ -34,8 +46,11 @@ def predict_idw(
 
     Returns
     -------
-    One row per unique_id with prediction columns.
+    One row per unique_id with prediction columns (year-neutral names).
     """
+    if knn.empty:
+        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+
     knn = knn.merge(
         stations[["tc_number", "aadt"]],
         left_on="nearest_tc_number",
@@ -65,14 +80,14 @@ def predict_idw(
         weights = 1.0 / dists
         weights /= weights.sum()
 
-        p50 = int(round(np.dot(weights, aadts)))
-        p10 = int(round(np.min(aadts)))
-        p90 = int(round(np.max(aadts)))
+        modeled = int(round(np.dot(weights, aadts)))
+        neighbor_min = int(round(np.min(aadts)))
+        neighbor_max = int(round(np.max(aadts)))
 
-        if p10 > p50:
-            p10 = p50
-        if p90 < p50:
-            p90 = p50
+        if neighbor_min > modeled:
+            neighbor_min = modeled
+        if neighbor_max < modeled:
+            neighbor_max = modeled
 
         nearest_same_route = int(nearest["same_route_flag"]) if pd.notna(nearest["same_route_flag"]) else 0
         if nearest_dist <= HIGH_CONFIDENCE_M and nearest_same_route == 1:
@@ -84,14 +99,14 @@ def predict_idw(
 
         results.append({
             "unique_id": uid,
-            "AADT_2021_MODELED": p50,
-            "AADT_2021_P10": p10,
-            "AADT_2021_P90": p90,
-            "AADT_2021_CONFIDENCE": confidence,
-            "AADT_2021_SOURCE": "station_idw_v2",
-            "AADT_2021_NEAREST_STATION_DIST_M": round(nearest_dist, 1),
-            "AADT_2021_NEAREST_STATION_TC": nearest_tc,
-            "AADT_2021_N_STATIONS_USED": len(within),
+            "AADT_MODELED": modeled,
+            "AADT_NEIGHBOR_MIN": neighbor_min,
+            "AADT_NEIGHBOR_MAX": neighbor_max,
+            "AADT_CONFIDENCE": confidence,
+            "AADT_SOURCE": "station_idw_v2",
+            "AADT_NEAREST_STATION_DIST_M": round(nearest_dist, 1),
+            "AADT_NEAREST_STATION_TC": nearest_tc,
+            "AADT_N_STATIONS_USED": len(within),
         })
 
     return pd.DataFrame(results)
@@ -100,12 +115,12 @@ def predict_idw(
 def _null_row(uid: str, nearest_dist: float, nearest_tc: str) -> dict:
     return {
         "unique_id": uid,
-        "AADT_2021_MODELED": np.nan,
-        "AADT_2021_P10": np.nan,
-        "AADT_2021_P90": np.nan,
-        "AADT_2021_CONFIDENCE": "none",
-        "AADT_2021_SOURCE": "station_idw_v2",
-        "AADT_2021_NEAREST_STATION_DIST_M": round(nearest_dist, 1),
-        "AADT_2021_NEAREST_STATION_TC": nearest_tc,
-        "AADT_2021_N_STATIONS_USED": 0,
+        "AADT_MODELED": np.nan,
+        "AADT_NEIGHBOR_MIN": np.nan,
+        "AADT_NEIGHBOR_MAX": np.nan,
+        "AADT_CONFIDENCE": "none",
+        "AADT_SOURCE": "station_idw_v2",
+        "AADT_NEAREST_STATION_DIST_M": round(nearest_dist, 1),
+        "AADT_NEAREST_STATION_TC": nearest_tc,
+        "AADT_N_STATIONS_USED": 0,
     }

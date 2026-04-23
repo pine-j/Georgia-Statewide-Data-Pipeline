@@ -42,6 +42,10 @@ def main() -> None:
         logger.info("\nProcessing %d...", year)
         target_uids = set(fc67_null[year])
 
+        if not target_uids:
+            logger.info("  No target segments, skipping.")
+            continue
+
         knn = pd.read_sql(
             f"SELECT unique_id, k_rank, nearest_tc_number, station_distance_m, same_route_flag "
             f"FROM segment_station_link_knn WHERE year = {year}",
@@ -58,7 +62,7 @@ def main() -> None:
         logger.info("  %d unique stations", len(stations))
 
         result = predict_idw(knn, stations)
-        predicted = result["AADT_2021_MODELED"].notna().sum()
+        predicted = result["AADT_MODELED"].notna().sum()
         logger.info("  %d predicted, %d NULL", predicted, len(result) - predicted)
 
         fill_col = f"AADT_{year}_LOCAL_FILL"
@@ -72,10 +76,10 @@ def main() -> None:
         conn.execute(f"UPDATE segments SET {fill_col} = NULL, {conf_col} = NULL")
 
         for _, row in result.iterrows():
-            if pd.notna(row["AADT_2021_MODELED"]):
+            if pd.notna(row["AADT_MODELED"]):
                 conn.execute(
                     f"UPDATE segments SET {fill_col} = ?, {conf_col} = ? WHERE unique_id = ?",
-                    (int(row["AADT_2021_MODELED"]), row["AADT_2021_CONFIDENCE"], row["unique_id"]),
+                    (int(row["AADT_MODELED"]), row["AADT_CONFIDENCE"], row["unique_id"]),
                 )
 
         conn.commit()
