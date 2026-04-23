@@ -22,7 +22,7 @@ Current closeout position:
 | 4 | **GDOT GPAS SpeedZone OnSystem** | [GPAS MapServer/10](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/10) | Posted speed limits and school zone flags for state highway routes, matched by route ID and milepoint overlap. |
 | 5 | **GDOT GPAS SpeedZone OffSystem** | [GPAS MapServer/9](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer/9) | Posted speed limits and school zone flags for non-state-highway roads (81,778 features). Most records lack geometry; matched by normalized road name + county FIPS code. |
 | 6 | **GDOT GPAS Reference Layers** | [GPAS MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GPAS/MapServer) (layers 5, 6, 7) | Authoritative signed-route verification for Interstate, U.S. Highway, and State Route designations via RCLINK + milepoint matching. GPAS has priority over HPMS for signed-route family where it has coverage. |
-| 7 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons used for spatial backfill of COUNTY_ID and GDOT_District where route attributes are missing. |
+| 7 | **GDOT Boundaries Service** | [GDOT Boundaries MapServer](https://rnhp.dot.ga.gov/hosting/rest/services/GDOT_Boundaries/MapServer) | County (159) and district (7) boundary polygons. These are **split-driving boundaries** — routes are segmented at every county and district crossing during the main segmentation pass. Also used for spatial backfill of ~8,698 statewide routes (county code `000`) that don't resolve to a single county from their ROUTE_ID. |
 | 8 | **GDOT EOC Hurricane Evacuation Routes** | [EOC MapServer/7](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/7) | Optional Phase 1 enrichment that flags roadway segments as `SEC_EVAC` via spatial overlay. Hurricane evacuation route polylines (268 features) and contraflow routes ([Layer 8](https://rnhp.dot.ga.gov/hosting/rest/services/EOC/EOC_RESPONSE_LAYERS/MapServer/8), 12 features) are used when present. |
 
 ### How the sources come together
@@ -31,13 +31,12 @@ Current closeout position:
 GDOT Road Inventory GDB -> Base geometry + route attributes (206,994 routes)
          |
          v
-GDOT Traffic GDB -> Segment at traffic intervals -> assign AADT, VMT, factors (46,029 traffic records)
-         |
+GDOT Traffic GDB + GDOT Boundaries -> Segment at traffic intervals AND admin boundary crossings
+         |                                (County, District, Area Office, MPO, Regional Commission)
+         |                                -> 245,863 segments with consistent traffic + unambiguous geography
+         |                             -> Post-split overlay flags (Legislative districts, City — non-splitting)
          v
 GDOT GPAS SpeedZone -> Enrich: posted speed limits (OnSystem by route + milepoint; OffSystem by road name + county)
-         |
-         v
-GDOT Boundaries -> Backfill: county/district assignment from spatial overlay
          |
          v
 FHWA HPMS 2024 -> Add: parallel GDOT-official AADT for federally-reportable segments (state 2024 GDB and HPMS are two parallel GDOT sources) + roadway attribute fill where state 2024 GDB is null + pavement/safety attributes; set initial signed-route family from routesigning
@@ -444,19 +443,30 @@ Important design choice:
 - the pipeline does not use the current traffic geometry as the canonical roadway network
 - it treats traffic records as interval-based attributes along the official route geometry
 
-### 5. Split official routes where traffic intervals change
+### 5. Split official routes at traffic intervals and administrative boundaries
 
-The route geometry from `GA_2024_Routes` is segmented whenever current-year traffic intervals introduce breakpoints.
+The route geometry from `GA_2024_Routes` is segmented wherever **two classes** of breakpoints occur along a route:
 
-The segmentation logic is:
+1. **Traffic interval boundaries** — FROM/TO milepoints from current-year GDOT traffic records
+2. **Administrative boundary crossings** — milepoints where a route crosses county, GDOT district, area office, MPO, or regional commission polygon boundaries
+
+The segmentation logic (implemented in `segment_routes()` → `get_breakpoints()`):
 
 1. take the official route geometry for one route interval
-2. collect all relevant breakpoints from current traffic intervals
-3. sort those breakpoints along the route
-4. cut the official geometry into smaller subsegments between adjacent breakpoints
-5. assign the traffic record that fully covers each resulting interval
+2. collect breakpoints from current traffic intervals (clamped to route span)
+3. collect breakpoints from administrative boundary crossings (detected via STRtree spatial index, projected back to milepoints)
+4. merge and sort all breakpoints along the route
+5. cut the official geometry into subsegments between adjacent breakpoints using Shapely `substring()`
+6. for each segment, assign the traffic record that fully covers the milepoint interval
+7. for each segment, stamp administrative attributes by querying which polygon contains the segment midpoint (`resolve_segment_admin_attrs()`)
 
-This means the staged network keeps the official route geometry as the base geometry but subdivides it where current traffic changes occur. Historical traffic breakpoints are no longer used for segmentation.
+This dual-source approach means no segment straddles a county, district, area office, MPO, or regional commission boundary, and every segment has a consistent set of traffic values.
+
+**Post-split overlay flags** are then applied to the already-split segments without further splitting:
+- **Legislative districts** (State House, State Senate, Congressional) — assigned by majority-length intersection via `_overlay_winner_by_length()`
+- **City** — assigned only when a single city covers ≥50% of the segment length; segments outside incorporated areas remain null
+
+Historical traffic breakpoints are no longer used for segmentation.
 
 ### 7. Preserve route-level attributes during segmentation
 
@@ -939,7 +949,9 @@ The current-year audit also identified a distinct data-quality bucket inside the
 
 Investigation showed these are primarily statewide GDOT routes whose `ROUTE_ID` structure uses parsed county code `000`. Those rows do not pick up county or district through the normal non-spatial joins because the route ID itself does not resolve to a single county.
 
-The ETL now includes a spatial county/district backfill step for those segments:
+County and district are normally stamped during the main segmentation pass (step 5) via boundary-crossing splits and midpoint polygon queries. These ~8,698 statewide routes retain null values after that step because their `ROUTE_ID` county code `000` doesn't resolve to a single county, and the boundary-crossing detection may miss them when their geometry runs along a boundary rather than crossing it.
+
+The ETL includes a spatial backfill step for these remaining segments:
 
 - use county polygons from the staged `county_boundaries` layer when available, with official GDOT county boundaries as fallback
 - generate a representative point for each affected roadway segment
@@ -1257,9 +1269,10 @@ Phase 1 is complete and usable as the foundation for downstream work.
 
 Closed with Phase 1:
 
-- statewide staged roadway ETL with 245,863 segments and 118 columns
+- statewide staged roadway ETL with 245,863 segments and 153 columns
 - 2024 AADT coverage at 99.9605% (`245,766` segments): ~96.5% from two parallel GDOT-official sources (state 2024 GDB + HPMS federal submission), ~3.5% from pipeline-derived fill (direction mirror, analytical interpolation, nearest neighbor), ~0.04% truly missing. Cross-validation captured in `AADT_2024_HPMS` / `AADT_2024_SOURCE_AGREEMENT`
 - 4-year HPMS AADT panel staged as `AADT_{2020,2022,2023,2024}_HPMS` additive columns: 94.6% / 16.2% / 16.2% / 96.3% overall coverage; 74-100% on the federal-aid network (FC 1-5) in every year. 2022/2023 FC 6-9 NULL is FHWA volumegroup sampling by design, not a pipeline miss. 2021 not published by FHWA
+- 5-year historic AADT via IDW station interpolation (AADT modeling v2): `AADT_2021_MODELED` covers 92% of segments (242,850); `AADT_{2020,2022,2023,2024}_LOCAL_FILL` provides gap-fills for FC 6-7 where HPMS is NULL or synthetic. FHWA synthetic defaults flagged via `AADT_{year}_HPMS_SYNTHETIC`. See `02-Data-Staging/docs/aadt_v2_idw_prediction.md`
 - Future AADT 2044 coverage extended from `46,619` direct-forecast segments (`19.0%`) to `245,766` total post-imputation segments (`99.96%`) via four-step fill chain: GDOT official, HPMS, direction mirror, then official implied growth projection (~1.17% annual rate) for all remaining segments with `AADT_2024`
 - FHWA HPMS 2024 enrichment with pavement condition (IRI, rutting, cracking) and safety attributes
 - signed-route verification for Interstates, US Routes, and State Routes via HPMS first-pass coverage with GPAS final authority

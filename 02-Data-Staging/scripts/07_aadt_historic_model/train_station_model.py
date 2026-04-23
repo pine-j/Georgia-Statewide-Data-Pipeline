@@ -1,7 +1,12 @@
-"""Train station AADT model with 5-fold station-uid CV.
+"""SUPERSEDED — retained as Decision Gate 2 record.
 
-HistGradientBoostingRegressor for P50 (squared_error) and P10/P90
-(quantile loss). Training target: log(station.aadt_actual).
+HGB station model failed validation (all folds MAPE >35%, Median APE ~57%).
+Replaced by IDW station interpolation in idw_predictor.py.
+This script is not called by the active pipeline.
+
+Original description:
+Train station AADT model with 5-fold station-uid CV.
+HistGradientBoostingRegressor for P50 and P10/P90 quantile models.
 
 Saves fold predictions, CV metrics, and production model.
 """

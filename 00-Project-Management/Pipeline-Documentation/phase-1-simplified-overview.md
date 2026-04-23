@@ -17,7 +17,7 @@ Phase 1 builds the foundational roadway layer that RAPTOR scoring runs on top of
 | **FHWA HPMS 2024** | Parallel GDOT-official AADT for federally-reportable segments (HPMS is GDOT's annual federal submission, not a fallback — it's the canonical source for segments outside the state 2024 GDB scope, e.g., off-system roads); pavement condition (IRI, rutting, cracking); initial signed-route classification |
 | **GDOT GPAS SpeedZone** | Posted speed limits — on-system (state highways) matched by route ID, off-system (local roads) matched by road name + county |
 | **GDOT GPAS Reference Layers** | Authoritative verification of signed-route family (Interstate / US / State Route) |
-| **GDOT Boundaries Service** | County and district polygons for spatial assignment |
+| **GDOT Boundaries Service** | County (159) and district (7) boundary polygons — **split-driving**: routes are segmented at every boundary crossing |
 | **GDOT EOC Evacuation Routes** | Hurricane evacuation route flags |
 
 ---
@@ -32,9 +32,23 @@ Load the `GA_2024_Routes` layer from the GDOT Road Inventory GDB. This gives us 
 
 Join 15 attribute layers from the same GDB onto the routes (functional class, number of lanes, surface type, median type, shoulder widths, NHS status, ownership, etc.). These join by route ID and milepoint intervals.
 
-### 3. Segment by traffic intervals
+### 3. Segment by traffic intervals + administrative geography
 
-Load the GDOT Traffic GDB (46,029 traffic records). Split the road geometry wherever traffic values change along a route. This produces ~245,863 segments, each with a consistent set of traffic values (AADT, truck AADT, VMT, K/D factors).
+Load the GDOT Traffic GDB (46,029 traffic records) and five sets of administrative boundary polygons. The pipeline computes breakpoints from **two sources simultaneously** and splits the official route geometry at every one:
+
+- **Traffic interval boundaries** — wherever AADT, truck AADT, or other traffic values change along a route
+- **Administrative boundary crossings** — wherever a route crosses a county, GDOT district, area office, MPO, or regional commission boundary
+
+For each resulting segment the pipeline:
+- slices the official geometry between adjacent breakpoints using Shapely `substring()`
+- stamps the covering traffic record (AADT, truck AADT, VMT, K/D factors)
+- stamps administrative attributes by querying which polygon contains the segment midpoint (county, district, area office, MPO, regional commission)
+
+This dual-source segmentation produces ~245,863 segments, each with a consistent set of traffic values **and** unambiguous administrative geography. A segment never straddles a county or district boundary.
+
+**Post-split overlay flags** are applied to the already-split segments without further splitting:
+- **Legislative districts** (State House, State Senate, Congressional) — assigned by majority-length intersection
+- **City** — assigned only when a single city covers ≥50% of the segment length
 
 ### 4. Parse route identity
 
@@ -71,9 +85,9 @@ Build `FUTURE_AADT_2044` through a four-step fill chain:
 
 Direct GDOT/HPMS/direction-mirror forecast coverage is `46,619` segments (`19.0%`); the official implied-growth step raises total `FUTURE_AADT_2044` coverage to `245,766` segments (`99.96%`).
 
-### 9. Backfill county/district gaps
+### 9. Backfill remaining county/district gaps
 
-For segments with null county or district (mostly statewide routes with county code `000`), use spatial overlay with GDOT boundary polygons to assign the correct county and district.
+County and district are normally stamped during segmentation (step 3) via boundary-crossing splits. A small tail of ~8,698 statewide routes with parsed county code `000` still has null values after that step. For these, use a representative-point spatial overlay against GDOT boundary polygons to assign the correct county and district.
 
 ### 10. Flag evacuation routes
 
@@ -116,14 +130,18 @@ The RAPTOR `RoadwayData` loader reads from these outputs and keeps the fields it
 ```
 GDOT Road Inventory GDB
   → Load route geometry + join 15 attribute layers
-  → Segment at traffic intervals (GDOT Traffic GDB)
+  → Segment at traffic intervals + admin boundary crossings
+      Traffic: GDOT Traffic GDB (46,029 records)
+      Geography: County, District, Area Office, MPO, Regional Commission
+      → 245,863 segments, each with consistent traffic + unambiguous geography
+  → Post-split overlay flags (Legislative districts, City — no further splitting)
   → Parse ROUTE_ID → derive route family
   → Enrich speed limits (GPAS SpeedZone on/off system)
   → Gap-fill AADT + attributes (HPMS 2024)
   → Verify signed-route family (GPAS Reference)
   → Project FUTURE_AADT_2044 (growth rate fill)
-  → Backfill county/district (GDOT Boundaries)
-  → Flag evacuation routes (GDOT EOC)
+  → Backfill remaining county/district gaps (statewide route code 000)
+  → Flag evacuation routes (GDOT EOC) — secondary split at corridor boundaries
   → Derive RAPTOR fields (PCT_SADT, PCT_CADT, HWY_DES)
   → Write: roadway_inventory.db + base_network.gpkg
 
@@ -139,7 +157,7 @@ RAPTOR RoadwayData loader → scoring categories
 - **245,863** roadway segments in the final output
 - **99.9605%** AADT coverage (Only 97 segments have no traffic data at all)
 - **8 data sources** combined into one network
-- **118 columns** in the staged database
+- **153 columns** in the staged database
 - **7 GDOT districts**, **159 counties** covered statewide
 
 
