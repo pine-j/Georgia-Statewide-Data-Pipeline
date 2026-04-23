@@ -116,7 +116,10 @@ def normalize_tc_number(value) -> str:
 
 
 def _coerce_int(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series, errors="coerce").astype("Int64")
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.dtype == object:
+        numeric = numeric.astype("float64")
+    return numeric.round(0).astype("Int64")
 
 
 def _coerce_float(series: pd.Series) -> pd.Series:
@@ -219,6 +222,12 @@ def load_station_csv(
     raw = raw[raw["TC_NUMBER"].notna() & (raw["TC_NUMBER"] != "")]
     raw = raw.reset_index(drop=True)
 
+    def _pick(candidates: list[str]) -> pd.Series:
+        for c in candidates:
+            if c in raw.columns:
+                return raw[c]
+        return pd.Series([pd.NA] * len(raw))
+
     n = len(raw)
     out = pd.DataFrame(
         {
@@ -228,14 +237,14 @@ def load_station_csv(
             "longitude": _coerce_float(raw["Long"]),
             "aadt": _coerce_int(raw["AADT"]),
             "statistics_type": pd.Series([pd.NA] * n, dtype="string"),
-            "single_unit_aadt": _coerce_int(raw["AADT_SINGL"]),
-            "combo_unit_aadt": _coerce_int(raw["AADT_COMBI"]),
-            "k_factor": _coerce_float(raw["K_FACTOR"]),
-            "d_factor": _coerce_float(raw["D_Factor"]),
+            "single_unit_aadt": _coerce_int(_pick(["AADT_SINGLE_UNIT", "AADT_SINGL"])),
+            "combo_unit_aadt": _coerce_int(_pick(["AADT_COMBINATION", "AADT_COMBI"])),
+            "k_factor": _coerce_float(_pick(["K_FACTOR", "K_Factor"])),
+            "d_factor": _coerce_float(_pick(["D_Factor", "D_FACTOR"])),
             "functional_class": pd.Series([pd.NA] * n, dtype="Int64"),
             "station_type": pd.Series([pd.NA] * n, dtype="string"),
             "traffic_class": pd.Series([pd.NA] * n, dtype="string"),
-            "future_aadt": _coerce_int(raw["FUTURE_AAD"]),
+            "future_aadt": _coerce_int(_pick(["FUTURE_AADT", "FUTURE_AAD"])),
             "source": [source_tag] * n,
         }
     )
