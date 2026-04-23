@@ -23,11 +23,10 @@ from segment_station_link_knn import KNN_K, KNN_LINK_COLUMNS, build_knn_link_row
 
 logger = logging.getLogger(__name__)
 
-WORKTREE = Path("D:/Jacobs/Georgia-Statewide-Data-Pipeline-worktrees/aadt-historic-model-v2")
-GPKG_PATH = WORKTREE / "02-Data-Staging/spatial/base_network.gpkg"
-DB_PATH = WORKTREE / "02-Data-Staging/databases/roadway_inventory.db"
+GPKG_PATH = _SCRIPTS.parents[1] / "spatial" / "base_network.gpkg"
+DB_PATH = _SCRIPTS.parents[1] / "databases" / "roadway_inventory.db"
 KNN_TABLE = "segment_station_link_knn"
-YEARS = [2020, 2021, 2022, 2023, 2024]
+YEARS = list(range(2015, 2025))
 
 
 def main() -> None:
