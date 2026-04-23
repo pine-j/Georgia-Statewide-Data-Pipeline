@@ -104,6 +104,8 @@ HPMS_GAP_FILL_FIELDS = {
     "ownership": ("OWNERSHIP", "int"),
     "urban_id": ("URBAN_ID", "int"),
     "speed_limit": ("SPEED_LIMIT", "int"),
+    "nhfn": ("NHFN", "int"),
+    "strahnet_type": ("STRAHNET_TYPE", "int"),
 }
 
 
