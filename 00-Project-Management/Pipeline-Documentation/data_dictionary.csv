@@ -128,7 +128,11 @@ AADT_2021_SOURCE,Method used to produce AADT_2021_MODELED.,station_idw_v2
 AADT_2021_NEAREST_STATION_DIST_M,Distance in meters from the segment centroid to the nearest 2021 traffic station.,342.5
 AADT_2021_NEAREST_STATION_TC,TC_NUMBER of the nearest 2021 traffic station used in the prediction.,067-7126
 AADT_2021_N_STATIONS_USED,Number of stations within the 2000m cutoff that contributed to the IDW prediction.,5
+AADT_2020_LOCAL_FILL,"IDW-interpolated 2020 AADT for FC 6-7 segments where the HPMS value was flagged as an FHWA synthetic default (AADT_2020_HPMS_SYNTHETIC=1). Provides a spatially-differentiated alternative to the volumegroup default. NULL on non-synthetic segments and on synthetic segments beyond the 2000m station cutoff.",5381
+AADT_2020_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2020 local fill, same logic as AADT_2021_CONFIDENCE.",medium
 AADT_2022_LOCAL_FILL,"IDW-interpolated 2022 AADT for FC 6-7 segments where HPMS is NULL (FHWA volumegroup sampling left these unpopulated). NULL on FC 1-5 and on FC 6-7 segments beyond the 2000m station cutoff.",1850
 AADT_2022_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2022 local fill, same logic as AADT_2021_CONFIDENCE.",medium
 AADT_2023_LOCAL_FILL,"IDW-interpolated 2023 AADT for FC 6-7 segments where HPMS is NULL, same method as 2022.",1920
 AADT_2023_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2023 local fill, same logic as AADT_2021_CONFIDENCE.",medium
+AADT_2024_LOCAL_FILL,"IDW-interpolated 2024 AADT for FC 6-7 segments where the HPMS value was flagged as an FHWA synthetic default (AADT_2024_HPMS_SYNTHETIC=1). Provides a spatially-differentiated alternative to the volumegroup default. NULL on non-synthetic segments and on synthetic segments beyond the 2000m station cutoff.",5862
+AADT_2024_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2024 local fill, same logic as AADT_2021_CONFIDENCE.",medium
