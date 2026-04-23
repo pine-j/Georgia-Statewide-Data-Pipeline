@@ -89,7 +89,7 @@ def _make_test_db(tmp_path: Path) -> Path:
             "AADT": 10000 + i * 1000,
             "latitude": 33.5 + i * 0.01,
             "longitude": -84.5 + i * 0.01,
-            "Future_AADT": 20000 + i * 2000,
+            "FUTURE_AADT_2044": 20000 + i * 2000,
         })
     pd.DataFrame(seg_rows).to_sql("segments", conn, if_exists="replace", index=False)
 

@@ -117,3 +117,42 @@ class TestApplyResolver:
         total = conn.execute(f"SELECT COUNT(*) FROM {RESOLVER_TABLE}").fetchone()[0]
         assert total == len(years) * 5
         conn.close()
+
+    def test_apply_resolver_preserves_null_coord_rows_as_unresolved(self, tmp_path):
+        db_path = _make_db(tmp_path, [2020, 2024])
+        conn = sqlite3.connect(str(db_path))
+
+        conn.execute(
+            """
+            INSERT INTO historic_stations (
+                year, tc_number, latitude, longitude, aadt, functional_class,
+                statistics_type, single_unit_aadt, combo_unit_aadt, k_factor,
+                d_factor, station_type, traffic_class, future_aadt, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (2020, "TC_NULL", None, None, 4200, 3, "Actual", 100, 200, 0.085, 0.52, "Short Term", None, 9000, "test:null"),
+        )
+        conn.commit()
+
+        run_resolver(conn)
+
+        row = pd.read_sql(
+            f"SELECT * FROM {RESOLVER_TABLE} WHERE year = 2020 AND tc_number = 'TC_NULL'",
+            conn,
+        )
+        assert len(row) == 1
+        assert row.iloc[0]["resolver_method"] == "unresolved"
+        assert row.iloc[0]["resolver_confidence"] == "low"
+        conn.close()
+
+    def test_apply_resolver_without_anchor_year_falls_back_to_unresolved(self, tmp_path):
+        db_path = _make_db(tmp_path, [2020, 2021])
+        conn = sqlite3.connect(str(db_path))
+
+        run_resolver(conn)
+
+        rows = pd.read_sql(f"SELECT * FROM {RESOLVER_TABLE}", conn)
+        assert len(rows) == 10
+        assert set(rows["resolver_method"]) == {"unresolved"}
+        assert rows["station_uid"].str.startswith(("GA20_", "GA21_")).all()
+        conn.close()

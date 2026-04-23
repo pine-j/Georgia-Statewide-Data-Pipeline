@@ -14,11 +14,14 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 from shapely.geometry import Point
 
 _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
+
+from segment_station_link import _project_lon_lat_to_metric
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,50 @@ DB_PATH = _SCRIPTS.parents[1] / "databases" / "roadway_inventory.db"
 OUTPUT_PATH = _SCRIPTS.parents[2] / "03-Processed-Data" / "aadt" / "station_time_series.gpkg"
 
 YEARS = list(range(2015, 2025))
+
+
+def _find_segment_future_col(conn: sqlite3.Connection) -> str | None:
+    segment_cols = {row[1] for row in conn.execute("PRAGMA table_info(segments)").fetchall()}
+    for candidate in ("FUTURE_AADT_2044", "FUTURE_AADT", "Future_AADT"):
+        if candidate in segment_cols:
+            return candidate
+    return None
+
+
+def _attach_future_aadt(conn: sqlite3.Connection, wide: pd.DataFrame) -> pd.DataFrame:
+    wide = wide.copy()
+    wide["FUTURE_AADT_2044"] = np.nan
+
+    future_col = _find_segment_future_col(conn)
+    if future_col is None or wide.empty:
+        return wide
+
+    segs = pd.read_sql(
+        f"SELECT latitude, longitude, {future_col} AS future_aadt FROM segments "
+        f"WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND {future_col} IS NOT NULL",
+        conn,
+    )
+    if segs.empty:
+        return wide
+
+    valid_mask = wide["latitude"].notna() & wide["longitude"].notna()
+    if not valid_mask.any():
+        return wide
+
+    seg_x, seg_y = _project_lon_lat_to_metric(
+        segs["longitude"].to_numpy(), segs["latitude"].to_numpy()
+    )
+    tree = cKDTree(np.c_[seg_x, seg_y])
+
+    station_x, station_y = _project_lon_lat_to_metric(
+        wide.loc[valid_mask, "longitude"].to_numpy(),
+        wide.loc[valid_mask, "latitude"].to_numpy(),
+    )
+    _, nearest_idx = tree.query(np.c_[station_x, station_y], k=1)
+
+    future_vals = pd.to_numeric(segs["future_aadt"], errors="coerce").to_numpy(dtype="float64")
+    wide.loc[valid_mask, "FUTURE_AADT_2044"] = future_vals[np.asarray(nearest_idx, dtype=int)]
+    return wide
 
 
 def build_station_wide(
@@ -99,34 +146,10 @@ def build_station_wide(
         subset=["station_uid"], keep="first"
     ).rename(columns={"tc_number": f"tc_number_{anchor_year}"})
     wide = wide.merge(tc_2024, on="station_uid", how="left")
-
-    try:
-        segs = pd.read_sql(
-            "SELECT latitude, longitude, Future_AADT FROM segments "
-            "WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND Future_AADT IS NOT NULL",
-            conn,
-        )
-        if not segs.empty and not wide.empty:
-            from scored_resolver import haversine_m
-            future_aadts = []
-            seg_lats = segs["latitude"].values
-            seg_lons = segs["longitude"].values
-            seg_fa = segs["Future_AADT"].values
-            for _, row in wide.iterrows():
-                if pd.notna(row["latitude"]) and pd.notna(row["longitude"]):
-                    dists = haversine_m(row["latitude"], row["longitude"], seg_lats, seg_lons)
-                    nearest_idx = np.argmin(dists)
-                    future_aadts.append(int(seg_fa[nearest_idx]))
-                else:
-                    future_aadts.append(np.nan)
-            wide["FUTURE_AADT_2044"] = future_aadts
-        else:
-            wide["FUTURE_AADT_2044"] = np.nan
-    except Exception:
-        wide["FUTURE_AADT_2044"] = np.nan
+    wide = _attach_future_aadt(conn, wide)
 
     geometry = [
-        Point(lon, lat) if pd.notna(lat) and pd.notna(lon) else Point(0, 0)
+        Point(lon, lat) if pd.notna(lat) and pd.notna(lon) else None
         for lat, lon in zip(wide["latitude"], wide["longitude"])
     ]
     gdf = gpd.GeoDataFrame(wide, geometry=geometry, crs="EPSG:4326")

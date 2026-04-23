@@ -29,17 +29,40 @@ ANCHOR_YEAR = 2024
 RESOLVER_TABLE = "station_uid_resolver"
 DB_PATH = SCRIPTS.parents[1] / "databases" / "roadway_inventory.db"
 DOCS_PATH = SCRIPTS.parents[1] / "docs"
+RESOLVER_COLUMNS = [
+    "year",
+    "tc_number",
+    "station_uid",
+    "resolver_method",
+    "resolver_delta_m",
+    "resolver_confidence",
+]
 
 
 def map_confidence(margin: float) -> str:
     """Map score_margin to confidence tier."""
-    if isinstance(margin, float) and math.isnan(margin):
+    if pd.isna(margin):
         return "low"
     if margin > 0.10:
         return "high"
     if margin > 0.05:
         return "medium"
     return "low"
+
+
+def _unresolved_rows(rows: pd.DataFrame, year: int) -> pd.DataFrame:
+    if rows.empty:
+        return pd.DataFrame(columns=RESOLVER_COLUMNS)
+    return pd.DataFrame(
+        {
+            "year": [year] * len(rows),
+            "tc_number": rows["tc_number"].values,
+            "station_uid": rows["tc_number"].map(lambda tc: f"GA{year % 100:02d}_{tc}"),
+            "resolver_method": ["unresolved"] * len(rows),
+            "resolver_delta_m": [np.nan] * len(rows),
+            "resolver_confidence": ["low"] * len(rows),
+        }
+    )
 
 
 def run_resolver(conn: sqlite3.Connection) -> pd.DataFrame:
@@ -49,20 +72,21 @@ def run_resolver(conn: sqlite3.Connection) -> pd.DataFrame:
         "FROM historic_stations",
         conn,
     )
+    stations = stations.drop_duplicates(subset=["year", "tc_number"], keep="first").reset_index(drop=True)
 
-    anchor_df = stations[
-        (stations["year"] == ANCHOR_YEAR)
-        & stations["latitude"].notna()
-        & stations["longitude"].notna()
-    ].drop_duplicates(subset=["tc_number"], keep="first").reset_index(drop=True)
+    anchor_all = stations[stations["year"] == ANCHOR_YEAR].reset_index(drop=True)
+    anchor_df = anchor_all[
+        anchor_all["latitude"].notna() & anchor_all["longitude"].notna()
+    ].reset_index(drop=True)
+    anchor_has_coords = anchor_all["latitude"].notna() & anchor_all["longitude"].notna()
 
     anchor_rows = pd.DataFrame({
-        "year": [ANCHOR_YEAR] * len(anchor_df),
-        "tc_number": anchor_df["tc_number"].values,
-        "station_uid": anchor_df["tc_number"].map(lambda tc: f"GA24_{tc}"),
-        "resolver_method": ["anchor"] * len(anchor_df),
-        "resolver_delta_m": [0.0] * len(anchor_df),
-        "resolver_confidence": ["high"] * len(anchor_df),
+        "year": [ANCHOR_YEAR] * len(anchor_all),
+        "tc_number": anchor_all["tc_number"].values,
+        "station_uid": anchor_all["tc_number"].map(lambda tc: f"GA24_{tc}"),
+        "resolver_method": ["anchor"] * len(anchor_all),
+        "resolver_delta_m": np.where(anchor_has_coords, 0.0, np.nan),
+        "resolver_confidence": np.where(anchor_has_coords, "high", "low"),
     })
 
     all_results = [anchor_rows]
@@ -72,22 +96,36 @@ def run_resolver(conn: sqlite3.Connection) -> pd.DataFrame:
     )
 
     for year in non_anchor_years:
-        year_df = stations[
-            (stations["year"] == year)
-            & stations["latitude"].notna()
-            & stations["longitude"].notna()
-        ].drop_duplicates(subset=["tc_number"], keep="first").reset_index(drop=True)
-
-        if year_df.empty:
+        year_rows = stations[stations["year"] == year].reset_index(drop=True)
+        if year_rows.empty:
             continue
 
-        resolved = build_scored_resolver(anchor_df, year_df, year)
-        resolved["resolver_confidence"] = resolved["score_margin"].map(map_confidence)
-        resolved = resolved[["year", "tc_number", "station_uid", "resolver_method",
-                             "resolver_delta_m", "resolver_confidence"]]
-        all_results.append(resolved)
+        if anchor_df.empty:
+            all_results.append(_unresolved_rows(year_rows, year))
+            continue
+
+        year_df = year_rows[
+            year_rows["latitude"].notna() & year_rows["longitude"].notna()
+        ].reset_index(drop=True)
+        missing_coord_rows = year_rows[
+            year_rows["latitude"].isna() | year_rows["longitude"].isna()
+        ].reset_index(drop=True)
+
+        if year_df.empty and missing_coord_rows.empty:
+            continue
+
+        year_results = []
+        if not year_df.empty:
+            resolved = build_scored_resolver(anchor_df, year_df, year)
+            resolved["resolver_confidence"] = resolved["score_margin"].map(map_confidence)
+            resolved = resolved[RESOLVER_COLUMNS]
+            year_results.append(resolved)
+        if not missing_coord_rows.empty:
+            year_results.append(_unresolved_rows(missing_coord_rows, year))
+        all_results.append(pd.concat(year_results, ignore_index=True))
 
     result = pd.concat(all_results, ignore_index=True)
+    result = result.sort_values(["year", "tc_number"]).reset_index(drop=True)
 
     conn.execute(f"DROP TABLE IF EXISTS {RESOLVER_TABLE}")
     result.to_sql(RESOLVER_TABLE, conn, if_exists="replace", index=False)

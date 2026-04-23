@@ -11,14 +11,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import numpy as np
+import geopandas as gpd
 import pandas as pd
 
 _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from build_segment_station_link import load_segment_midpoints, load_stations
+from build_segment_station_link import load_stations
 from segment_station_link_knn import KNN_K, KNN_LINK_COLUMNS, build_knn_link_rows
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,27 @@ KNN_TABLE = "segment_station_link_knn"
 YEARS = list(range(2015, 2025))
 
 
+def _load_segment_midpoints() -> pd.DataFrame:
+    logger.info("Reading segments layer from %s", GPKG_PATH)
+    gdf = gpd.read_file(
+        GPKG_PATH, layer="roadway_segments", engine="pyogrio", columns=["unique_id", "ROUTE_ID"]
+    )
+    mids = gdf.geometry.interpolate(0.5, normalized=True)
+    return pd.DataFrame(
+        {
+            "unique_id": gdf["unique_id"].astype("string").to_numpy(),
+            "ROUTE_ID": gdf["ROUTE_ID"].astype("string").to_numpy(),
+            "mid_x_m": mids.x.to_numpy(),
+            "mid_y_m": mids.y.to_numpy(),
+        }
+    )
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     logger.info("Loading segment midpoints...")
-    segments = load_segment_midpoints()
+    segments = _load_segment_midpoints()
     logger.info("  %d segments", len(segments))
 
     logger.info("Loading stations...")
