@@ -114,3 +114,25 @@ SEC_EVAC,Boolean flag indicating the segment overlaps a GDOT-designated hurrican
 SEC_EVAC_CONTRAFLOW,Boolean flag indicating the segment overlaps a GDOT hurricane evacuation contraflow route.,False
 SEC_EVAC_ROUTE_NAME,"Evacuation route name(s) matched to the segment from the GDOT EOC layer, semicolon-separated when multiple.",SR 17; SR 25
 SEC_EVAC_SOURCE,Source attribution for the evacuation flag.,gdot_eoc_hurricane_evacuation
+AADT_2020_HPMS_SYNTHETIC,"Binary flag (0/1/NULL) indicating whether the 2020 HPMS AADT value is an FHWA volumegroup-default fill on FC 6-7. Flag=1 when the integer value repeats >=500 times within (FC, year) and FC is 6 or 7. NULL when HPMS is NULL; 0 on FC 1-5 by construction.",1
+AADT_2022_HPMS_SYNTHETIC,"Binary flag (0/1/NULL) indicating whether the 2022 HPMS AADT value is an FHWA synthetic default. Effectively 0 for all non-null 2022 rows because FHWA leaves FC 6-7 NULL in the 2022 submission.",0
+AADT_2023_HPMS_SYNTHETIC,"Binary flag (0/1/NULL) for 2023 HPMS synthetic default classification, same logic as 2022.",0
+AADT_2024_HPMS_SYNTHETIC,"Binary flag (0/1/NULL) indicating whether the 2024 HPMS AADT value is an FHWA volumegroup-default fill on FC 6-7.",1
+AADT_2022_HPMS_HARD_OUTLIER,"Binary flag (0/1/NULL) for 2022 HPMS values that repeat >100 times within an FC bin, flagging implausible clusters like the 657-row AADT=67 artifact.",1
+AADT_2023_HPMS_HARD_OUTLIER,"Binary flag (0/1/NULL) for 2023 HPMS hard-outlier values, same logic as 2022.",0
+AADT_2021_MODELED,"Predicted 2021 AADT via inverse-distance-weighted interpolation of the 5 nearest 2021 GDOT traffic stations. NULL when no station is within 2000m of the segment centroid.",5647
+AADT_2021_NEIGHBOR_MIN,"Lower bound for the 2021 AADT prediction: minimum AADT among the k nearest stations used in the IDW.",3200
+AADT_2021_NEIGHBOR_MAX,"Upper bound for the 2021 AADT prediction: maximum AADT among the k nearest stations used in the IDW.",8100
+AADT_2021_CONFIDENCE,"Confidence tier for the 2021 prediction: high = nearest station within 500m and on the same route; medium = nearest station within 2000m; none = beyond 2000m cutoff (prediction is NULL).",medium
+AADT_2021_SOURCE,Method used to produce AADT_2021_MODELED.,station_idw_v2
+AADT_2021_NEAREST_STATION_DIST_M,Distance in meters from the segment centroid to the nearest 2021 traffic station.,342.5
+AADT_2021_NEAREST_STATION_TC,TC_NUMBER of the nearest 2021 traffic station used in the prediction.,067-7126
+AADT_2021_N_STATIONS_USED,Number of stations within the 2000m cutoff that contributed to the IDW prediction.,5
+AADT_2020_LOCAL_FILL,"IDW-interpolated 2020 AADT for FC 6-7 segments where the HPMS value was flagged as an FHWA synthetic default (AADT_2020_HPMS_SYNTHETIC=1). Provides a spatially-differentiated alternative to the volumegroup default. NULL on non-synthetic segments and on synthetic segments beyond the 2000m station cutoff.",5381
+AADT_2020_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2020 local fill, same logic as AADT_2021_CONFIDENCE.",medium
+AADT_2022_LOCAL_FILL,"IDW-interpolated 2022 AADT for FC 6-7 segments where HPMS is NULL (FHWA volumegroup sampling left these unpopulated). NULL on FC 1-5 and on FC 6-7 segments beyond the 2000m station cutoff.",1850
+AADT_2022_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2022 local fill, same logic as AADT_2021_CONFIDENCE.",medium
+AADT_2023_LOCAL_FILL,"IDW-interpolated 2023 AADT for FC 6-7 segments where HPMS is NULL, same method as 2022.",1920
+AADT_2023_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2023 local fill, same logic as AADT_2021_CONFIDENCE.",medium
+AADT_2024_LOCAL_FILL,"IDW-interpolated 2024 AADT for FC 6-7 segments where the HPMS value was flagged as an FHWA synthetic default (AADT_2024_HPMS_SYNTHETIC=1). Provides a spatially-differentiated alternative to the volumegroup default. NULL on non-synthetic segments and on synthetic segments beyond the 2000m station cutoff.",5862
+AADT_2024_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2024 local fill, same logic as AADT_2021_CONFIDENCE.",medium
