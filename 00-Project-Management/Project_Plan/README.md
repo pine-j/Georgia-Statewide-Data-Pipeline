@@ -53,18 +53,18 @@ Download-script convention:
 |-----------|--------|-------|
 | `base_network.gpkg` | roadway_segments, district_boundaries, county_boundaries | 1 |
 | `connectivity.gpkg` | priority_routes, nevi_corridors, alt_fuel_stations, airports, seaports, universities, military_bases, national_parks, rail_facilities, freight_generators | 2 |
+| `freight.gpkg` | faf5_network_links, freight_corridors, truck_routes, intermodal_terminals, port_facilities, rail_network | 2 |
+| `assets.gpkg` | bridges | 2 (pavement added in Phase 5) |
 | `demographics.gpkg` | tract_aggregated_blocks, block_groups, tracts, opportunity_zones | 3 |
-| `safety.gpkg` | crash_points | 4 |
-| `assets.gpkg` | bridges, pavement_sections | 5 |
-| `mobility.gpkg` | railroad_crossings, hpms_segments | 6 |
-| `climate.gpkg` | flood_zones, elevation | 9 |
-| `land_use.gpkg` | land_cover, parcels_fulton | 10 |
-| `environmental.gpkg` | wetlands, critical_habitat, protected_areas, water_quality_sites | 11 |
-| `cultural.gpkg` | historic_places | 12 |
-| `transit.gpkg` | transit_stops, transit_routes, transit_service_areas | 13 |
-| `freight.gpkg` | freight_corridors, truck_routes, intermodal_terminals, port_facilities, rail_network | 14 |
-| `bike_ped.gpkg` | bike_lanes, trails, sidewalks | 15 |
-| `ej.gpkg` | ejscreen, eji | 16 |
+| `mobility.gpkg` | railroad_crossings, hpms_segments | 2 (V/C + congestion added in Phase 4) |
+| `safety.gpkg` | crash_points | 5 |
+| `climate.gpkg` | flood_zones, elevation | 9 (post-RAPTOR) |
+| `land_use.gpkg` | land_cover, parcels_fulton | 10 (post-RAPTOR) |
+| `environmental.gpkg` | wetlands, critical_habitat, protected_areas, water_quality_sites | 11 (post-RAPTOR) |
+| `cultural.gpkg` | historic_places | 12 (post-RAPTOR) |
+| `transit.gpkg` | transit_stops, transit_routes, transit_service_areas | 13 (post-RAPTOR) |
+| `bike_ped.gpkg` | bike_lanes, trails, sidewalks | 15 (post-RAPTOR) |
+| `ej.gpkg` | ejscreen, eji | 16 (post-RAPTOR) |
 
 ### Data Inventory
 All known datasets are tracked in `01-Raw-Data/Georgia_Data_Inventory.csv`. This is a living document — add new datasets as they're discovered. Currently tracking **88 datasets** across 20+ categories.
@@ -100,19 +100,33 @@ This keeps the app aligned with the current project scope while preserving a cle
 
 ---
 
-### Phases
+### Phases — Organized by Dataset Cluster
+
+Phases are grouped by **dataset cluster**, not by RAPTOR scoring category. If two RAPTOR categories share a dataset, they are handled in the same phase. This avoids downloading, processing, and spatially conflating the same data twice.
 
 **RAPTOR-Required:**
-| Phase | Focus | Depends On |
-|-------|-------|------------|
-| [Phase 1](phase-1-foundation.md) | Roadways Base Layer (Road Inventory, boundaries) | Road Inventory GDB download |
-| [Phase 2](phase-2-connectivity.md) | Connectivity (SRP, NEVI, AFDC, Traffic Generators) | Phase 1 |
-| [Phase 3](phase-3-socioeconomic.md) | Socioeconomic (Nationwide Census, LEHD, OPB, Employment Projections) | Phase 1 |
-| [Phase 4](phase-4-safety.md) | Safety (Crash Data, FARS, GOHS) | Phase 1 |
-| [Phase 5](phase-5-asset-preservation.md) | Asset Preservation (NBI Bridges, COPACES) | Phase 1 |
-| [Phase 6](phase-6-mobility.md) | Mobility (HPMS, Traffic Counts, NPMRDS, Railroad Crossings) | Phase 1 |
-| [Phase 7](phase-7-sharepoint.md) | SharePoint Data Organization | Phases 1-6 |
-| [Phase 8](phase-8-raptor-integration.md) | RAPTOR Integration + Output | Phases 1-7 |
+| Phase | Dataset Cluster | RAPTOR Categories Fed | Status |
+|-------|----------------|----------------------|--------|
+| [Phase 1](phase-1-foundation.md) | GDOT GDB + HPMS 2024 | Roadways | Done |
+| [Phase 1b](phase-1b-srp-derivation.md) | GRIP, nuclear EPZ, county seats | Connectivity (SRP validation) | Implementation Complete |
+| [Phase 2](phase-2-federal-transportation.md) | NTAD, FAF5, NBI, NPS, NCES, NEVI, AFDC, SRP, CFS, GA Freight Plan, port data | Connectivity + Freight + Asset Preservation (bridges) + Mobility (railroad crossings) | Not Started |
+| [Phase 3](phase-3-census-demographics.md) | Decennial, ACS, LODES, Economic Census, TIGER, OPB, BLS, Opportunity Zones | SocioEconomic | Not Started |
+| [Phase 4](phase-4-historic-traffic.md) | GDOT Traffic_Historical, 2010-2019, TADA, yearly HPMS, ARC counts | Mobility (V/C, AADT 2050, LOS, congestion) | Not Started |
+| [Phase 5](phase-5-gdot-restricted.md) | GEARS crashes, COPACES pavement, NPMRDS | Safety + Asset Preservation (pavement) + Mobility (LOTTR, TTTR) | Blocked on DSA |
+| [Phase 6](phase-6-integration.md) | All outputs from Phases 1-5 | All (Total Needs Score) | Not Started |
+
+Phases 2, 3, 4 can run in parallel — no inter-dependencies. Phase 5 is blocked on GDOT data-sharing agreements. Phase 6 requires all prior phases.
+
+**RAPTOR Category → Phase Contribution Map:**
+| RAPTOR Category | Weight | Contributing Phases |
+|----------------|--------|-------------------|
+| Roadways | — | Phase 1 |
+| Connectivity | 0.15 | Phase 1 (evac, NHS, STRAHNET) + Phase 1b (SRP) + Phase 2 (generators, connections, NHFN, energy corridors, freight corridors) |
+| Freight | 0.10 | Phase 1 (truck AADT) + Phase 2 (FAF5 tonnage/trips, freight corridors, intermodal) |
+| Asset Preservation | 0.20 | Phase 2 (NBI bridges) + Phase 5 (COPACES pavement) |
+| Safety | 0.20 | Phase 5 (GEARS crash rates) |
+| Mobility | 0.20 | Phase 2 (railroad crossings) + Phase 4 (V/C, AADT 2050, LOS) + Phase 5 (LOTTR, TTTR) |
+| SocioEconomic | 0.15 | Phase 3 (population/employment density, 2050 projections) |
 
 **Post-RAPTOR (Archived — revisit later):**
 | Phase | Focus |
@@ -122,11 +136,10 @@ This keeps the app aligned with the current project scope while preserving a cle
 | [Phase 11](archive/phase-11-environmental.md) | Environmental (Wetlands, Critical Habitat, GA EPD) |
 | [Phase 12](archive/phase-12-cultural-historic.md) | Cultural & Historic (NRHP) |
 | [Phase 13](archive/phase-13-transit.md) | Transit (GTFS Feeds, NTD, Regional Plans) |
-| [Phase 14](archive/phase-14-freight.md) | Freight & Logistics (FAF5, CFS, Ports, Truck Routes, Rail) |
 | [Phase 15](archive/phase-15-bicycle-pedestrian.md) | Bicycle & Pedestrian (GDOT, ARC, Atlanta) |
 | [Phase 16](archive/phase-16-environmental-justice.md) | Environmental Justice (EJScreen, EJI) |
 
-Phases 2-6 are ordered by current data availability after Phase 1: Connectivity, Socioeconomic, Safety, Asset Preservation, then Mobility. Post-RAPTOR plans are in `archive/` for future reference.
+Post-RAPTOR plans are in `archive/` for future reference. Phase 14 (Freight) was absorbed into Phase 2.
 
 ---
 
@@ -172,7 +185,7 @@ Current working note for Phase 1:
 | Pavement | TxDOT Condition/Ride/Distress CSV | COPACES (0-100) — **requires GDOT data request** |
 | Bridge source | TxDOT state shapefile | NBI federal (State=13) |
 | Crash data | TxDOT crash files (public) | GEARS — **requires DSA with GDOT** |
-| Freight commodity | Transearch (proprietary, link-level) | **Not available** — FAF5 workaround (state/metro level) |
+| Freight commodity | Transearch (proprietary, link-level) | FAF5 link-level assignment data (per Erik Martinez's MA/VA implementation) |
 | Congestion model | SAM (Fort Worth TDM output) | No public GSTDM output — compute V/C from HCM formula |
 | Socioeconomic source | SAMv5 TAZ (Texas-specific) | U.S. Census nationwide (block level) + OPB projections |
 | Port significance | Moderate | Very high (Savannah, 3rd busiest US port) |
