@@ -98,6 +98,10 @@ mklink /J "D:\Jacobs\Georgia-Statewide-Data-Pipeline-worktrees\<agent>-<task>\01
 
 Do not junction `02-Data-Staging/staged/` or any other writable data dir — keep writes worktree-local.
 
+## Delivery Folder
+
+`D:\Jacobs\GA-Pipeline-Delivery-Folder` is a git-free, attribution-free snapshot of pipeline data outputs (01-Raw-Data, 02-Data-Staging, 03-Processed-Data) intended for delivery to GDOT and other stakeholders. It must never contain git history, `.claude/` or `.git/` directories, `AGENT.md`, `CLAUDE.md`, development scripts, or any reference to AI tooling. When refreshing this folder, copy only data artifacts — not repo infrastructure.
+
 ## Context Exclusions
 
 Ignore the `.tmp/` and `.playwright-mcp/` folders for project decisions and
