@@ -130,6 +130,7 @@ CONGRESSIONAL_BOUNDARIES_URL = (
 )
 
 REBUILD_OUTPUTS_DIR = PROJECT_ROOT / ".tmp" / "rebuild_outputs"
+CURRENT_AADT_AUDIT_DIR = PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
 # Offline-resilient boundary cache. Populated by
 # 01-Raw-Data/Boundaries/scripts/download_boundaries.py. When a given
 # layer's cache file exists, fetch_and_cache_boundary reads it instead
@@ -2488,7 +2489,7 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
     summary["state_system_gap_fill_candidates"] = gap_fill_summary
 
     summary_path = REPORTS_DIR / "current_aadt_coverage_audit_summary.json"
-    audit_tmp_dir = PROJECT_ROOT / ".tmp" / "roadway_inventory" / "current_aadt_audit"
+    audit_tmp_dir = CURRENT_AADT_AUDIT_DIR
     audit_tmp_dir.mkdir(parents=True, exist_ok=True)
     uncovered_segments_path = audit_tmp_dir / "current_aadt_uncovered_segments.csv"
     uncovered_route_summary_path = audit_tmp_dir / "current_aadt_uncovered_route_summary.csv"
@@ -2507,12 +2508,17 @@ def write_current_aadt_coverage_audit(df: pd.DataFrame) -> None:
 
 def load_county_boundaries_for_attribute_backfill(
     gpkg_path: Path,
+    county_boundaries: gpd.GeoDataFrame | None = None,
 ) -> gpd.GeoDataFrame | None:
     """Load county boundaries for spatial attribute backfill.
 
-    Prefer existing staged county boundaries so the ETL can still backfill
-    county and district values when live boundary refresh is unavailable.
+    When county_boundaries is passed directly (e.g. from the checkpoint
+    runner), use it as-is.  Otherwise prefer existing staged boundaries,
+    then try a live fetch as a last resort.
     """
+    if county_boundaries is not None and not county_boundaries.empty:
+        logger.info("Using pre-loaded county boundaries for attribute backfill")
+        return county_boundaries
 
     existing_counties, existing_districts = load_existing_boundary_layers(gpkg_path)
     if existing_counties is not None and not existing_counties.empty:
@@ -4057,29 +4063,29 @@ def write_supporting_boundary_layers(
     state_house_boundaries: gpd.GeoDataFrame | None = None,
     state_senate_boundaries: gpd.GeoDataFrame | None = None,
     congressional_boundaries: gpd.GeoDataFrame | None = None,
+    county_boundaries: gpd.GeoDataFrame | None = None,
+    district_boundaries: gpd.GeoDataFrame | None = None,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """Append all 8 administrative boundary layers to the staged GeoPackage.
 
-    County and District are fetched fresh (or reused from the pre-run
-    fallback if the refresh fails). The 6 new layers (area office, MPO,
-    regional commission, state house, state senate, congressional) are
-    either passed in (from the main() pipeline run that already loaded
-    them) or re-read from the mid-run .fgb cache at
-    .tmp/rebuild_outputs/. Missing layers emit a WARNING and are
-    skipped - the GPKG finalize stays best-effort.
+    When county_boundaries / district_boundaries are passed directly
+    (e.g. from the checkpoint runner that already fetched them in stage
+    02), use them as-is — no refetch.  Otherwise fetch fresh, falling
+    back to fallback_* if the refresh fails.
     """
-    try:
-        district_boundaries = fetch_official_district_boundaries()
-        county_boundaries = fetch_official_county_boundaries(district_boundaries=district_boundaries)
-    except Exception as exc:
-        if fallback_county_boundaries is None or fallback_district_boundaries is None:
-            raise
-        logger.warning(
-            "Official boundary refresh unavailable; reusing existing staged boundaries: %s",
-            exc,
-        )
-        county_boundaries = fallback_county_boundaries
-        district_boundaries = fallback_district_boundaries
+    if county_boundaries is None or district_boundaries is None:
+        try:
+            district_boundaries = fetch_official_district_boundaries()
+            county_boundaries = fetch_official_county_boundaries(district_boundaries=district_boundaries)
+        except Exception as exc:
+            if fallback_county_boundaries is None or fallback_district_boundaries is None:
+                raise
+            logger.warning(
+                "Official boundary refresh unavailable; reusing existing staged boundaries: %s",
+                exc,
+            )
+            county_boundaries = fallback_county_boundaries
+            district_boundaries = fallback_district_boundaries
 
     _append_boundary_layer(gpkg_path, "county_boundaries", county_boundaries)
     _append_boundary_layer(gpkg_path, "district_boundaries", district_boundaries)
@@ -4221,7 +4227,10 @@ def main() -> None:
     segmented = compute_segment_length(segmented)
     segmented = apply_speed_zone_enrichment(segmented)
     existing_gpkg_path = SPATIAL_DIR / "base_network.gpkg"
-    county_boundaries_for_backfill = load_county_boundaries_for_attribute_backfill(existing_gpkg_path)
+    county_boundaries_for_backfill = load_county_boundaries_for_attribute_backfill(
+        existing_gpkg_path,
+        county_boundaries=county_boundaries,
+    )
     segmented = backfill_county_district_from_geometry(
         segmented,
         county_boundaries_for_backfill,
@@ -4302,6 +4311,8 @@ def main() -> None:
         state_house_boundaries=state_house_boundaries,
         state_senate_boundaries=state_senate_boundaries,
         congressional_boundaries=congressional_boundaries,
+        county_boundaries=county_boundaries,
+        district_boundaries=district_boundaries,
     )
     assert_decoded_county_lookup_matches_boundaries(segmented, staged_county_boundaries)
 
