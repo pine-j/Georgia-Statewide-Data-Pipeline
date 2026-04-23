@@ -19,17 +19,13 @@ Libraries: networkx for graph analysis, shapely/geopandas for spatial ops.
 
 from __future__ import annotations
 
-import json
 import logging
-from collections import defaultdict
 from pathlib import Path
 
 import geopandas as gpd
 import networkx as nx
-import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString, Point
-from shapely.ops import nearest_points
 
 LOGGER = logging.getLogger(__name__)
 

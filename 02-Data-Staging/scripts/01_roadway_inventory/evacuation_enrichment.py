@@ -1386,7 +1386,7 @@ def apply_direction_mirror_evac(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 best_overlap = overlap
                 best_inc_idx = inc_idx
 
-        if best_inc_idx is None or best_overlap < -MILEPOINT_TOLERANCE:
+        if best_inc_idx is None or best_overlap < MILEPOINT_TOLERANCE:
             continue
 
         inc_row = filled.loc[best_inc_idx]

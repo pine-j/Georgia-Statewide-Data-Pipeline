@@ -1511,7 +1511,7 @@ def apply_direction_mirror_aadt(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                 best_overlap = overlap
                 best_idx = inc_idx
 
-        if best_idx is None or best_overlap < -MILEPOINT_TOLERANCE:
+        if best_idx is None or best_overlap < MILEPOINT_TOLERANCE:
             continue
 
         inc_row = filled.loc[best_idx]
@@ -1778,7 +1778,7 @@ def apply_future_aadt_fill_chain(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_idx = inc_idx
-        if best_idx is None or best_overlap < -MILEPOINT_TOLERANCE:
+        if best_idx is None or best_overlap < MILEPOINT_TOLERANCE:
             continue
         val = filled.loc[best_idx, "FUTURE_AADT_2044"]
         if pd.notna(val):

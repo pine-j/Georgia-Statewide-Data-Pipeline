@@ -74,8 +74,8 @@ def create_segments_table(db_path: Path, df: pd.DataFrame) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA temp_store=MEMORY")
-        conn.execute("PRAGMA journal_mode=MEMORY")
-        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         df.to_sql("segments", conn, if_exists="replace", index=False)
         logger.info("Created 'segments' table with %d rows", len(df))
 
@@ -108,8 +108,8 @@ def create_load_summary(db_path: Path, df: pd.DataFrame) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA temp_store=MEMORY")
-        conn.execute("PRAGMA journal_mode=MEMORY")
-        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         summary = {
             "load_timestamp": datetime.now(timezone.utc).isoformat(),
             "total_rows": len(df),
