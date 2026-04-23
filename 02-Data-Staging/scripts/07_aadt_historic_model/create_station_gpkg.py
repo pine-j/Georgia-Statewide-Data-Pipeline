@@ -26,6 +26,7 @@ from segment_station_link import _project_lon_lat_to_metric
 logger = logging.getLogger(__name__)
 
 DB_PATH = _SCRIPTS.parents[1] / "databases" / "roadway_inventory.db"
+GPKG_PATH = _SCRIPTS.parents[1] / "spatial" / "base_network.gpkg"
 OUTPUT_PATH = _SCRIPTS.parents[2] / "03-Processed-Data" / "aadt" / "station_time_series.gpkg"
 
 YEARS = list(range(2015, 2025))
@@ -47,31 +48,67 @@ def _attach_future_aadt(conn: sqlite3.Connection, wide: pd.DataFrame) -> pd.Data
     if future_col is None or wide.empty:
         return wide
 
-    segs = pd.read_sql(
-        f"SELECT latitude, longitude, {future_col} AS future_aadt FROM segments "
-        f"WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND {future_col} IS NOT NULL",
+    future_df = pd.read_sql(
+        f"SELECT unique_id, {future_col} AS future_aadt FROM segments "
+        f"WHERE {future_col} IS NOT NULL",
         conn,
     )
-    if segs.empty:
+    if future_df.empty:
         return wide
 
     valid_mask = wide["latitude"].notna() & wide["longitude"].notna()
     if not valid_mask.any():
         return wide
 
-    seg_x, seg_y = _project_lon_lat_to_metric(
-        segs["longitude"].to_numpy(), segs["latitude"].to_numpy()
-    )
-    tree = cKDTree(np.c_[seg_x, seg_y])
+    seg_cols = {row[1] for row in conn.execute("PRAGMA table_info(segments)").fetchall()}
+    has_latlon = "latitude" in seg_cols and "longitude" in seg_cols
 
-    station_x, station_y = _project_lon_lat_to_metric(
-        wide.loc[valid_mask, "longitude"].to_numpy(),
-        wide.loc[valid_mask, "latitude"].to_numpy(),
-    )
-    _, nearest_idx = tree.query(np.c_[station_x, station_y], k=1)
+    try:
+        if has_latlon:
+            segs = pd.read_sql(
+                f"SELECT latitude, longitude, {future_col} AS future_aadt FROM segments "
+                f"WHERE latitude IS NOT NULL AND longitude IS NOT NULL "
+                f"AND {future_col} IS NOT NULL",
+                conn,
+            )
+            if segs.empty:
+                return wide
+            seg_x, seg_y = _project_lon_lat_to_metric(
+                segs["longitude"].to_numpy(), segs["latitude"].to_numpy(),
+            )
+            future_vals = pd.to_numeric(
+                segs["future_aadt"], errors="coerce"
+            ).to_numpy(dtype="float64")
+        else:
+            seg_gdf = gpd.read_file(
+                GPKG_PATH, layer="roadway_segments", engine="pyogrio",
+                columns=["unique_id"],
+            )
+            mids = seg_gdf.geometry.interpolate(0.5, normalized=True)
+            seg_coords = pd.DataFrame({
+                "unique_id": seg_gdf["unique_id"].values,
+                "mid_x": mids.x.values,
+                "mid_y": mids.y.values,
+            })
+            seg_with_future = seg_coords.merge(future_df, on="unique_id", how="inner")
+            if seg_with_future.empty:
+                return wide
+            seg_x = seg_with_future["mid_x"].values
+            seg_y = seg_with_future["mid_y"].values
+            future_vals = pd.to_numeric(
+                seg_with_future["future_aadt"], errors="coerce"
+            ).to_numpy(dtype="float64")
 
-    future_vals = pd.to_numeric(segs["future_aadt"], errors="coerce").to_numpy(dtype="float64")
-    wide.loc[valid_mask, "FUTURE_AADT_2044"] = future_vals[np.asarray(nearest_idx, dtype=int)]
+        tree = cKDTree(np.c_[seg_x, seg_y])
+        station_x, station_y = _project_lon_lat_to_metric(
+            wide.loc[valid_mask, "longitude"].to_numpy(),
+            wide.loc[valid_mask, "latitude"].to_numpy(),
+        )
+        _, nearest_idx = tree.query(np.c_[station_x, station_y], k=1)
+        wide.loc[valid_mask, "FUTURE_AADT_2044"] = future_vals[np.asarray(nearest_idx, dtype=int)]
+    except Exception as exc:
+        logger.warning("Could not attach FUTURE_AADT_2044: %s", exc)
+
     return wide
 
 
