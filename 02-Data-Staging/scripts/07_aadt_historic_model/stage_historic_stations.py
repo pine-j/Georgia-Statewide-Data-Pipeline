@@ -55,7 +55,7 @@ from historic_stations_loader import (
 
 logger = logging.getLogger(__name__)
 
-PROJECT_MAIN = Path("D:/Jacobs/Georgia-Statewide-Data-Pipeline")
+PROJECT_MAIN = Path(__file__).resolve().parents[3]
 TRAFFIC_ZIP = PROJECT_MAIN / "01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_Historical.zip"
 TRAFFIC_2024_GDB = PROJECT_MAIN / "01-Raw-Data/Roadway-Inventory/GDOT_Traffic/Traffic_2024_Geodatabase/TRAFFIC_Data_2024.gdb"
 STAGED_DB = PROJECT_MAIN / "02-Data-Staging/databases/roadway_inventory.db"

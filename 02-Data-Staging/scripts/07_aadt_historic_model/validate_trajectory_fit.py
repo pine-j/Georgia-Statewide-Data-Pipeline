@@ -44,7 +44,7 @@ from trajectory_fit import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-PROJECT_MAIN = Path("D:/Jacobs/Georgia-Statewide-Data-Pipeline")
+PROJECT_MAIN = Path(__file__).resolve().parents[3]
 STAGED_DB = PROJECT_MAIN / "02-Data-Staging/databases/roadway_inventory.db"
 REPORT_PATH = Path(__file__).resolve().parents[3] / "02-Data-Staging/docs/aadt_trajectory_fit_validation.md"
 

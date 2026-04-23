@@ -33,7 +33,7 @@ from segment_station_link import LINK_COLUMNS, build_link_rows  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-PROJECT_MAIN = Path("D:/Jacobs/Georgia-Statewide-Data-Pipeline")
+PROJECT_MAIN = Path(__file__).resolve().parents[3]
 GPKG_PATH = PROJECT_MAIN / "02-Data-Staging/spatial/base_network.gpkg"
 STAGED_DB = PROJECT_MAIN / "02-Data-Staging/databases/roadway_inventory.db"
 
