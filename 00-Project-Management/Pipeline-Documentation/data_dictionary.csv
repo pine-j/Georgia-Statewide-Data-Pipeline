@@ -136,3 +136,29 @@ AADT_2023_LOCAL_FILL,"IDW-interpolated 2023 AADT for FC 6-7 segments where HPMS 
 AADT_2023_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2023 local fill, same logic as AADT_2021_CONFIDENCE.",medium
 AADT_2024_LOCAL_FILL,"IDW-interpolated 2024 AADT for FC 6-7 segments where the HPMS value was flagged as an FHWA synthetic default (AADT_2024_HPMS_SYNTHETIC=1). Provides a spatially-differentiated alternative to the volumegroup default. NULL on non-synthetic segments and on synthetic segments beyond the 2000m station cutoff.",5862
 AADT_2024_LOCAL_FILL_CONFIDENCE,"Confidence tier for the 2024 local fill, same logic as AADT_2021_CONFIDENCE.",medium
+AREA_OFFICE_ID,GDOT area office numeric identifier assigned to the segment via admin-geography spatial overlay.,101.0
+AREA_OFFICE_NAME,"GDOT area office name combining district and counties served, assigned via admin-geography spatial overlay.","District 1 Area 1 (Dawson, Forsyth, Gwinnett, Hall)"
+CITY_ID,Census place FIPS identifier for the city or town containing the segment. NULL for rural segments.,372169834230.0
+CITY_NAME,Census place name for the city or town containing the segment. NULL for rural segments.,Acworth
+CONGRESSIONAL_DISTRICT,U.S. Congressional district number containing the segment.,3.0
+HPMS_PCT_DH_COMBINATION,"HPMS design-hour combination-truck share, reported as a fraction. Combined with HPMS_PCT_DH_SINGLE to derive TRK_DHV_PCT.",0.07
+HPMS_PCT_DH_SINGLE,"HPMS design-hour single-unit truck share, reported as a fraction. Combined with HPMS_PCT_DH_COMBINATION to derive TRK_DHV_PCT.",0.45
+MPO_ID,Metropolitan Planning Organization numeric identifier for the segment.,13196401
+MPO_NAME,Metropolitan Planning Organization name for the segment. NULL for non-MPO segments.,Atlanta Regional Commission
+RC_ID,GDOT Regional Commission numeric identifier for the segment.,3.0
+RC_NAME,GDOT Regional Commission name for the segment.,Atlanta Regional Commission
+SEC_EVAC_MATCH_METHOD,"Method used to match the evacuation route layer to the segment: spatial (buffer intersection) or attribute (ROUTE_ID match).",spatial
+SEC_EVAC_OVERLAP_M,"Length of spatial overlap in meters between the segment geometry and the nearest evacuation route. Zero when no evacuation route overlaps.",2340.5
+SEC_EVAC_OVERLAP_RATIO,"Ratio of evacuation route overlap length to total segment length, used to threshold the SEC_EVAC flag.",0.85
+STATE_HOUSE_DISTRICT,Georgia State House district number containing the segment.,42.0
+STATE_SENATE_DISTRICT,Georgia State Senate district number containing the segment.,14.0
+NHFN,"National Highway Freight Network designation from HPMS 2024. Non-zero values indicate the segment is on the NHFN, a Critical-tier SRP criterion.",1
+STRAHNET_TYPE,"STRAHNET type code from HPMS 2024. Complements the STRAHNET field with more granular subtype classification.",1
+IS_GRIP_CORRIDOR,"Boolean flag indicating the segment is on a GRIP (Governor's Road Improvement Program) corridor. GRIP established 19 economic development corridors + 3 truck access routes connecting 95% of GA cities (pop > 2,500) to the Interstate system.",True
+GRIP_CORRIDOR_NAME,"Name(s) of the GRIP corridor the segment belongs to, semicolon-separated when multiple corridors overlap.",Corridor 11 - SR 400
+IS_NUCLEAR_EPZ_ROUTE,"Boolean flag indicating the segment is within a 10-mile NRC Emergency Planning Zone around a Georgia nuclear plant (Plant Vogtle or Plant Hatch). Only state-system routes (not CR/CS) are flagged.",True
+NUCLEAR_EPZ_PLANT,"Name(s) of the nuclear plant whose EPZ the segment falls within, semicolon-separated when within range of multiple plants.",Plant Vogtle
+IS_SOLE_COUNTY_SEAT_CONNECTION,"Boolean flag indicating the segment is a sole connection (bridge/cut-edge in the route graph) between a county seat and the broader state route network.",True
+SOLE_CONNECTION_COUNTY_SEAT,"County seat name(s) for which this segment is a sole connection, semicolon-separated if multiple.",Statenville
+SRP_DERIVED,"Derived State Route Prioritization tier based on GDOT's documented SRP criteria applied to 2024 data: Critical, High, Medium, or Low.",High
+SRP_DERIVED_REASONS,"Pipe-delimited list of SRP criteria that matched this segment, explaining why it received its derived tier.",US route | GRIP corridor | AADT > 3000 (non-NHS)

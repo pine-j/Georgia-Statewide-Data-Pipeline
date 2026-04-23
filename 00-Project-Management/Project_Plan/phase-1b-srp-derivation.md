@@ -3,9 +3,18 @@
 ## Goal
 Fill data gaps and build a reproducible, 2024-data-driven State Route Prioritization classification that mirrors GDOT's official SRP criteria (established 2015, last reviewed biennially). The derived SRP replaces reliance on the static 2015 MapServer layers with a transparent, updatable classification.
 
-## Status: Implementation Complete — Awaiting Pipeline Run
-**Depends on**: Phase 1 (staged roadway inventory with 245,863 segments)
-**Blocks**: Phase 2 (Connectivity — `Is_Seg_On_SRP_Critical_or_High` metric)
+## Status: Complete
+**Depends on**: Phase 1 (staged roadway inventory with 263,947 segments)
+**Blocks**: Phase 2 (Connectivity — `Is_Seg_On_SRP_Critical_or_High` metric) — **unblocked**
+
+### Pipeline Run Results (2026-04-23)
+- **NHFN**: 1,174 segments (concentrated on Interstates)
+- **STRAHNET_TYPE**: 2,155 segments filled
+- **GRIP corridors**: 2,662 segments across 20 corridors
+- **Nuclear EPZ**: 52 segments (15 Vogtle, 37 Hatch)
+- **Sole connections**: 3,548 segments across 156 county seats
+- **SRP distribution**: Critical=5,530 (2.1%), High=33,969 (12.9%), Medium=90 (0.0%), Low=224,358 (85.0%)
+- **41/41 tests pass**
 
 ---
 

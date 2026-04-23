@@ -3,8 +3,9 @@
 ## Goal
 Download, stage, and score all publicly available federal/state transportation datasets in a single pass. This phase produces metrics for four RAPTOR categories: **Connectivity** (0.15), **Freight** (0.10), **Asset Preservation** (0.20, bridges only), and **Mobility** (0.20, railroad crossings only).
 
-## Status: Not Started
+## Status: Partially Ready — Dependencies Met, Scripts Needed
 **Depends on**: Phase 1 (roadway base layer), Phase 1b (SRP derivation)
+**Unblocked**: Phase 1b complete (NHFN, GRIP, EPZ, sole-connection, SRP fields populated). FAF5 raw data downloaded. All 9 connectivity endpoints validated (2026-04-23).
 
 ---
 
@@ -145,7 +146,7 @@ This phase groups all publicly downloadable federal transportation datasets. If 
 |--------|----------|----------|
 | `connectivity/scripts/download.py` | SRP, NEVI, generators (6 types), AFDC | Exists — needs SRP removed (handled by Phase 1b) |
 | `connectivity/scripts/validate_endpoints.py` | Health-check all 9 endpoints | Exists |
-| `freight/scripts/download_faf5.py` | FAF5 network GDB + 12 flow CSVs | New |
+| `freight/scripts/download_faf5.py` | FAF5 network GDB + 12 flow CSVs | Exists — ran successfully |
 | `freight/scripts/download_freight_support.py` | CFS, ARC truck routes, port data | New |
 | `bridge/scripts/download_nbi.py` | NBI Georgia bridges | New |
 | `mobility/scripts/download_railroad_crossings.py` | NTAD railroad crossings | New |
@@ -261,8 +262,8 @@ This phase groups all publicly downloadable federal transportation datasets. If 
 | Rail Facilities (GA) | NTAD | Yes | ⬜ Download |
 | Freight Generators (GA) | NTAD FAF | Yes | ⬜ Download |
 | AFDC Alt. Fuel Stations | DOE | Yes | ⬜ Download |
-| FAF5 Network Links | FHWA | Yes | ⬜ Download |
-| FAF5 Flow Tables (12 CSVs) | FHWA | Yes | ⬜ Download |
+| FAF5 Network Links | FHWA | Yes | ✅ Downloaded (`01-Raw-Data/freight/faf5/network/`) |
+| FAF5 Flow Tables (12 CSVs) | FHWA | Yes | ✅ Downloaded (6 × 2022 + 6 × 2050 Baseline) |
 | CFS 2022 | Census/BTS | Yes | ⬜ Download |
 | GA Freight & Logistics Plan | GDOT | Yes | ⬜ Download |
 | GA State Rail Plan | GDOT | Yes | ⬜ Download |
