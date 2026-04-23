@@ -103,6 +103,11 @@ def main() -> None:
     result = predict_idw(knn, stations)
     logger.info("  %d segments processed", len(result))
 
+    if len(result) == 0:
+        logger.warning("  No segments processed — empty result.")
+        conn.close()
+        return
+
     predicted = result["AADT_MODELED"].notna().sum()
     null = result["AADT_MODELED"].isna().sum()
     logger.info("  Predicted: %d (%.1f%%)", predicted, predicted / len(result) * 100)
