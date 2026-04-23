@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -145,7 +146,7 @@ def update_database(gdf: gpd.GeoDataFrame) -> None:
                 val = gdf.at[idx, c]
                 if pd.isna(val):
                     values.append(None)
-                elif isinstance(val, bool):
+                elif isinstance(val, (bool, np.bool_)):
                     values.append(int(val))
                 else:
                     values.append(val)
