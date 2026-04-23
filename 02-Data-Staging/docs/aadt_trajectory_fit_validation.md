@@ -1,3 +1,11 @@
+# SUPERSEDED — see aadt_v2_idw_prediction.md
+
+This report documents the v1 trajectory-fit approach, which was abandoned after
+discovering that ~80% of FC 6-7 HPMS values are FHWA synthetic defaults (see
+aadt_v2_synthetic_classifier.md). The v2 approach uses IDW station interpolation.
+
+---
+
 # AADT trajectory-fit validation (Tier 0)
 
 Holdout validation for the Tier 0 shape-preserving quadratic (log AADT). Each segment in Tier 0 is re-fit using 3 of its 4 HPMS anchors, and the held-out year is predicted; absolute percentage error is computed vs the true HPMS value.
