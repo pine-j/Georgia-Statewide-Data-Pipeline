@@ -857,7 +857,7 @@ Tables:
 Current contents:
 
 - `245,863` roadway segment rows
-- `118` columns in `segments`
+- `153` columns in `segments`
 
 The SQLite database is the staged tabular source of truth. It contains roadway and traffic attributes but no geometry.
 

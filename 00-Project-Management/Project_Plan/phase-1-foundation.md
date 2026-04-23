@@ -12,7 +12,7 @@ Download the complete Georgia roadway inventory, clean and normalize it into a S
 Phase 1 is implemented, validated, and ready to treat as the closed roadway-foundation phase for the current project scope. The core ETL, staged database, staged GeoPackage, official boundary layers, `RoadwayData` loader, staged web-app data path, Georgia-specific `ROUTE_ID` route-family crosswalk, HPMS-based signed-route verification, posted speed limit enrichment, FHWA HPMS 2024 enrichment, and multi-source AADT fill chain are all working. `116/116` validation checks pass. Remaining questions about supplemental roadway sources and optional GDOT live-layer corroboration are deferred follow-on improvements, not Phase 1 blockers.
 
 As of the current staged build:
-- `roadway_inventory.db` contains `245,863` segmented roadway records with `118` columns
+- `roadway_inventory.db` contains `245,863` segmented roadway records with `153` columns
 - `base_network.gpkg` contains:
   - `roadway_segments` (`245,863` features)
   - `county_boundaries` (`159` features)
