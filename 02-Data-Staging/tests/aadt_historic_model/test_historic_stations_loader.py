@@ -24,6 +24,7 @@ from historic_stations_loader import (
     SCHEMA_2018_SEPARATE_LATLONG,
     SCHEMA_2020_2021_TEXT_LATLONG,
     SCHEMA_2022_2023_NUMERIC_LATLONG,
+    _null_out_bad_coords,
     load_station_csv,
     load_station_xlsx,
     normalize_tc_number,
@@ -399,3 +400,80 @@ def test_normalize_tc_float_suffix() -> None:
     assert normalize_tc_number(12345.0) == "12345"
     assert normalize_tc_number(12345) == "12345"
     assert normalize_tc_number("001-0101.0") == "001-0101"
+
+
+# ---- bad coordinate filtering ----
+
+
+def test_null_out_bad_coords_zeros_become_nan() -> None:
+    df = pd.DataFrame({
+        "latitude": [33.5, 0.0, 0.0004, 31.7],
+        "longitude": [-84.5, 0.0, 0.0009, -82.4],
+        "aadt": [5000, 3000, 2000, 4000],
+    })
+    result = _null_out_bad_coords(df)
+    assert result.loc[0, "latitude"] == pytest.approx(33.5)
+    assert pd.isna(result.loc[1, "latitude"])
+    assert pd.isna(result.loc[1, "longitude"])
+    assert pd.isna(result.loc[2, "latitude"])
+    assert result.loc[3, "latitude"] == pytest.approx(31.7)
+    assert result.loc[0, "aadt"] == 5000
+    assert result.loc[1, "aadt"] == 3000
+
+
+def test_2015_zero_coords_nulled(tmp_path) -> None:
+    raw = pd.DataFrame({
+        "Station ID": ["001-0101", "BAD-0001"],
+        "Coordinate": ["31.715570, -82.381860", "0.0, 0.0"],
+        "Year": [2015, 2015],
+        "aadt": [3840, 1500],
+        "aadtt": [622, 50],
+        "k30": [0.085, 0.09],
+        "d30": [0.52, 0.55],
+    })
+    xlsx = tmp_path / "2015.xlsx"
+    raw.to_excel(xlsx, index=False)
+
+    out = load_station_xlsx(
+        xlsx_path=xlsx, year=2015,
+        schema_variant=SCHEMA_2015_COORDINATE,
+        source_tag="test",
+    )
+    good = out[out["tc_number"] == "001-0101"].iloc[0]
+    bad = out[out["tc_number"] == "BAD-0001"].iloc[0]
+    assert good["latitude"] == pytest.approx(31.715570)
+    assert pd.isna(bad["latitude"])
+    assert pd.isna(bad["longitude"])
+    assert bad["aadt"] == 1500
+
+
+def test_2016_csv_flexible_column_names(tmp_path) -> None:
+    """Verify CSV loader handles both AADT_SINGLE_UNIT and AADT_SINGL."""
+    content = (
+        "ROUTE_ID,FROM_MILEPOINT,TO_MILEPOINT,COUNTY_COD,TC_NUMBER,AADT,"
+        "AADT_SINGLE_UNIT,PCT_PEAK_SINGLE,AADT_COMBINATION,PCT_PEAK_COMBINATION,"
+        "K_FACTOR,D_Factor,FUTURE_AADT,Lat,Long\n"
+        "GA001,0,1,001,001-0101,5350,244,0.38,1090,1.01,8.83,55.95,6170,30.703,-84.388\n"
+    )
+    csv_path = tmp_path / "test_2016.csv"
+    csv_path.write_text(content)
+
+    out = load_station_csv(csv_path=csv_path, year=2016, source_tag="test")
+    assert len(out) == 1
+    assert out.iloc[0]["single_unit_aadt"] == 244
+    assert out.iloc[0]["combo_unit_aadt"] == 1090
+    assert out.iloc[0]["future_aadt"] == 6170
+
+
+def test_2016_csv_missing_required_alias_raises(tmp_path) -> None:
+    content = (
+        "ROUTE_ID,FROM_MILEPOINT,TO_MILEPOINT,COUNTY_COD,TC_NUMBER,AADT,"
+        "PCT_PEAK_SINGLE,AADT_COMBINATION,PCT_PEAK_COMBINATION,"
+        "K_FACTOR,D_Factor,FUTURE_AADT,Lat,Long\n"
+        "GA001,0,1,001,001-0101,5350,0.38,1090,1.01,8.83,55.95,6170,30.703,-84.388\n"
+    )
+    csv_path = tmp_path / "test_2016_missing_alias.csv"
+    csv_path.write_text(content)
+
+    with pytest.raises(KeyError, match="single_unit_aadt"):
+        load_station_csv(csv_path=csv_path, year=2016, source_tag="test")

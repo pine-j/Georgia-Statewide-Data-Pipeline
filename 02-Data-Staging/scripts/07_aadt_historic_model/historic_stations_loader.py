@@ -126,6 +126,13 @@ def _coerce_float(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce").astype("float64")
 
 
+def _null_out_bad_coords(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace near-origin coordinates such as (0,0) with NaN."""
+    bad = (df["latitude"].abs() < 1) & (df["longitude"].abs() < 1)
+    df.loc[bad, ["latitude", "longitude"]] = float("nan")
+    return df
+
+
 def _build_full_schema_frame(
     raw: pd.DataFrame,
     year: int,
@@ -190,7 +197,7 @@ def load_station_xlsx(
                 "source": [source_tag] * n,
             }
         )
-        return out[HISTORIC_STATIONS_COLUMNS]
+        return _null_out_bad_coords(out[HISTORIC_STATIONS_COLUMNS])
 
     if schema_variant in (SCHEMA_2017_2019_TEXT_LATLONG, SCHEMA_2020_2021_TEXT_LATLONG):
         latlong = raw["Lat/Long"].map(parse_lat_long)
@@ -206,7 +213,7 @@ def load_station_xlsx(
         raise ValueError(f"Unknown schema_variant: {schema_variant!r}")
 
     out = _build_full_schema_frame(raw, year, latitude, longitude, source_tag)
-    return out[HISTORIC_STATIONS_COLUMNS]
+    return _null_out_bad_coords(out[HISTORIC_STATIONS_COLUMNS])
 
 
 def load_station_csv(
@@ -222,11 +229,12 @@ def load_station_csv(
     raw = raw[raw["TC_NUMBER"].notna() & (raw["TC_NUMBER"] != "")]
     raw = raw.reset_index(drop=True)
 
-    def _pick(candidates: list[str]) -> pd.Series:
+    def _pick(candidates: list[str], field_name: str) -> pd.Series:
         for c in candidates:
             if c in raw.columns:
                 return raw[c]
-        return pd.Series([pd.NA] * len(raw))
+        tried = ", ".join(repr(c) for c in candidates)
+        raise KeyError(f"2016 CSV missing required column for {field_name}; tried {tried}")
 
     n = len(raw)
     out = pd.DataFrame(
@@ -237,18 +245,18 @@ def load_station_csv(
             "longitude": _coerce_float(raw["Long"]),
             "aadt": _coerce_int(raw["AADT"]),
             "statistics_type": pd.Series([pd.NA] * n, dtype="string"),
-            "single_unit_aadt": _coerce_int(_pick(["AADT_SINGLE_UNIT", "AADT_SINGL"])),
-            "combo_unit_aadt": _coerce_int(_pick(["AADT_COMBINATION", "AADT_COMBI"])),
-            "k_factor": _coerce_float(_pick(["K_FACTOR", "K_Factor"])),
-            "d_factor": _coerce_float(_pick(["D_Factor", "D_FACTOR"])),
+            "single_unit_aadt": _coerce_int(_pick(["AADT_SINGLE_UNIT", "AADT_SINGL"], "single_unit_aadt")),
+            "combo_unit_aadt": _coerce_int(_pick(["AADT_COMBINATION", "AADT_COMBI"], "combo_unit_aadt")),
+            "k_factor": _coerce_float(_pick(["K_FACTOR", "K_Factor"], "k_factor")),
+            "d_factor": _coerce_float(_pick(["D_Factor", "D_FACTOR"], "d_factor")),
             "functional_class": pd.Series([pd.NA] * n, dtype="Int64"),
             "station_type": pd.Series([pd.NA] * n, dtype="string"),
             "traffic_class": pd.Series([pd.NA] * n, dtype="string"),
-            "future_aadt": _coerce_int(_pick(["FUTURE_AADT", "FUTURE_AAD"])),
+            "future_aadt": _coerce_int(_pick(["FUTURE_AADT", "FUTURE_AAD"], "future_aadt")),
             "source": [source_tag] * n,
         }
     )
-    return out[HISTORIC_STATIONS_COLUMNS]
+    return _null_out_bad_coords(out[HISTORIC_STATIONS_COLUMNS])
 
 
 __all__ = [

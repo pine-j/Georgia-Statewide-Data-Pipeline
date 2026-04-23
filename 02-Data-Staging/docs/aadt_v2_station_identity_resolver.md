@@ -11,7 +11,7 @@ UID format: TC-based (GA24_{tc_number})
 | Year | Total | Anchor | TC match | Spatial | Scored | TC conflict | Unresolved | Resolve % |
 |------|------:|-------:|---------:|--------:|-------:|------------:|-----------:|----------:|
 | 2015 | 26,699 | 0 | 179 | 14,023 | 10,957 | 7 | 1,533 | 94.3% |
-| 2016 | 23,958 | 0 | 18,599 | 1,877 | 2,555 | 311 | 616 | 97.4% |
+| 2016 | 23,958 | 0 | 18,599 | 1,877 | 2,555 | 108 | 819 | 96.6% |
 | 2017 | 26,890 | 0 | 19,772 | 2,120 | 3,753 | 30 | 1,215 | 95.5% |
 | 2018 | 26,896 | 0 | 19,783 | 2,121 | 3,749 | 26 | 1,217 | 95.5% |
 | 2019 | 25,879 | 0 | 19,767 | 2,060 | 3,742 | 18 | 292 | 98.9% |
@@ -38,14 +38,14 @@ UID format: TC-based (GA24_{tc_number})
 
 ## Distance distribution (resolved stations)
 
-- Count: 233,398
+- Count: 232,832
 - Median: 0.5m
-- P95: 189.8m
-- Max: 9205796.7m
+- P95: 167.6m
+- Max: 8856.2m
 
 ## Unresolved stations
 
-Total unresolved: 5,430 across 9 years
+Total unresolved: 5,633 across 9 years
 
 ### Year 2015: 1,533 unresolved
   - 0018009
@@ -58,7 +58,7 @@ Total unresolved: 5,430 across 9 years
   - 0018044
   - 0018051
   - 0018054
-### Year 2016: 616 unresolved
+### Year 2016: 819 unresolved
   - 001-8033
   - 003-0195
   - 003-8005
@@ -149,4 +149,4 @@ Total unresolved: 5,430 across 9 years
 
 ## Acceptance criteria
 
-- Resolved rate (non-anchor): 97.7% (target: >=95%)
+- Resolved rate (non-anchor): 97.6% (target: >=95%)

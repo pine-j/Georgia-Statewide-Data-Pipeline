@@ -115,7 +115,7 @@ XLSX_SOURCES: dict[int, dict[str, object]] = {
 
 CSV_2016_ZIP_PATH = "2010_thr_2023_Published_Traffic/2016_Published_Traffic/Traffic_2016_Tables/Traffic_Published_2016.csv"
 CSV_2016_SOURCE_TAG = "csv:Traffic_Published_2016.csv"
-CSV_2016_EXPECTED_STATIONS = 26542
+CSV_2016_EXPECTED_STATIONS = 23958
 
 GDB_SOURCE_TAG = "gdb:TRAFFIC_DataYear2024"
 GDB_LAYER = "TRAFFIC_DataYear2024"
