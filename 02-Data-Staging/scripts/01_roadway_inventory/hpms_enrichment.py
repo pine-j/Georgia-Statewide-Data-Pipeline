@@ -22,6 +22,7 @@ Current enrichment:
 - Future AADT fill where the state GDB lacked a value.
 - Initial signed-route classification from routesigning.
 - Pavement condition: IRI, PSR, rutting, cracking_percent.
+- Freight network designation: nhfn, strahnet_type.
 - Safety geometry: access_control, terrain_type, speed_limit.
 - Roadway attribute gap-fill (state GDB null only): through_lanes,
   lane_width, median, shoulder, surface_type, f_system, facility_type,
@@ -213,6 +214,7 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     for col in ["HPMS_IRI", "HPMS_PSR", "HPMS_RUTTING", "HPMS_CRACKING_PCT",
                 "HPMS_PCT_DH_SINGLE", "HPMS_PCT_DH_COMBINATION",
                 "HPMS_ACCESS_CONTROL", "HPMS_TERRAIN_TYPE",
+                "HPMS_NHFN", "HPMS_STRAHNET_TYPE",
                 "HPMS_ROUTE_SIGNING", "HPMS_ROUTE_NUMBER", "HPMS_ROUTE_NAME"]:
         if col not in enriched.columns:
             enriched[col] = None
@@ -394,6 +396,15 @@ def apply_hpms_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if terrain is not None and not pd.isna(terrain):
             enriched.at[idx, "HPMS_TERRAIN_TYPE"] = int(terrain)
 
+        # --- Freight network designation ---
+        nhfn = match.get("nhfn")
+        if nhfn is not None and not pd.isna(nhfn):
+            enriched.at[idx, "HPMS_NHFN"] = int(nhfn)
+
+        strahnet = match.get("strahnet_type")
+        if strahnet is not None and not pd.isna(strahnet):
+            enriched.at[idx, "HPMS_STRAHNET_TYPE"] = int(strahnet)
+
         # --- Roadway attribute gap-fill (never overwrite existing GDOT values) ---
         for hpms_field, (target_col, cast_type) in HPMS_GAP_FILL_FIELDS.items():
             current_val = row.get(target_col)
@@ -557,6 +568,8 @@ def write_hpms_enrichment_summary(gdf: pd.DataFrame) -> None:
         "hpms_cracking_coverage": int(gdf["HPMS_CRACKING_PCT"].notna().sum()) if "HPMS_CRACKING_PCT" in gdf.columns else 0,
         "hpms_access_control_coverage": int(gdf["HPMS_ACCESS_CONTROL"].notna().sum()) if "HPMS_ACCESS_CONTROL" in gdf.columns else 0,
         "hpms_terrain_coverage": int(gdf["HPMS_TERRAIN_TYPE"].notna().sum()) if "HPMS_TERRAIN_TYPE" in gdf.columns else 0,
+        "hpms_nhfn_coverage": int(gdf["HPMS_NHFN"].notna().sum()) if "HPMS_NHFN" in gdf.columns else 0,
+        "hpms_strahnet_type_coverage": int(gdf["HPMS_STRAHNET_TYPE"].notna().sum()) if "HPMS_STRAHNET_TYPE" in gdf.columns else 0,
         "hpms_route_signing_coverage": int(gdf["HPMS_ROUTE_SIGNING"].notna().sum()) if "HPMS_ROUTE_SIGNING" in gdf.columns else 0,
         "signed_route_source_counts": {
             str(k): int(v)
