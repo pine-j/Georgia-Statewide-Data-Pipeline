@@ -32,6 +32,15 @@ SEGMENT_SHORT_MILES = 5.0
 SPEED_LOW_MPH = 35
 
 
+def _get_preferred_aadt(row: pd.Series) -> float | None:
+    """Return the best available 2024 AADT value for SRP decisions."""
+    for column in ("AADT_2024", "AADT_2024_OFFICIAL", "AADT_2024_HPMS", "AADT"):
+        value = row.get(column)
+        if pd.notna(value):
+            return float(value)
+    return None
+
+
 def _check_critical(row: pd.Series) -> list[str]:
     """Check Critical-tier criteria. Returns list of matching reason strings."""
     reasons = []
@@ -65,9 +74,9 @@ def _check_high(row: pd.Series) -> list[str]:
         reasons.append("STRAHNET")
 
     nhs_ind = row.get("NHS_IND")
-    aadt = row.get("AADT")
+    aadt = _get_preferred_aadt(row)
     if pd.notna(nhs_ind) and int(nhs_ind) >= 1:
-        if pd.notna(aadt) and float(aadt) > AADT_THRESHOLD:
+        if aadt is not None and aadt > AADT_THRESHOLD:
             reasons.append("NHS principal arterial (AADT > 3,000)")
 
     us_flag = row.get("SIGNED_US_ROUTE_FLAG")
@@ -91,7 +100,7 @@ def _check_high(row: pd.Series) -> list[str]:
     if sole is True or sole == 1:
         reasons.append("Sole county-seat connection")
 
-    if pd.notna(aadt) and float(aadt) > AADT_THRESHOLD:
+    if aadt is not None and aadt > AADT_THRESHOLD:
         if not (pd.notna(nhs_ind) and int(nhs_ind) >= 1):
             reasons.append("AADT > 3,000 (non-NHS)")
 
@@ -108,9 +117,9 @@ def _check_medium(row: pd.Series) -> list[str]:
         reasons.append("Hurricane evacuation route")
 
     nhs_ind = row.get("NHS_IND")
-    aadt = row.get("AADT")
+    aadt = _get_preferred_aadt(row)
     if pd.notna(nhs_ind) and int(nhs_ind) >= 1:
-        if pd.isna(aadt) or float(aadt) <= AADT_THRESHOLD:
+        if aadt is None or aadt <= AADT_THRESHOLD:
             reasons.append("NHS with AADT <= 3,000")
 
     us_flag = row.get("SIGNED_US_ROUTE_FLAG")
@@ -164,8 +173,8 @@ def derive_srp_priority(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             continue
 
         low_reasons = []
-        aadt = row.get("AADT")
-        if pd.notna(aadt) and float(aadt) < AADT_THRESHOLD:
+        aadt = _get_preferred_aadt(row)
+        if aadt is not None and aadt < AADT_THRESHOLD:
             low_reasons.append("AADT < 3,000")
         speed = row.get("SPEED_LIMIT")
         if pd.notna(speed) and float(speed) < SPEED_LOW_MPH:

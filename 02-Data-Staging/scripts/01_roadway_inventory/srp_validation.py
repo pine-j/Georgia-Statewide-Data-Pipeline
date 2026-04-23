@@ -173,7 +173,7 @@ def validate_srp(segments: gpd.GeoDataFrame) -> dict:
     confusion: dict[str, dict[str, int]] = {
         t: {t2: 0 for t2 in TIER_ORDER + ["Unclassified"]} for t in TIER_ORDER
     }
-    for _, row in classified.iterrows():
+    for _, row in segments.iterrows():
         derived = row["SRP_DERIVED"]
         official = row["SRP_OFFICIAL"]
         if derived in confusion and official in confusion[derived]:

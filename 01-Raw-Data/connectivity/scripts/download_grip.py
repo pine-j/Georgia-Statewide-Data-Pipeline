@@ -34,6 +34,13 @@ GDOT_ROUTE_NETWORK_URL = (
 )
 
 
+def _request_json(url: str, timeout: int = 30) -> dict:
+    """Fetch JSON from an ArcGIS REST endpoint."""
+    resp = requests.get(url, params={"f": "json"}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _paginated_query(
     url: str,
     params: dict,
@@ -68,23 +75,51 @@ def _paginated_query(
     return {"type": "FeatureCollection", "features": all_features}
 
 
-def discover_grip_layer() -> tuple[str, int] | None:
-    """Check GDOT MapServers for a GRIP-related layer."""
-    try:
-        resp = requests.get(
-            GDOT_FUNCTIONAL_CLASS_URL,
-            params={"f": "json"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        for layer in data.get("layers", []):
+def _discover_grip_layer_on_service(base_url: str) -> tuple[str, int] | None:
+    """Search a MapServer or ArcGIS REST service catalog for a GRIP layer."""
+    data = _request_json(base_url)
+    for layer in data.get("layers", []):
+        name = layer.get("name", "").upper()
+        if "GRIP" in name:
+            log.info("Found GRIP layer: %s (id=%d)", layer["name"], layer["id"])
+            return base_url, layer["id"]
+
+    for service in data.get("services", []):
+        service_name = service.get("name")
+        service_type = service.get("type")
+        if not service_name or not service_type:
+            continue
+
+        service_url = f"{base_url.rstrip('/')}/{service_name}/{service_type}"
+        try:
+            nested = _request_json(service_url)
+        except Exception as exc:
+            log.debug("Could not inspect %s: %s", service_url, exc)
+            continue
+
+        for layer in nested.get("layers", []):
             name = layer.get("name", "").upper()
             if "GRIP" in name:
-                log.info("Found GRIP layer: %s (id=%d)", layer["name"], layer["id"])
-                return GDOT_FUNCTIONAL_CLASS_URL, layer["id"]
+                log.info(
+                    "Found GRIP layer: %s (id=%d) in %s",
+                    layer["name"],
+                    layer["id"],
+                    service_url,
+                )
+                return service_url, layer["id"]
+
+    return None
+
+
+def discover_grip_layer() -> tuple[str, int] | None:
+    """Check GDOT services for a GRIP-related layer."""
+    try:
+        for base_url in (GDOT_ROUTE_NETWORK_URL, GDOT_FUNCTIONAL_CLASS_URL):
+            discovered = _discover_grip_layer_on_service(base_url)
+            if discovered:
+                return discovered
     except Exception as exc:
-        log.warning("Could not query FunctionalClass MapServer: %s", exc)
+        log.warning("Could not query GRIP services: %s", exc)
 
     return None
 

@@ -104,8 +104,11 @@ GRIP_CORRIDORS: dict[str, list[tuple[str, int]]] = {
     ],
 }
 
-# ROUTE_TYPE_GDOT suffix types that represent the same base route.
+# ROUTE_TYPE_GDOT suffix types that represent the same base state route.
 # E.g., SR 1 Connector has ROUTE_TYPE_GDOT='CN', BASE_ROUTE_NUMBER=1.
+# Do not expand US routes this way: US business / bypass / connector routes
+# are distinct signed routes and would otherwise produce statewide false
+# positives for every corridor that includes the mainline US route.
 _SUFFIX_TYPES = {"SP", "BU", "CN", "BY", "LP", "AL"}
 
 # Map from GRIP route type notation to GDOT ROUTE_TYPE_GDOT codes.
@@ -115,6 +118,8 @@ _GRIP_TYPE_TO_GDOT = {
     "SR": {"SR"},
     "SP": {"SP"},
 }
+
+_STATE_ROUTE_FAMILY_NAMES = {"State Route"}
 
 
 def _build_grip_route_set() -> dict[tuple[str, int], list[str]]:
@@ -126,9 +131,10 @@ def _build_grip_route_set() -> dict[tuple[str, int], list[str]]:
             for gt in gdot_types:
                 key = (gt, number)
                 lookup.setdefault(key, []).append(corridor_name)
-            for suffix in _SUFFIX_TYPES:
-                key = (suffix, number)
-                lookup.setdefault(key, []).append(corridor_name)
+                if gt == "SR":
+                    for suffix in _SUFFIX_TYPES:
+                        key = (suffix, number)
+                        lookup.setdefault(key, []).append(corridor_name)
     return lookup
 
 
@@ -210,7 +216,18 @@ def _apply_grip_attribute(enriched: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         except (ValueError, TypeError):
             continue
 
-        key = (str(rt).strip(), brn_int)
+        route_type = str(rt).strip().upper()
+        if route_type in _SUFFIX_TYPES:
+            route_family = None
+            if "SIGNED_ROUTE_FAMILY_PRIMARY" in enriched.columns:
+                route_family = enriched.at[idx, "SIGNED_ROUTE_FAMILY_PRIMARY"]
+            elif "ROUTE_FAMILY" in enriched.columns:
+                route_family = enriched.at[idx, "ROUTE_FAMILY"]
+
+            if pd.notna(route_family) and str(route_family).strip() not in _STATE_ROUTE_FAMILY_NAMES:
+                continue
+
+        key = (route_type, brn_int)
         corridors = route_lookup.get(key)
         if corridors:
             enriched.at[idx, "IS_GRIP_CORRIDOR"] = True

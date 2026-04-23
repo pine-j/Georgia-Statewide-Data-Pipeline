@@ -11,18 +11,19 @@ are flagged IS_NUCLEAR_EPZ_ROUTE = True.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
-from shapely.ops import unary_union
 
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+EPZ_GEOJSON_PATH = (
+    PROJECT_ROOT / "01-Raw-Data" / "connectivity" / "nuclear_epz" / "epz_buffers.geojson"
+)
 
 PLANTS = [
     {"name": "Plant Vogtle", "lat": 33.1417, "lon": -81.7586, "county": "Burke"},
@@ -52,7 +53,22 @@ def build_epz_buffers() -> gpd.GeoDataFrame:
     return projected
 
 
-def apply_nuclear_epz_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def write_epz_buffers_geojson(
+    epz: gpd.GeoDataFrame,
+    output_path: Path = EPZ_GEOJSON_PATH,
+) -> Path:
+    """Write EPZ buffers to GeoJSON in WGS84 for external inspection."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    epz.to_crs(WGS84).to_file(output_path, driver="GeoJSON")
+    LOGGER.info("Saved EPZ buffer geometries to %s", output_path)
+    return output_path
+
+
+def apply_nuclear_epz_enrichment(
+    gdf: gpd.GeoDataFrame,
+    *,
+    write_buffers: bool = False,
+) -> gpd.GeoDataFrame:
     """Flag segments within nuclear plant EPZs.
 
     Adds IS_NUCLEAR_EPZ_ROUTE (bool) and NUCLEAR_EPZ_PLANT (plant name).
@@ -108,12 +124,7 @@ def apply_nuclear_epz_enrichment(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         unique_flagged, total_flagged, len(PLANTS),
     )
 
-    epz_geojson_path = (
-        PROJECT_ROOT / "01-Raw-Data" / "connectivity" / "nuclear_epz" / "epz_buffers.geojson"
-    )
-    epz_geojson_path.parent.mkdir(parents=True, exist_ok=True)
-    epz_wgs = epz.to_crs(WGS84)
-    epz_wgs.to_file(epz_geojson_path, driver="GeoJSON")
-    LOGGER.info("Saved EPZ buffer geometries to %s", epz_geojson_path)
+    if write_buffers:
+        write_epz_buffers_geojson(epz)
 
     return enriched

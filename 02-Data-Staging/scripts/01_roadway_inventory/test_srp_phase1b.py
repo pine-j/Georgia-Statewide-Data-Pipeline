@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import sys
+import importlib.util
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import geopandas as gpd
 import numpy as np
@@ -69,6 +71,15 @@ def _make_segments(**col_overrides) -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(defaults, geometry=geoms, crs=CRS)
 
 
+def _load_download_grip_module():
+    module_path = Path(__file__).resolve().parents[3] / "01-Raw-Data" / "connectivity" / "scripts" / "download_grip.py"
+    spec = importlib.util.spec_from_file_location("download_grip_test_module", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # ═══════════════════════════════════════════════════════════════════
 # 1. HPMS enrichment — NHFN / STRAHNET_TYPE in gap-fill dict
 # ═══════════════════════════════════════════════════════════════════
@@ -86,8 +97,78 @@ def test_hpms_gap_fill_includes_nhfn_and_strahnet_type():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 2. GRIP corridors — attribute-based matching
+# 2. GRIP corridors — download + attribute-based matching
 # ═══════════════════════════════════════════════════════════════════
+
+def test_download_grip_discovers_grip_layer_from_listing():
+    module = _load_download_grip_module()
+
+    route_network = Mock()
+    route_network.raise_for_status = Mock()
+    route_network.json.return_value = {"services": [], "layers": []}
+
+    functional_class = Mock()
+    functional_class.raise_for_status = Mock()
+    functional_class.json.return_value = {
+        "layers": [
+            {"name": "Roadway Functional Class", "id": 3},
+            {"name": "GRIP Corridors", "id": 17},
+        ]
+    }
+
+    with patch.object(module.requests, "get", side_effect=[route_network, functional_class]) as mock_get:
+        discovered = module.discover_grip_layer()
+
+    assert discovered == (module.GDOT_FUNCTIONAL_CLASS_URL, 17)
+    assert mock_get.call_count == 2
+
+
+def test_download_grip_discovers_nested_route_network_service():
+    module = _load_download_grip_module()
+
+    route_network = Mock()
+    route_network.raise_for_status = Mock()
+    route_network.json.return_value = {
+        "services": [
+            {"name": "GDOT/RouteNetwork", "type": "MapServer"},
+        ],
+        "layers": [],
+    }
+
+    nested_service = Mock()
+    nested_service.raise_for_status = Mock()
+    nested_service.json.return_value = {
+        "layers": [
+            {"name": "GRIP Freight Corridors", "id": 4},
+        ]
+    }
+
+    with patch.object(module.requests, "get", side_effect=[route_network, nested_service]):
+        discovered = module.discover_grip_layer()
+
+    assert discovered == (f"{module.GDOT_ROUTE_NETWORK_URL}/GDOT/RouteNetwork/MapServer", 4)
+
+
+def test_download_grip_paginated_query_accumulates_pages():
+    module = _load_download_grip_module()
+
+    first = Mock()
+    first.raise_for_status = Mock()
+    first.json.return_value = {"features": [{"id": 1}, {"id": 2}]}
+
+    second = Mock()
+    second.raise_for_status = Mock()
+    second.json.return_value = {"features": [{"id": 3}]}
+
+    with patch.object(module.requests, "get", side_effect=[first, second]):
+        data = module._paginated_query(
+            "https://example.test/query",
+            {"where": "1=1"},
+            max_record_count=2,
+            pause=0,
+        )
+
+    assert [feature["id"] for feature in data["features"]] == [1, 2, 3]
 
 def test_grip_flags_known_corridor_route():
     from grip_corridors import apply_grip_enrichment
@@ -125,6 +206,19 @@ def test_grip_flags_suffix_types():
     assert bool(result.at[0, "IS_GRIP_CORRIDOR"]) is True, "SR 400 Connector should be GRIP"
     assert bool(result.at[1, "IS_GRIP_CORRIDOR"]) is True, "SR 400 Spur should be GRIP"
     assert bool(result.at[2, "IS_GRIP_CORRIDOR"]) is True, "SR 400 Business should be GRIP"
+
+
+def test_grip_does_not_flag_us_suffix_routes_from_mainline_lookup():
+    from grip_corridors import apply_grip_enrichment
+
+    gdf = _make_segments(
+        ROUTE_TYPE_GDOT=["BU", "US"],
+        BASE_ROUTE_NUMBER=[27, 27],
+        ROUTE_FAMILY=["U.S. Route", "U.S. Route"],
+    )
+    result = apply_grip_enrichment(gdf)
+    assert bool(result.at[0, "IS_GRIP_CORRIDOR"]) is False, "US 27 Business should not inherit mainline GRIP status"
+    assert bool(result.at[1, "IS_GRIP_CORRIDOR"]) is True, "Mainline US 27 should remain GRIP"
 
 
 def test_grip_corridor_name_populated():
@@ -200,6 +294,18 @@ def test_nuclear_epz_records_plant_name():
     result = apply_nuclear_epz_enrichment(gdf)
     plant = result.at[0, "NUCLEAR_EPZ_PLANT"]
     assert plant is not None and "Vogtle" in plant, f"Expected Vogtle in plant name, got: {plant}"
+
+
+def test_nuclear_epz_does_not_write_buffers_by_default():
+    from nuclear_epz import apply_nuclear_epz_enrichment
+
+    near_vogtle = LineString([(415000, 3665000), (415100, 3665000)])
+    gdf = _make_segments(ROUTE_TYPE_GDOT=["SR"], geometry=[near_vogtle])
+
+    with patch.object(gpd.GeoDataFrame, "to_file") as mock_to_file:
+        apply_nuclear_epz_enrichment(gdf)
+
+    mock_to_file.assert_not_called()
 
 
 def test_nuclear_epz_empty_dataframe():
@@ -293,7 +399,62 @@ def test_sole_connection_enrichment_adds_columns():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 5. SRP derivation — classification logic
+# 5. SRP validation
+# ═══════════════════════════════════════════════════════════════════
+
+def test_srp_validation_prefers_higher_priority_official_tier():
+    import srp_validation
+
+    segment = LineString([(0, 0), (100, 0)])
+    segments = gpd.GeoDataFrame({"SRP_DERIVED": ["Low"]}, geometry=[segment], crs=CRS)
+    official_layers = {
+        "Low": gpd.GeoDataFrame({"tier": ["Low"]}, geometry=[segment], crs=CRS),
+        "High": gpd.GeoDataFrame({"tier": ["High"]}, geometry=[segment], crs=CRS),
+    }
+
+    assigned = srp_validation._assign_official_tier(segments, official_layers)
+    assert assigned.iloc[0] == "High", "Higher-priority official tier should win on overlap"
+
+
+def test_srp_validation_counts_unclassified_segments_in_confusion_matrix():
+    import tempfile
+
+    import srp_validation
+
+    segments = gpd.GeoDataFrame(
+        {"SRP_DERIVED": ["Low", "High"]},
+        geometry=[
+            LineString([(0, 0), (100, 0)]),
+            LineString([(1000, 0), (1100, 0)]),
+        ],
+        crs=CRS,
+    )
+    official_layers = {
+        "High": gpd.GeoDataFrame(
+            {"tier": ["High"]},
+            geometry=[LineString([(1000, 0), (1100, 0)])],
+            crs=CRS,
+        )
+    }
+
+    original_download = srp_validation.download_official_srp
+    original_reports_dir = srp_validation.REPORTS_DIR
+    try:
+        srp_validation.download_official_srp = lambda: official_layers
+        with tempfile.TemporaryDirectory() as tmpdir:
+            srp_validation.REPORTS_DIR = Path(tmpdir)
+            report = srp_validation.validate_srp(segments)
+    finally:
+        srp_validation.download_official_srp = original_download
+        srp_validation.REPORTS_DIR = original_reports_dir
+
+    assert report["confusion_matrix"]["Low"]["Unclassified"] == 1
+    assert report["confusion_matrix"]["High"]["High"] == 1
+    assert report["official_unclassified"] == 1
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 6. SRP derivation — classification logic
 # ═══════════════════════════════════════════════════════════════════
 
 def test_srp_interstate_is_critical():
@@ -393,6 +554,35 @@ def test_srp_nhs_high_aadt_is_high():
     result = derive_srp_priority(gdf)
     assert result.at[0, "SRP_DERIVED"] == "High"
     assert "NHS principal arterial" in result.at[0, "SRP_DERIVED_REASONS"]
+
+
+def test_srp_prefers_2024_aadt_over_generic_aadt():
+    from srp_derivation import derive_srp_priority
+
+    gdf = _make_segments(
+        AADT=[5000],
+        AADT_2024=[1000],
+        NHS_IND=[None],
+        SPEED_LIMIT=[55],
+        segment_length_mi=[10.0],
+    )
+    result = derive_srp_priority(gdf)
+    assert result.at[0, "SRP_DERIVED"] == "Low", "2024 AADT should control SRP when present"
+    assert "AADT < 3,000" in result.at[0, "SRP_DERIVED_REASONS"]
+
+
+def test_srp_uses_hpms_2024_aadt_when_canonical_missing():
+    from srp_derivation import derive_srp_priority
+
+    gdf = _make_segments(
+        AADT=[None],
+        AADT_2024=[None],
+        AADT_2024_HPMS=[4500],
+        NHS_IND=[None],
+    )
+    result = derive_srp_priority(gdf)
+    assert result.at[0, "SRP_DERIVED"] == "High", "HPMS 2024 AADT should backstop SRP traffic thresholds"
+    assert "AADT > 3,000" in result.at[0, "SRP_DERIVED_REASONS"]
 
 
 def test_srp_nhs_low_aadt_is_medium():
