@@ -29,22 +29,22 @@ TIMEOUT = 30
 
 ENDPOINTS = [
     {
-        "name": "NEVI Corridors",
+        "name": "NEVI / Alternative Fuel Corridors",
         "url": (
-            "https://services1.arcgis.com/2iUE8l8JKrP2tygQ/arcgis/rest/services/"
-            "NEVI_Corridors/FeatureServer/0/query"
+            "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/"
+            "NTAD_Alternative_Fuel_Corridors/FeatureServer/0/query"
         ),
-        "params": {"where": "1=1", "returnCountOnly": "true", "f": "json"},
+        "params": {"where": "STATE = 'GA'", "returnCountOnly": "true", "f": "json"},
         "type": "arcgis",
     },
     {
         "name": "Airports",
         "url": (
             "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/"
-            "NTAD_Airports/FeatureServer/0/query"
+            "NTAD_Aviation_Facilities/FeatureServer/0/query"
         ),
         "params": {
-            "where": "STATE = 'GA'",
+            "where": "STATE_CODE = 'GA'",
             "returnCountOnly": "true",
             "f": "json",
         },
@@ -53,11 +53,11 @@ ENDPOINTS = [
     {
         "name": "Seaports",
         "url": (
-            "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/"
-            "NTAD_Principal_Ports/FeatureServer/0/query"
+            "https://services7.arcgis.com/n1YM8pTrFmm7L4hs/ArcGIS/rest/services/"
+            "Principal_Ports/FeatureServer/0/query"
         ),
         "params": {
-            "where": "STATE_POST = 'GA'",
+            "where": "PORTNAME LIKE '%Savannah%' OR PORTNAME LIKE '%Brunswick%'",
             "returnCountOnly": "true",
             "f": "json",
         },
@@ -67,10 +67,10 @@ ENDPOINTS = [
         "name": "Universities",
         "url": (
             "https://services1.arcgis.com/Ua5sjt3LWTPigjyD/arcgis/rest/services/"
-            "NCES_Postsecondary_School_Locations_Current/FeatureServer/0/query"
+            "Postsecondary_School_Locations_Current/FeatureServer/0/query"
         ),
         "params": {
-            "where": "STATE = 'Georgia'",
+            "where": "STATE = 'GA'",
             "returnCountOnly": "true",
             "f": "json",
         },
@@ -80,7 +80,7 @@ ENDPOINTS = [
         "name": "Military Bases",
         "url": (
             "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/"
-            "NTAD_Military_Installations/FeatureServer/0/query"
+            "Military_Installation/FeatureServer/0/query"
         ),
         "params": {
             "where": "STATE_TERR = 'Georgia'",
@@ -117,13 +117,13 @@ ENDPOINTS = [
         "type": "arcgis",
     },
     {
-        "name": "Freight Generators",
+        "name": "Freight Generators (FAF5 Network Nodes)",
         "url": (
             "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/"
-            "NTAD_Freight_Analysis_Framework/FeatureServer/0/query"
+            "NTAD_Freight_Analysis_Framework_Network_Nodes/FeatureServer/0/query"
         ),
         "params": {
-            "where": "STATE = 'GA' OR STATE = 'Georgia'",
+            "where": "STATE = 'GA' AND Facility_Type IS NOT NULL AND Facility_Type <> ''",
             "returnCountOnly": "true",
             "f": "json",
         },
