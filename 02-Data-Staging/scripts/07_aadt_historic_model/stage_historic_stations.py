@@ -44,8 +44,12 @@ if str(_SCRIPTS) not in sys.path:
 
 from historic_stations_loader import (
     HISTORIC_STATIONS_COLUMNS,
+    SCHEMA_2015_COORDINATE,
+    SCHEMA_2017_2019_TEXT_LATLONG,
+    SCHEMA_2018_SEPARATE_LATLONG,
     SCHEMA_2020_2021_TEXT_LATLONG,
     SCHEMA_2022_2023_NUMERIC_LATLONG,
+    load_station_csv,
     load_station_xlsx,
 )
 
@@ -59,6 +63,30 @@ STAGED_DB = PROJECT_MAIN / "02-Data-Staging/databases/roadway_inventory.db"
 # Per-year xlsx paths inside Traffic_Historical.zip, verified 2026-04-19.
 # Row-count targets are the inventory §1 expectations.
 XLSX_SOURCES: dict[int, dict[str, object]] = {
+    2015: {
+        "zip_path": "2010_thr_2023_Published_Traffic/2015_Published_AADT/2015_end_of_year_all_tcs.xlsx",
+        "schema_variant": SCHEMA_2015_COORDINATE,
+        "source_tag": "xlsx:2015_end_of_year_all_tcs.xlsx",
+        "expected_rows": 26699,
+    },
+    2017: {
+        "zip_path": "2010_thr_2023_Published_Traffic/2017_Published_Traffic/2017 Annual Statistics.xlsx",
+        "schema_variant": SCHEMA_2017_2019_TEXT_LATLONG,
+        "source_tag": "xlsx:2017 Annual Statistics.xlsx",
+        "expected_rows": 26923,
+    },
+    2018: {
+        "zip_path": "2010_thr_2023_Published_Traffic/2018_Published_Traffic/annualized_statistics_2018.xlsx",
+        "schema_variant": SCHEMA_2018_SEPARATE_LATLONG,
+        "source_tag": "xlsx:annualized_statistics_2018.xlsx",
+        "expected_rows": 26925,
+    },
+    2019: {
+        "zip_path": "2010_thr_2023_Published_Traffic/2019_Published_Traffic/annualized_statistics_2019_07242020.xlsx",
+        "schema_variant": SCHEMA_2017_2019_TEXT_LATLONG,
+        "source_tag": "xlsx:annualized_statistics_2019_07242020.xlsx",
+        "expected_rows": 25879,
+    },
     2020: {
         "zip_path": "2010_thr_2023_Published_Traffic/2020_Published_Traffic/2020_annualized_statistics.xlsx",
         "schema_variant": SCHEMA_2020_2021_TEXT_LATLONG,
@@ -84,6 +112,10 @@ XLSX_SOURCES: dict[int, dict[str, object]] = {
         "expected_rows": 25714,
     },
 }
+
+CSV_2016_ZIP_PATH = "2010_thr_2023_Published_Traffic/2016_Published_Traffic/Traffic_2016_Tables/Traffic_Published_2016.csv"
+CSV_2016_SOURCE_TAG = "csv:Traffic_Published_2016.csv"
+CSV_2016_EXPECTED_STATIONS = 26542
 
 GDB_SOURCE_TAG = "gdb:TRAFFIC_DataYear2024"
 GDB_LAYER = "TRAFFIC_DataYear2024"
@@ -136,6 +168,37 @@ def stage_year_xlsx(year: int, scratch_dir: Path) -> dict:
         "source": str(spec["source_tag"]),
     }
     logger.info("Staged year %d: %s", year, report)
+    return report
+
+
+def stage_2016_csv(scratch_dir: Path) -> dict:
+    """Read segment-level CSV for 2016, deduplicate to station-level rows."""
+    with tempfile.TemporaryDirectory() as tmp:
+        csv_tmp = Path(tmp) / "Traffic_Published_2016.csv"
+        extract_xlsx(TRAFFIC_ZIP, CSV_2016_ZIP_PATH, csv_tmp)
+        df = load_station_csv(
+            csv_path=csv_tmp,
+            year=2016,
+            source_tag=CSV_2016_SOURCE_TAG,
+        )
+
+    out_path = scratch_dir / "2016.parquet"
+    df.to_parquet(out_path, index=False)
+
+    stats_type_counts = df["statistics_type"].value_counts(dropna=False).to_dict()
+    report = {
+        "year": 2016,
+        "status": "SUCCESS",
+        "row_count_written": int(len(df)),
+        "row_count_expected": CSV_2016_EXPECTED_STATIONS,
+        "row_count_match": int(len(df)) == CSV_2016_EXPECTED_STATIONS,
+        "null_count_lat": int(df["latitude"].isna().sum()),
+        "null_count_stats_type": int(df["statistics_type"].isna().sum()),
+        "stats_type_distribution": {str(k): int(v) for k, v in stats_type_counts.items()},
+        "parquet_path": str(out_path),
+        "source": CSV_2016_SOURCE_TAG,
+    }
+    logger.info("Staged year 2016: %s", report)
     return report
 
 
@@ -280,7 +343,7 @@ def main() -> int:
         "--years",
         nargs="+",
         type=int,
-        default=[2020, 2021, 2022, 2023, 2024],
+        default=[2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024],
     )
     args = parser.parse_args()
 
@@ -293,6 +356,8 @@ def main() -> int:
     for year in args.years:
         if year == 2024:
             year_reports.append(stage_2024_gdb(scratch))
+        elif year == 2016:
+            year_reports.append(stage_2016_csv(scratch))
         else:
             year_reports.append(stage_year_xlsx(year, scratch))
 
